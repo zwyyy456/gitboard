@@ -24,7 +24,7 @@ A native macOS menu bar app for GitHub Projects. View your kanban board, filter 
 ## Installation
 
 1. Download from [yogesh.co/gitboard](https://yogesh.co/gitboard?utm_source=gitboard_repo)
-2. Unzip and move GitBoard.app to your Applications folder
+2. Open the DMG and drag GitBoard to your Applications folder
 3. Make sure you're logged in to GitHub CLI (`gh auth login`)
 4. Launch GitBoard from Applications
 
