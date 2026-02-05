@@ -76,7 +76,7 @@ NEW_ITEM="        <item>
             <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure
-                url=\"https://yogesh.co/gitboard/$DMG_FILE\"
+                url=\"https://github.com/yogesharc/GitBoard/releases/download/v$VERSION/$DMG_FILE\"
                 sparkle:edSignature=\"$SIGNATURE\"
                 length=\"$FILE_SIZE\"
                 type=\"application/octet-stream\"/>
@@ -95,6 +95,7 @@ echo ""
 echo "Updated $APPCAST_FILE with version $VERSION (build $NEW_BUILD)"
 echo ""
 echo "Next steps:"
-echo "1. Upload $DMG_FILE to https://yogesh.co/gitboard/"
-echo "2. Upload $APPCAST_FILE to https://yogesh.co/gitboard/"
-echo "3. Test the update by running an older version of the app"
+echo "1. Commit the updated appcast.xml to the repo"
+echo "2. Create a GitHub release tagged v$VERSION"
+echo "3. Upload $DMG_FILE to the release"
+echo "4. Test the update by running an older version of the app"

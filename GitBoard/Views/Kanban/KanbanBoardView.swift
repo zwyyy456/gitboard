@@ -6,6 +6,14 @@ struct KanbanBoardView: View {
     @State private var refreshRotation: Double = 0
     @State private var isRefreshing = false
     @State private var searchText = ""
+    @State private var isCreateMode = false
+    @State private var isCreating = false
+    @State private var keyMonitor: Any?
+
+    private var parsedCreateInput: ProjectStore.QuickCreateInput? {
+        guard isCreateMode, !searchText.isEmpty else { return nil }
+        return store.parseQuickCreateInput(">" + searchText)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,10 +36,31 @@ struct KanbanBoardView: View {
             }
         }
         .frame(minWidth: 1000, minHeight: 650)
-        .background(Color.black)
+        .background(Color(red: 0x1a/255, green: 0x1a/255, blue: 0x1a/255))
         .task {
             if store.projects.isEmpty {
                 await store.loadProjects()
+            }
+        }
+        .onAppear {
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                if event.modifierFlags.contains(.command) && event.keyCode == 15 { // Cmd+R
+                    if !isRefreshing {
+                        isRefreshing = true
+                        Task {
+                            await store.refresh()
+                            isRefreshing = false
+                        }
+                    }
+                    return nil
+                }
+                return event
+            }
+        }
+        .onDisappear {
+            if let monitor = keyMonitor {
+                NSEvent.removeMonitor(monitor)
+                keyMonitor = nil
             }
         }
     }
@@ -71,18 +100,57 @@ struct KanbanBoardView: View {
 
             // Search bar
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
+                if isCreateMode {
+                    Text(">")
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.green)
+                } else {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                }
 
-                TextField("Search title, #number, @me...", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .frame(minWidth: 150, maxWidth: 250)
+                TextField(
+                    isCreateMode ? "Title #label @assignee" : "Search, #number, @me · Type > to create",
+                    text: $searchText
+                )
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .frame(minWidth: 150, maxWidth: 300)
+                .onChange(of: searchText) { oldValue, newValue in
+                    if !isCreateMode && newValue == ">" {
+                        isCreateMode = true
+                        searchText = ""
+                    }
+                }
+                .onSubmit {
+                    if isCreateMode, let input = parsedCreateInput {
+                        Task {
+                            isCreating = true
+                            await store.quickCreate(input)
+                            searchText = ""
+                            isCreateMode = false
+                            isCreating = false
+                        }
+                    }
+                }
+                .onKeyPress(.escape) {
+                    if isCreateMode {
+                        isCreateMode = false
+                        searchText = ""
+                        return .handled
+                    }
+                    return .ignored
+                }
 
-                if !searchText.isEmpty {
+                if isCreating {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .frame(width: 16, height: 16)
+                } else if isCreateMode || !searchText.isEmpty {
                     Button {
                         searchText = ""
+                        isCreateMode = false
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 12))
@@ -93,8 +161,6 @@ struct KanbanBoardView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
 
             Spacer()
 
@@ -186,7 +252,8 @@ struct KanbanBoardView: View {
     }
 
     private func filteredItems(for items: [ProjectItem]) -> [ProjectItem] {
-        guard !searchText.isEmpty else { return items }
+        // Don't filter in create mode
+        guard !isCreateMode, !searchText.isEmpty else { return items }
 
         let query = searchText.lowercased().trimmingCharacters(in: .whitespaces)
 
@@ -315,7 +382,7 @@ struct KanbanColumn: View {
         .frame(width: 300)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(Color(red: 0x1a/255, green: 0x1a/255, blue: 0x1a/255))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -395,7 +462,7 @@ struct KanbanCard: View {
                             }
                             .frame(width: 20, height: 20)
                             .clipShape(Circle())
-                            .overlay(Circle().stroke(Color(nsColor: .controlBackgroundColor), lineWidth: 1.5))
+                            .overlay(Circle().stroke(Color(white: 0.12), lineWidth: 1.5))
                         }
 
                         if item.assignees.count > 3 {
@@ -412,12 +479,12 @@ struct KanbanCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .windowBackgroundColor))
-                .shadow(color: .black.opacity(isHovered ? 0.12 : 0.06), radius: isHovered ? 6 : 3, x: 0, y: isHovered ? 3 : 1)
+                .fill(Color(white: 0.12))
+                .shadow(color: .black.opacity(isHovered ? 0.3 : 0.15), radius: isHovered ? 6 : 3, x: 0, y: isHovered ? 3 : 1)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
         .scaleEffect(isHovered ? 1.01 : 1.0)
         .animation(.easeOut(duration: 0.15), value: isHovered)
@@ -556,8 +623,8 @@ struct KanbanCardPreview: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color(nsColor: .windowBackgroundColor))
-                .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                .fill(Color(white: 0.15))
+                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
         )
     }
 }

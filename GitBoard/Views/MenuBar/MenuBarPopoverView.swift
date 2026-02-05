@@ -40,6 +40,15 @@ struct MenuBarPopoverView: View {
                     } else if event.keyCode == 124 {
                         navigateTab(direction: 1)
                         return nil
+                    } else if event.keyCode == 15 { // R key
+                        if !isRefreshing {
+                            isRefreshing = true
+                            Task {
+                                await store.refresh()
+                                isRefreshing = false
+                            }
+                        }
+                        return nil
                     }
                 }
                 return event
@@ -118,7 +127,7 @@ struct MenuBarPopoverView: View {
 
             // Coffee button
             Button {
-                if let url = URL(string: "https://buymeacoffee.com/yogesh?utm_source=gitboard") {
+                if let url = URL(string: "https://donate.stripe.com/aFa14ociW0pndDCa0K8bS00") {
                     NSWorkspace.shared.open(url)
                 }
             } label: {

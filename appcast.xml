@@ -2,7 +2,7 @@
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
     <channel>
         <title>GitBoard Updates</title>
-        <link>https://yogesh.co/gitboard/appcast.xml</link>
+        <link>https://raw.githubusercontent.com/yogesharc/GitBoard/main/appcast.xml</link>
         <description>Most recent changes with links to updates.</description>
         <language>en</language>
 
@@ -25,7 +25,7 @@
             <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure
-                url="https://yogesh.co/gitboard/GitBoard-1.0.0.dmg"
+                url="https://github.com/yogesharc/GitBoard/releases/download/v1.0.0/GitBoard-1.0.0.dmg"
                 sparkle:edSignature="SIGNATURE_PLACEHOLDER"
                 length="0"
                 type="application/octet-stream"/>

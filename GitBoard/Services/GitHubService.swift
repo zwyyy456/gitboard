@@ -398,14 +398,13 @@ actor GitHubService {
         return response.data.addProjectV2DraftIssue.projectItem.id
     }
 
-    /// Create a real issue using gh CLI and add it to the project
+    /// Create a real issue using gh CLI (project workflow will auto-add it)
     func createIssue(
         owner: String,
         repo: String,
         title: String,
         labels: [String] = [],
-        assignees: [String] = [],
-        projectId: String
+        assignees: [String] = []
     ) async throws {
         let ghPath = try await findGHPath()
 
@@ -426,24 +425,7 @@ actor GitHubService {
             arguments.append(assignees.joined(separator: ","))
         }
 
-        // Create the issue and get its URL
-        let result = try await runCommand(ghPath, arguments: arguments)
-        let issueUrl = result.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Now add the issue to the project
-        if !issueUrl.isEmpty {
-            // Get the issue node ID from URL
-            let issueId = try await getIssueId(from: issueUrl)
-
-            // Add to project
-            _ = try await executeGraphQL(
-                query: GraphQLQueries.addItemToProject,
-                variables: [
-                    "projectId": projectId,
-                    "contentId": issueId
-                ]
-            )
-        }
+        _ = try await runCommand(ghPath, arguments: arguments)
     }
 
     /// Get issue node ID from URL using gh CLI (simpler than GraphQL)
@@ -523,59 +505,22 @@ actor GitHubService {
         return response.data.repository.issue.id
     }
 
-    /// Get the linked repository for a project (if any)
+    /// Get the linked repository for a project by looking at existing issues
     func getProjectRepository(projectId: String) async throws -> (owner: String, repo: String)? {
-        let ghPath = try await findGHPath()
-
-        // Try to get the project's linked repository using gh CLI
-        // Projects can be org-level or user-level, we'll try to find a linked repo
+        // Fetch project items and extract repo from the first issue URL
         let data = try await executeGraphQL(
-            query: GraphQLQueries.getProjectOwnerAndRepo,
+            query: GraphQLQueries.projectWithItems,
             variables: ["id": projectId]
         )
 
-        struct Response: Codable {
-            let data: DataContainer
-            struct DataContainer: Codable {
-                let node: ProjectNode?
+        let response = try JSONDecoder().decode(ProjectDetailResponse.self, from: data)
+
+        // Find the first item with a valid issue/PR URL
+        for item in response.data.node.items.nodes {
+            if let url = item.content?.url,
+               let components = parseIssueUrl(url) {
+                return (components.owner, components.repo)
             }
-            struct ProjectNode: Codable {
-                let owner: OwnerUnion?
-            }
-            struct OwnerUnion: Codable {
-                // Repository owner
-                let owner: NestedOwner?
-                let name: String?
-                // Organization
-                let login: String?
-                let repositories: ReposConnection?
-
-                struct NestedOwner: Codable {
-                    let login: String
-                }
-                struct ReposConnection: Codable {
-                    let nodes: [RepoNode]
-                }
-                struct RepoNode: Codable {
-                    let name: String
-                    let owner: NestedOwner?
-                }
-            }
-        }
-
-        let response = try JSONDecoder().decode(Response.self, from: data)
-
-        // If project is owned by a repository directly
-        if let repoOwner = response.data.node?.owner?.owner?.login,
-           let repoName = response.data.node?.owner?.name {
-            return (repoOwner, repoName)
-        }
-
-        // If project is org/user level, try to get first repo
-        if let orgLogin = response.data.node?.owner?.login,
-           let firstRepo = response.data.node?.owner?.repositories?.nodes.first {
-            let owner = firstRepo.owner?.login ?? orgLogin
-            return (owner, firstRepo.name)
         }
 
         return nil

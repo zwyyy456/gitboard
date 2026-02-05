@@ -27,16 +27,18 @@ struct GitBoardApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("GitBoard", id: "kanban-board") {
+        Window("", id: "kanban-board") {
             KanbanBoardView(store: store)
+                .background(KanbanWindowBackground())
                 .onAppear {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         NSApp.activate(ignoringOtherApps: true)
                     }
                 }
         }
-        .defaultSize(width: 1200, height: 750)
+        .defaultSize(width: 1000, height: 700)
         .windowResizability(.contentMinSize)
+        .windowStyle(.hiddenTitleBar)
 
         Window("Settings", id: "settings") {
             SettingsView()
@@ -74,4 +76,22 @@ struct MenuBarWindowFinder: NSViewRepresentable {
             }
         }
     }
+}
+
+// Helper to make window titlebar seamless with content
+struct KanbanWindowBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            if let window = view.window {
+                window.titlebarAppearsTransparent = true
+                window.titleVisibility = .hidden
+                window.backgroundColor = NSColor(red: 0x1a/255, green: 0x1a/255, blue: 0x1a/255, alpha: 1)
+                window.isMovableByWindowBackground = true
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

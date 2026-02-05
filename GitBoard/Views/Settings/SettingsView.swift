@@ -4,17 +4,21 @@ import Sparkle
 #endif
 
 struct SettingsView: View {
+    @State private var selectedTab = 1  // Default to About tab
+
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             GeneralSettingsView()
                 .tabItem {
                     Label("General", systemImage: "gear")
                 }
+                .tag(0)
 
             AboutView()
                 .tabItem {
                     Label("About", systemImage: "info.circle")
                 }
+                .tag(1)
         }
         .frame(width: 400, height: 350)
     }
@@ -49,6 +53,7 @@ struct GeneralSettingsView: View {
             }
 
             Section {
+                KeyboardShortcutRow(keys: ["⌘", "R"], description: "Refresh")
                 KeyboardShortcutRow(keys: ["⌘", "←"], description: "Previous status tab")
                 KeyboardShortcutRow(keys: ["⌘", "→"], description: "Next status tab")
                 KeyboardShortcutRow(keys: [">"], description: "Enter quick create mode")
@@ -99,9 +104,7 @@ struct AboutView: View {
     private let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
 
     var body: some View {
-        VStack(spacing: 16) {
-            Spacer()
-
+        VStack(spacing: 12) {
             Image(systemName: "rectangle.split.3x1")
                 .font(.system(size: 48))
                 .foregroundStyle(.blue)
@@ -118,58 +121,47 @@ struct AboutView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            Text("This project is not affiliated with GitHub, Inc.")
+            Text("Not affiliated with GitHub, Inc.")
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
 
+            HStack(spacing: 16) {
+                Link(destination: URL(string: "https://yogesh.co?utm_source=gitboard")!) {
+                    Text("yogesh.co")
+                        .font(.system(size: 12))
+                }
+                .onHover { hovering in
+                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
+
+                Link(destination: URL(string: "https://www.supalytics.co?utm_source=gitboard")!) {
+                    Text("supalytics.co")
+                        .font(.system(size: 12))
+                }
+                .onHover { hovering in
+                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
+
+                Link(destination: URL(string: "https://x.com/yogesharc")!) {
+                    Text("@yogesharc")
+                        .font(.system(size: 12))
+                }
+                .onHover { hovering in
+                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
+            }
+            .foregroundStyle(.blue)
+            .padding(.top, 8)
+
             Spacer()
 
-            Divider()
-                .padding(.horizontal, 40)
-
-            VStack(spacing: 12) {
-                Text("Created by Yogesh")
-                    .font(.system(size: 12, weight: .medium))
-
-                HStack(spacing: 20) {
-                    Link(destination: URL(string: "https://yogesh.co?utm_source=gitboard")!) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "globe")
-                                .font(.system(size: 11))
-                            Text("yogesh.co")
-                                .font(.system(size: 12))
-                        }
-                    }
-
-                    Link(destination: URL(string: "https://x.com/yogesharc")!) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "at")
-                                .font(.system(size: 11))
-                            Text("yogesharc")
-                                .font(.system(size: 12))
-                        }
-                    }
-                }
-                .foregroundStyle(.blue)
-
-                Link(destination: URL(string: "https://buymeacoffee.com/yogesh?utm_source=gitboard")!) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "cup.and.saucer.fill")
-                            .font(.system(size: 12))
-                        Text("Buy me a coffee")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.orange)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
-                .padding(.top, 8)
-            }
-            .padding(.bottom, 20)
+            Text("© 2025 Yogesh · MIT License")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 16)
         }
+        .padding(.top, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
