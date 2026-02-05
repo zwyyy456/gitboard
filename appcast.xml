@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>GitBoard Updates</title>
+        <link>https://yogesh.co/gitboard/appcast.xml</link>
+        <description>Most recent changes with links to updates.</description>
+        <language>en</language>
+
+        <!-- Latest version should be at the top -->
+        <item>
+            <title>Version 1.0.0</title>
+            <description><![CDATA[
+                <h2>Initial Release</h2>
+                <ul>
+                    <li>Menu bar integration with quick popover</li>
+                    <li>Full Kanban board window with drag & drop</li>
+                    <li>GitHub Projects V2 integration via gh CLI</li>
+                    <li>Status change notifications</li>
+                    <li>Search by title, issue number, or assignee</li>
+                    <li>@me shortcut for your assigned items</li>
+                </ul>
+            ]]></description>
+            <pubDate>Thu, 06 Feb 2025 12:00:00 +0000</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://yogesh.co/gitboard/GitBoard-1.0.0.dmg"
+                sparkle:edSignature="SIGNATURE_PLACEHOLDER"
+                length="0"
+                type="application/octet-stream"/>
+        </item>
+
+    </channel>
+</rss>
