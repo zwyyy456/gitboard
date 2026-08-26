@@ -12,6 +12,48 @@ struct ProjectOwner: Identifiable, Codable, Hashable {
     let kind: ProjectOwnerKind
 }
 
+enum ProjectFieldKind: String, Codable, Hashable {
+    case singleSelect
+    case iteration
+    case date
+    case number
+    case text
+    case unsupported
+}
+
+struct ProjectFieldOption: Identifiable, Codable, Hashable {
+    let id: String
+    let name: String
+    let color: String?
+}
+
+struct ProjectIteration: Identifiable, Codable, Hashable {
+    let id: String
+    let title: String
+    let startDate: String
+    let duration: Int
+}
+
+struct ProjectField: Identifiable, Codable, Hashable {
+    let id: String
+    let name: String
+    let kind: ProjectFieldKind
+    let options: [ProjectFieldOption]
+    let iterations: [ProjectIteration]
+
+    var isEditable: Bool {
+        kind != .unsupported
+    }
+}
+
+enum ProjectFieldValue: Codable, Hashable {
+    case singleSelect(optionId: String, name: String)
+    case iteration(id: String, title: String)
+    case date(String)
+    case number(Double)
+    case text(String)
+}
+
 struct Project: Identifiable, Codable, Hashable {
     let id: String
     let owner: ProjectOwner
@@ -19,6 +61,7 @@ struct Project: Identifiable, Codable, Hashable {
     let number: Int
     let url: String
     let viewerCanUpdate: Bool
+    var fields: [ProjectField]
     var statusField: StatusField?
     var items: [ProjectItem]
 
@@ -29,6 +72,7 @@ struct Project: Identifiable, Codable, Hashable {
         number: Int,
         url: String,
         viewerCanUpdate: Bool,
+        fields: [ProjectField] = [],
         statusField: StatusField? = nil,
         items: [ProjectItem] = []
     ) {
@@ -38,6 +82,7 @@ struct Project: Identifiable, Codable, Hashable {
         self.number = number
         self.url = url
         self.viewerCanUpdate = viewerCanUpdate
+        self.fields = fields
         self.statusField = statusField
         self.items = items
     }

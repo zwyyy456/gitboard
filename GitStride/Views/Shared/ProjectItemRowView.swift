@@ -1,5 +1,32 @@
 import SwiftUI
 
+struct OperationErrorBanner: View {
+    @Bindable var store: ProjectStore
+
+    var body: some View {
+        if let message = store.operationErrorMessage {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text(message)
+                    .font(.caption)
+                    .textSelection(.enabled)
+                Spacer()
+                Button {
+                    store.clearOperationError()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Dismiss error")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.orange.opacity(0.12))
+        }
+    }
+}
+
 // This file is kept for compatibility but ItemRowView in MenuBarPopoverView is the primary implementation
 struct ProjectItemRowView: View {
     let item: ProjectItem

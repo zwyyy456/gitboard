@@ -34,6 +34,12 @@ struct LinkedPR: Codable, Hashable {
     let closed: Bool
 }
 
+struct IssueLabel: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let color: String
+}
+
 struct ProjectItem: Identifiable, Codable, Hashable {
     let id: String
     let contentId: String?
@@ -46,9 +52,11 @@ struct ProjectItem: Identifiable, Codable, Hashable {
     let status: String?
     let statusOptionId: String?
     let assignees: [Assignee]
+    let labels: [IssueLabel]
+    let fieldValues: [String: ProjectFieldValue]
     let linkedPR: LinkedPR?
 
-    init(id: String, contentId: String?, contentType: ItemContentType, title: String, number: Int?, url: String?, issueState: IssueState?, prState: PullRequestState?, status: String?, statusOptionId: String?, assignees: [Assignee], linkedPR: LinkedPR? = nil) {
+    init(id: String, contentId: String?, contentType: ItemContentType, title: String, number: Int?, url: String?, issueState: IssueState?, prState: PullRequestState?, status: String?, statusOptionId: String?, assignees: [Assignee], labels: [IssueLabel] = [], fieldValues: [String: ProjectFieldValue] = [:], linkedPR: LinkedPR? = nil) {
         self.id = id
         self.contentId = contentId
         self.contentType = contentType
@@ -60,6 +68,8 @@ struct ProjectItem: Identifiable, Codable, Hashable {
         self.status = status
         self.statusOptionId = statusOptionId
         self.assignees = assignees
+        self.labels = labels
+        self.fieldValues = fieldValues
         self.linkedPR = linkedPR
     }
 

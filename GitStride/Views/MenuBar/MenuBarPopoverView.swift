@@ -17,6 +17,8 @@ struct MenuBarPopoverView: View {
         VStack(alignment: .leading, spacing: 0) {
             headerView
 
+            OperationErrorBanner(store: store)
+
             if store.isLoading && store.projects.isEmpty {
                 loadingView
             } else if let error = store.error {
@@ -569,6 +571,7 @@ struct ItemRow: View {
     let project: Project
 
     @State private var isHovered = false
+    @State private var showsInspector = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -620,11 +623,18 @@ struct ItemRow: View {
             }
         }
         .onTapGesture {
-            if let urlString = item.url, let url = URL(string: urlString) {
-                NSWorkspace.shared.open(url)
-            }
+            showsInspector = true
+        }
+        .sheet(isPresented: $showsInspector) {
+            ItemInspectorView(store: store, itemID: item.id)
         }
         .contextMenu {
+            Button {
+                showsInspector = true
+            } label: {
+                Label("Show Details", systemImage: "sidebar.right")
+            }
+
             Button {
                 if let urlString = item.url, let url = URL(string: urlString) {
                     NSWorkspace.shared.open(url)
@@ -672,6 +682,14 @@ struct ItemRow: View {
                     } label: {
                         Label("Assignees (\(item.assignees.count))", systemImage: "person.2")
                     }
+                }
+
+                Divider()
+
+                Button {
+                    Task { _ = await store.archiveItem(item) }
+                } label: {
+                    Label("Archive from Project", systemImage: "archivebox")
                 }
             }
         }

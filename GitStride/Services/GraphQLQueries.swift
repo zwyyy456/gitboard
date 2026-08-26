@@ -84,13 +84,31 @@ enum GraphQLQueries {
                     viewerCanUpdate
                     fields(first: 100, after: $after) {
                         nodes {
+                            ... on ProjectV2Field {
+                                id
+                                name
+                                dataType
+                                isIssueField
+                            }
                             ... on ProjectV2SingleSelectField {
                                 id
                                 name
+                                dataType
+                                isIssueField
                                 options {
                                     id
                                     name
                                     color
+                                }
+                            }
+                            ... on ProjectV2IterationField {
+                                id
+                                name
+                                dataType
+                                isIssueField
+                                configuration {
+                                    iterations { id title startDate duration }
+                                    completedIterations { id title startDate duration }
                                 }
                             }
                         }
@@ -119,12 +137,15 @@ enum GraphQLQueries {
                                     number
                                     url
                                     state
-                                    assignees(first: 5) {
+                                    assignees(first: 100) {
                                         nodes {
                                             login
                                             avatarUrl
                                             name
                                         }
+                                    }
+                                    labels(first: 100) {
+                                        nodes { id name color }
                                     }
                                     closedByPullRequestsReferences(first: 1) {
                                         nodes {
@@ -143,19 +164,22 @@ enum GraphQLQueries {
                                     number
                                     url
                                     state
-                                    assignees(first: 5) {
+                                    assignees(first: 100) {
                                         nodes {
                                             login
                                             avatarUrl
                                             name
                                         }
                                     }
+                                    labels(first: 100) {
+                                        nodes { id name color }
+                                    }
                                 }
                                 ... on DraftIssue {
                                     __typename
                                     id
                                     title
-                                    assignees(first: 5) {
+                                    assignees(first: 100) {
                                         nodes {
                                             login
                                             avatarUrl
@@ -168,6 +192,37 @@ enum GraphQLQueries {
                                 ... on ProjectV2ItemFieldSingleSelectValue {
                                     name
                                     optionId
+                                }
+                            }
+                            fieldValues(first: 100) {
+                                nodes {
+                                    ... on ProjectV2ItemFieldSingleSelectValue {
+                                        __typename
+                                        name
+                                        optionId
+                                        field { ... on ProjectV2SingleSelectField { id } }
+                                    }
+                                    ... on ProjectV2ItemFieldIterationValue {
+                                        __typename
+                                        title
+                                        iterationId
+                                        field { ... on ProjectV2IterationField { id } }
+                                    }
+                                    ... on ProjectV2ItemFieldDateValue {
+                                        __typename
+                                        date
+                                        field { ... on ProjectV2Field { id } }
+                                    }
+                                    ... on ProjectV2ItemFieldNumberValue {
+                                        __typename
+                                        number
+                                        field { ... on ProjectV2Field { id } }
+                                    }
+                                    ... on ProjectV2ItemFieldTextValue {
+                                        __typename
+                                        text
+                                        field { ... on ProjectV2Field { id } }
+                                    }
                                 }
                             }
                         }
@@ -194,6 +249,68 @@ enum GraphQLQueries {
                 projectV2Item {
                     id
                 }
+            }
+        }
+        """
+
+    static let updateIterationField = """
+        mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $iterationId: String!) {
+            updateProjectV2ItemFieldValue(input: {
+                projectId: $projectId
+                itemId: $itemId
+                fieldId: $fieldId
+                value: { iterationId: $iterationId }
+            }) { projectV2Item { id } }
+        }
+        """
+
+    static let updateDateField = """
+        mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $date: Date!) {
+            updateProjectV2ItemFieldValue(input: {
+                projectId: $projectId
+                itemId: $itemId
+                fieldId: $fieldId
+                value: { date: $date }
+            }) { projectV2Item { id } }
+        }
+        """
+
+    static let updateNumberField = """
+        mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $number: Float!) {
+            updateProjectV2ItemFieldValue(input: {
+                projectId: $projectId
+                itemId: $itemId
+                fieldId: $fieldId
+                value: { number: $number }
+            }) { projectV2Item { id } }
+        }
+        """
+
+    static let updateTextField = """
+        mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $text: String!) {
+            updateProjectV2ItemFieldValue(input: {
+                projectId: $projectId
+                itemId: $itemId
+                fieldId: $fieldId
+                value: { text: $text }
+            }) { projectV2Item { id } }
+        }
+        """
+
+    static let clearItemField = """
+        mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) {
+            clearProjectV2ItemFieldValue(input: {
+                projectId: $projectId
+                itemId: $itemId
+                fieldId: $fieldId
+            }) { projectV2Item { id } }
+        }
+        """
+
+    static let archiveItem = """
+        mutation($projectId: ID!, $itemId: ID!) {
+            archiveProjectV2Item(input: { projectId: $projectId, itemId: $itemId }) {
+                item { id }
             }
         }
         """
