@@ -7,8 +7,7 @@ struct MenuBarPopoverView: View {
     @State private var isRefreshing = false
     @State private var searchText = ""
     @State private var keyMonitor: Any?
-    @State private var isCreating = false
-    @State private var isCreateMode = false
+    @State private var showsAddItem = false
 
     private var canEditSelectedProject: Bool {
         store.selectedProject?.viewerCanUpdate == true
@@ -30,6 +29,9 @@ struct MenuBarPopoverView: View {
         }
         .frame(width: 400)
         .background(Color.black)
+        .sheet(isPresented: $showsAddItem) {
+            AddProjectItemView(store: store)
+        }
         .task {
             if store.projects.isEmpty {
                 await store.loadProjects()
@@ -95,6 +97,12 @@ struct MenuBarPopoverView: View {
                 .frame(maxWidth: 200, alignment: .leading)
 
             Spacer()
+
+            if canEditSelectedProject {
+                HeaderButton(icon: "plus", help: "Create or Add Item") {
+                    showsAddItem = true
+                }
+            }
 
             // Coffee button
             Button {
@@ -314,69 +322,30 @@ struct MenuBarPopoverView: View {
         .padding(.top, 4)
     }
 
-    private var parsedCreateInput: ProjectStore.QuickCreateInput? {
-        guard isCreateMode, !searchText.isEmpty else { return nil }
-        // In create mode, parse without the > prefix
-        return store.parseQuickCreateInput(">" + searchText)
-    }
-
     private var searchBar: some View {
         HStack(spacing: 8) {
-            if isCreateMode {
-                Text(">")
-                    .font(.system(size: 14, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.green)
-            } else {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-            }
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundStyle(.tertiary)
 
             TextField(
-                isCreateMode
-                    ? "Title #label @assignee"
-                    : canEditSelectedProject
-                        ? "Search, #number, @me · Type > to create"
-                        : "Search, #number, @me",
+                canEditSelectedProject
+                    ? "Search, #number, @me · Type > to add"
+                    : "Search, #number, @me",
                 text: $searchText
             )
             .textFieldStyle(.plain)
             .font(.system(size: 13))
             .onChange(of: searchText) { oldValue, newValue in
-                // Enter create mode when user types >
-                if canEditSelectedProject && !isCreateMode && newValue == ">" {
-                    isCreateMode = true
+                if canEditSelectedProject && newValue == ">" {
                     searchText = ""
+                    showsAddItem = true
                 }
-            }
-            .onSubmit {
-                if isCreateMode, let input = parsedCreateInput {
-                    Task {
-                        isCreating = true
-                        await store.quickCreate(input)
-                        searchText = ""
-                        isCreateMode = false
-                        isCreating = false
-                    }
-                }
-            }
-            .onKeyPress(.escape) {
-                if isCreateMode {
-                    isCreateMode = false
-                    searchText = ""
-                    return .handled
-                }
-                return .ignored
             }
 
-            if isCreating {
-                ProgressView()
-                    .scaleEffect(0.6)
-                    .frame(width: 16, height: 16)
-            } else if isCreateMode || !searchText.isEmpty {
+            if !searchText.isEmpty {
                 Button {
                     searchText = ""
-                    isCreateMode = false
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 12))
@@ -387,12 +356,8 @@ struct MenuBarPopoverView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(isCreateMode ? Color.green.opacity(0.08) : Color(nsColor: .controlBackgroundColor))
+        .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(isCreateMode ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1)
-        )
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
     }
@@ -400,8 +365,6 @@ struct MenuBarPopoverView: View {
     private var searchedItems: [ProjectItem] {
         let items = store.filteredItems
 
-        // In create mode, don't show items - show format help instead
-        guard !isCreateMode else { return [] }
         guard !searchText.isEmpty else { return items }
 
         let query = searchText.lowercased().trimmingCharacters(in: .whitespaces)
@@ -441,9 +404,7 @@ struct MenuBarPopoverView: View {
     private var itemsList: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                if isCreateMode {
-                    createModeView
-                } else if searchedItems.isEmpty {
+                if searchedItems.isEmpty {
                     emptyFilterView
                 } else {
                     ForEach(searchedItems) { item in
@@ -454,27 +415,6 @@ struct MenuBarPopoverView: View {
         }
         .scrollIndicators(.never)
         .frame(height: 360)
-    }
-
-    private var createModeView: some View {
-        VStack(spacing: 8) {
-            Spacer()
-            if parsedCreateInput != nil {
-                Text("Press Enter to create")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-            } else {
-                Text("Type issue title")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-            }
-            Text("Esc to cancel")
-                .font(.system(size: 11))
-                .foregroundStyle(.quaternary)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 340)
     }
 
     private var emptyFilterView: some View {

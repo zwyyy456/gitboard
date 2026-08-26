@@ -271,30 +271,25 @@ enum GraphQLQueries {
         }
         """
 
-    static let getProjectOwnerAndRepo = """
-        query($id: ID!) {
-            node(id: $id) {
-                ... on ProjectV2 {
-                    owner {
-                        ... on Organization {
-                            login
-                            repositories(first: 1, orderBy: {field: UPDATED_AT, direction: DESC}) {
-                                nodes {
-                                    name
-                                    owner {
-                                        login
-                                    }
-                                }
-                            }
-                        }
-                        ... on User {
-                            login
-                            repositories(first: 1, orderBy: {field: UPDATED_AT, direction: DESC}) {
-                                nodes {
-                                    name
-                                }
-                            }
-                        }
+    static let searchItems = """
+        query($searchQuery: String!) {
+            search(query: $searchQuery, type: ISSUE, first: 20) {
+                nodes {
+                    ... on Issue {
+                        __typename
+                        id
+                        title
+                        number
+                        url
+                        repository { nameWithOwner }
+                    }
+                    ... on PullRequest {
+                        __typename
+                        id
+                        title
+                        number
+                        url
+                        repository { nameWithOwner }
                     }
                 }
             }

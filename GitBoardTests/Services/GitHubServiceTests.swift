@@ -70,6 +70,33 @@ struct GitHubServiceTests {
 
         #expect(state == .missingProjectScope)
     }
+
+    @Test func createdIssueIsExplicitlyAddedToProject() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [
+            "https://github.com/acme/widgets/issues/42\n",
+            "ISSUE_NODE_42\n",
+            """
+            {"data":{"addProjectV2ItemById":{"item":{"id":"PROJECT_ITEM_42"}}}}
+            """
+        ])
+        let service = GitHubService(runner: runner)
+
+        try await service.createIssueAndAdd(
+            projectId: "PROJECT_1",
+            repository: "acme/widgets",
+            title: "Repair login",
+            labels: ["bug"],
+            assignees: ["octocat"]
+        )
+        let calls = await runner.recordedArguments()
+
+        #expect(calls.count == 3)
+        #expect(calls[0].contains("acme/widgets"))
+        #expect(calls[0].contains("Repair login"))
+        #expect(calls[1].contains("repos/acme/widgets/issues/42"))
+        #expect(calls[2].contains("contentId=ISSUE_NODE_42"))
+        #expect(calls[2].contains("projectId=PROJECT_1"))
+    }
 }
 
 private actor FixtureGitHubCommandRunner: GitHubCommandRunning {

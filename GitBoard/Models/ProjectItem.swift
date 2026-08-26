@@ -70,4 +70,23 @@ struct ProjectItem: Identifiable, Codable, Hashable {
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
+
+    var repositoryName: String? {
+        guard let url,
+              let components = URLComponents(string: url),
+              components.host?.lowercased() == "github.com" else { return nil }
+        let path = components.path.split(separator: "/")
+        guard path.count >= 4,
+              path[2] == "issues" || path[2] == "pull" else { return nil }
+        return "\(path[0])/\(path[1])"
+    }
+}
+
+struct GitHubItemCandidate: Identifiable, Hashable {
+    let id: String
+    let contentType: ItemContentType
+    let title: String
+    let number: Int
+    let url: String
+    let repository: String
 }

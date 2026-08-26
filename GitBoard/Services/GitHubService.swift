@@ -6,6 +6,9 @@ enum GitHubError: Error, LocalizedError, Equatable {
     case missingProjectScope
     case organizationAccess(String)
     case rateLimited(String?)
+    case invalidRepository
+    case invalidItemURL
+    case issueCreatedButNotAdded(String?)
     case graphQLError(String)
     case decodingError(String)
     case processError(String)
@@ -25,6 +28,15 @@ enum GitHubError: Error, LocalizedError, Equatable {
                 return "GitHub rate limit reached. Try again \(resetDescription)."
             }
             return "GitHub rate limit reached. Try again later."
+        case .invalidRepository:
+            return "Enter a repository as owner/name."
+        case .invalidItemURL:
+            return "Enter a GitHub issue or pull request URL."
+        case .issueCreatedButNotAdded(let url):
+            if let url {
+                return "The issue was created at \(url), but GitHub could not add it to this project. You can paste the URL into Add Existing to retry."
+            }
+            return "The issue was created, but GitHub did not return its URL, so GitBoard could not add it to this project."
         case .graphQLError(let message):
             return "GitHub API error: \(message)"
         case .decodingError(let message):
@@ -255,16 +267,19 @@ actor GitHubService {
         return payload.addProjectV2DraftIssue.projectItem.id
     }
 
-    func createIssue(
-        owner: String,
-        repo: String,
+    func createIssueAndAdd(
+        projectId: String,
+        repository: String,
         title: String,
         labels: [String] = [],
         assignees: [String] = []
     ) async throws {
+        guard let repository = parseRepository(repository) else {
+            throw GitHubError.invalidRepository
+        }
         var arguments = [
             "issue", "create",
-            "--repo", "\(owner)/\(repo)",
+            "--repo", repository,
             "--title", title,
             "--body", ""
         ]
@@ -275,18 +290,78 @@ actor GitHubService {
         if assignees.isEmpty == false {
             arguments += ["--assignee", assignees.joined(separator: ",")]
         }
-        _ = try await run(arguments)
+        let result = try await run(arguments)
+        let output = String(decoding: result.standardOutput, as: UTF8.self)
+        let issueURL = output
+            .split(whereSeparator: \Character.isWhitespace)
+            .map(String.init)
+            .first(where: { parseIssueURL($0) != nil })
+
+        guard let issueURL else {
+            throw GitHubError.issueCreatedButNotAdded(nil)
+        }
+
+        do {
+            try await addExistingItem(projectId: projectId, url: issueURL)
+        } catch {
+            throw GitHubError.issueCreatedButNotAdded(issueURL)
+        }
     }
 
-    func getProjectRepository(projectId: String) async throws -> (owner: String, repo: String)? {
-        let items = try await fetchProjectItemNodes(projectID: projectId)
-        for item in items {
-            if let url = item.content?.url,
-               let components = parseIssueURL(url) {
-                return (components.owner, components.repository)
+    func searchItems(query: String) async throws -> [GitHubItemCandidate] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.isEmpty == false else { return [] }
+
+        let payload: ItemSearchPayload = try await request(
+            GraphQLQueries.searchItems,
+            variables: ["searchQuery": query],
+            as: ItemSearchPayload.self
+        )
+        return payload.search.nodes.compactMap { node in
+            let contentType: ItemContentType
+            switch node.typename {
+            case "Issue": contentType = .issue
+            case "PullRequest": contentType = .pullRequest
+            default: return nil
             }
+            return GitHubItemCandidate(
+                id: node.id,
+                contentType: contentType,
+                title: node.title,
+                number: node.number,
+                url: node.url,
+                repository: node.repository.nameWithOwner
+            )
         }
-        return nil
+    }
+
+    func addExistingItem(projectId: String, url: String) async throws {
+        guard let item = parseIssueURL(url) else {
+            throw GitHubError.invalidItemURL
+        }
+        let result = try await run([
+            "api",
+            "repos/\(item.owner)/\(item.repository)/issues/\(item.number)",
+            "--jq", ".node_id"
+        ])
+        let contentId = String(decoding: result.standardOutput, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard contentId.isEmpty == false else {
+            throw GitHubError.decodingError("GitHub returned no item identifier.")
+        }
+        try await addExistingItem(projectId: projectId, contentId: contentId)
+    }
+
+    func addExistingItem(projectId: String, candidate: GitHubItemCandidate) async throws {
+        try await addExistingItem(projectId: projectId, contentId: candidate.id)
+    }
+
+    private func addExistingItem(projectId: String, contentId: String) async throws {
+        let _: EmptyPayload = try await request(
+            GraphQLQueries.addItemToProject,
+            variables: ["projectId": projectId, "contentId": contentId],
+            as: EmptyPayload.self
+        )
     }
 
     private func fetchProjectFields(projectID: String) async throws -> ProjectFieldsResult {
@@ -475,18 +550,22 @@ actor GitHubService {
         cursor.map { ["after": $0] } ?? [:]
     }
 
-    private func parseIssueURL(_ url: String) -> (owner: String, repository: String, number: Int)? {
-        let pattern = #"github\.com/([^/]+)/([^/]+)/(issues|pull)/(\d+)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)),
-              match.numberOfRanges == 5,
-              let ownerRange = Range(match.range(at: 1), in: url),
-              let repositoryRange = Range(match.range(at: 2), in: url),
-              let numberRange = Range(match.range(at: 4), in: url),
-              let number = Int(url[numberRange]) else {
-            return nil
-        }
-        return (String(url[ownerRange]), String(url[repositoryRange]), number)
+    private func parseRepository(_ value: String) -> String? {
+        let parts = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts.allSatisfy({ $0.isEmpty == false }) else { return nil }
+        return parts.joined(separator: "/")
+    }
+
+    private func parseIssueURL(_ value: String) -> (owner: String, repository: String, number: Int)? {
+        guard let url = URLComponents(string: value),
+              url.scheme?.lowercased() == "https",
+              url.host?.lowercased() == "github.com" else { return nil }
+        let path = url.path.split(separator: "/")
+        guard path.count == 4,
+              path[2] == "issues" || path[2] == "pull",
+              let number = Int(path[3]) else { return nil }
+        return (String(path[0]), String(path[1]), number)
     }
 }
 
@@ -674,6 +753,32 @@ private struct UserSearchPayload: Decodable {
         let login: String?
         let avatarUrl: String?
         let name: String?
+    }
+}
+
+private struct ItemSearchPayload: Decodable {
+    let search: SearchConnection
+
+    struct SearchConnection: Decodable {
+        let nodes: [ItemNode]
+    }
+
+    struct ItemNode: Decodable {
+        let typename: String
+        let id: String
+        let title: String
+        let number: Int
+        let url: String
+        let repository: Repository
+
+        enum CodingKeys: String, CodingKey {
+            case typename = "__typename"
+            case id, title, number, url, repository
+        }
+    }
+
+    struct Repository: Decodable {
+        let nameWithOwner: String
     }
 }
 
