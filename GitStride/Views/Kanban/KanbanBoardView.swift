@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct KanbanBoardView: View {
     @Bindable var store: ProjectStore
     @Bindable var myWorkStore: MyWorkStore
+    let toggleFollowing: (Project) async -> Void
     @State private var refreshRotation: Double = 0
     @State private var isRefreshing = false
     @State private var searchText = ""
@@ -134,7 +135,7 @@ struct KanbanBoardView: View {
 
             if let project = store.selectedProject {
                 Button {
-                    Task { await myWorkStore.toggleFollowing(project) }
+                    Task { await toggleFollowing(project) }
                 } label: {
                     Image(systemName: myWorkStore.isFollowing(project.id) ? "star.fill" : "star")
                 }

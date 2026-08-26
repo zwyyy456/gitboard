@@ -49,7 +49,8 @@ struct MainWorkspaceView: View {
             case .project:
                 KanbanBoardView(
                     store: model.projectStore,
-                    myWorkStore: model.myWorkStore
+                    myWorkStore: model.myWorkStore,
+                    toggleFollowing: { await model.toggleFollowing($0) }
                 )
             case .myWork(let filter):
                 MyWorkView(
@@ -64,13 +65,13 @@ struct MainWorkspaceView: View {
             if model.projectStore.projects.isEmpty {
                 await model.projectStore.loadProjects()
             }
-            model.myWorkStore.activate(accountLogin: model.projectStore.currentUserLogin)
+            await model.activateMyWork(accountLogin: model.projectStore.currentUserLogin)
             if model.myWorkStore.followedProjects.isEmpty == false {
                 await model.myWorkStore.refresh()
             }
         }
         .onChange(of: model.projectStore.currentUserLogin) { _, login in
-            model.myWorkStore.activate(accountLogin: login)
+            Task { await model.activateMyWork(accountLogin: login) }
         }
     }
 }

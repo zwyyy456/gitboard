@@ -131,6 +131,30 @@ final class MyWorkStore {
         }
     }
 
+    func moveItemToDone(
+        projectID: String,
+        itemID: String,
+        fieldID: String,
+        optionID: String
+    ) async -> Bool {
+        errorMessage = nil
+        do {
+            try await gitHubService.updateItemStatus(
+                projectId: projectID,
+                itemId: itemID,
+                fieldId: fieldID,
+                optionId: optionID
+            )
+            await reload(projectID: projectID)
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     func setFilterVisible(_ filter: MyWorkFilter, visible: Bool) {
         if visible {
             guard filters.contains(filter) == false else { return }
