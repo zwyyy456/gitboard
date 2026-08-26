@@ -48,11 +48,14 @@ struct ProjectSelectorView: View {
             .disabled(store.projects.isEmpty || store.isLoading)
 
             if store.selectedProject?.viewerCanUpdate == false {
-                Image(systemName: "lock.fill")
+                let label = store.isShowingCachedData
+                    ? "Cached data — refreshing from GitHub"
+                    : "Read-only project"
+                Image(systemName: store.isShowingCachedData ? "internaldrive" : "lock.fill")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .help("Read-only project")
-                    .accessibilityLabel("Read-only project")
+                    .help(label)
+                    .accessibilityLabel(label)
             }
         }
         .font(.callout.bold())
