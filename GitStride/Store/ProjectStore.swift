@@ -30,13 +30,17 @@ final class ProjectStore {
     var operationErrorMessage: String?
     var lastUpdated: Date?
     var currentUserLogin: String?
+    var isShowingCachedData = false
 
     private var pollingTask: Task<Void, Never>?
     private var catalogGeneration = 0
     private var projectGeneration = 0
+    private var didRestoreCache = false
+    private var cachedAccountLogin: String?
 
     private let notificationService = NotificationService.shared
     private let gitHubService = GitHubService.shared
+    private let projectCache = ProjectCache()
 
     var selectedProject: Project? {
         guard let id = selectedProjectId else { return nil }
@@ -68,6 +72,7 @@ final class ProjectStore {
     }
 
     func loadProjects() async {
+        await restoreCacheIfNeeded()
         catalogGeneration += 1
         let generation = catalogGeneration
         isLoading = true
@@ -80,8 +85,22 @@ final class ProjectStore {
 
         guard case .ready(let account) = session else {
             isLoading = false
-            error = sessionError(for: session)
+            if isShowingCachedData {
+                error = nil
+                operationErrorMessage = cachedDataMessage(for: session)
+            } else {
+                error = sessionError(for: session)
+            }
             return
+        }
+
+        if let cachedAccountLogin, cachedAccountLogin != account.login {
+            owners = []
+            projects = []
+            selectedOwnerId = nil
+            selectedProjectId = nil
+            selectedStatusFilter = nil
+            isShowingCachedData = false
         }
         currentUserLogin = account.login
 
@@ -126,11 +145,18 @@ final class ProjectStore {
             }
 
             lastUpdated = Date()
+            isShowingCachedData = false
+            operationErrorMessage = nil
+            await persistCache()
         } catch is CancellationError {
             return
         } catch {
             guard generation == projectGeneration, selectedProjectId == id else { return }
-            self.error = error
+            if isShowingCachedData {
+                operationErrorMessage = "Showing cached data because GitHub refresh failed: \(error.localizedDescription)"
+            } else {
+                self.error = error
+            }
         }
     }
 
@@ -211,7 +237,23 @@ final class ProjectStore {
         do {
             let loadedProjects = try await gitHubService.fetchProjects(owner: owner)
             guard generation == catalogGeneration, selectedOwnerId == owner.id else { return }
-            projects = loadedProjects
+            let cachedProjects = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
+            projects = loadedProjects.map { project in
+                guard isShowingCachedData, let cached = cachedProjects[project.id] else {
+                    return project
+                }
+                return Project(
+                    id: project.id,
+                    owner: project.owner,
+                    title: project.title,
+                    number: project.number,
+                    url: project.url,
+                    viewerCanUpdate: false,
+                    fields: cached.fields,
+                    statusField: cached.statusField,
+                    items: cached.items
+                )
+            }
 
             let selectedProject = loadedProjects.first { $0.id == selectedProjectId }
                 ?? loadedProjects.first
@@ -228,11 +270,81 @@ final class ProjectStore {
             return
         } catch {
             guard generation == catalogGeneration else { return }
-            projects = []
-            selectedProjectId = nil
-            self.error = error
+            if isShowingCachedData {
+                self.error = nil
+                operationErrorMessage = "Showing cached data because the project list could not refresh: \(error.localizedDescription)"
+            } else {
+                projects = []
+                selectedProjectId = nil
+                self.error = error
+            }
             isLoading = false
         }
+    }
+
+    private func restoreCacheIfNeeded() async {
+        guard didRestoreCache == false else { return }
+        didRestoreCache = true
+
+        guard let snapshot = try? await projectCache.load(),
+              snapshot.projects.isEmpty == false else { return }
+
+        cachedAccountLogin = snapshot.accountLogin
+        currentUserLogin = snapshot.accountLogin
+        owners = [snapshot.owner]
+        projects = snapshot.projects.map(makeReadOnly)
+        selectedOwnerId = snapshot.owner.id
+        selectedProjectId = snapshot.projects.contains { $0.id == snapshot.selectedProjectId }
+            ? snapshot.selectedProjectId
+            : snapshot.projects.first?.id
+
+        if let selectedStatusFilter = snapshot.selectedStatusFilter,
+           selectedProject?.statusOptions.contains(where: { $0.name == selectedStatusFilter }) == true {
+            self.selectedStatusFilter = selectedStatusFilter
+        } else {
+            self.selectedStatusFilter = nil
+        }
+        lastUpdated = snapshot.savedAt
+        isShowingCachedData = true
+    }
+
+    private func persistCache() async {
+        guard let accountLogin = currentUserLogin,
+              let owner = selectedOwner,
+              projects.isEmpty == false else { return }
+        do {
+            try await projectCache.save(
+                ProjectCacheSnapshot(
+                    accountLogin: accountLogin,
+                    owner: owner,
+                    projects: projects,
+                    selectedProjectId: selectedProjectId,
+                    selectedStatusFilter: selectedStatusFilter
+                )
+            )
+            cachedAccountLogin = accountLogin
+        } catch {
+            operationErrorMessage = "Project loaded, but the local cache could not be updated: \(error.localizedDescription)"
+        }
+    }
+
+    private func makeReadOnly(_ project: Project) -> Project {
+        Project(
+            id: project.id,
+            owner: project.owner,
+            title: project.title,
+            number: project.number,
+            url: project.url,
+            viewerCanUpdate: false,
+            fields: project.fields,
+            statusField: project.statusField,
+            items: project.items
+        )
+    }
+
+    private func cachedDataMessage(for state: GitHubSessionState) -> String {
+        let reason = sessionError(for: state)?.localizedDescription ?? "GitHub is unavailable."
+        return "Showing cached data. \(reason)"
     }
 
     private func sessionError(for state: GitHubSessionState) -> GitHubError? {
@@ -303,6 +415,7 @@ final class ProjectStore {
                 optionId: status.id
             )
             lastUpdated = Date()
+            await persistCache()
         } catch {
             // Revert on error - restore original project
             projects[projectIndex] = originalProject
@@ -331,6 +444,7 @@ final class ProjectStore {
                 projects[projectIndex].items.removeAll { $0.id == item.id }
             }
             lastUpdated = Date()
+            await persistCache()
             return true
         } catch is CancellationError {
             return false
@@ -436,6 +550,7 @@ final class ProjectStore {
         do {
             try await gitHubService.addAssignee(issueUrl: url, userLogin: user.login)
             lastUpdated = Date()
+            await persistCache()
         } catch {
             // Revert on error
             projects[projectIndex] = originalProject
@@ -489,6 +604,7 @@ final class ProjectStore {
         do {
             try await gitHubService.removeAssignee(issueUrl: url, userLogin: user.login)
             lastUpdated = Date()
+            await persistCache()
         } catch {
             // Revert on error
             projects[projectIndex] = originalProject
