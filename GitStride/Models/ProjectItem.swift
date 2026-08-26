@@ -18,6 +18,61 @@ enum PullRequestState: String, Codable {
     case merged = "MERGED"
 }
 
+enum PullRequestMergeability: String, Codable, Hashable {
+    case mergeable = "MERGEABLE"
+    case conflicting = "CONFLICTING"
+    case unknown = "UNKNOWN"
+}
+
+enum PullRequestReviewDecision: String, Codable, Hashable {
+    case approved = "APPROVED"
+    case changesRequested = "CHANGES_REQUESTED"
+    case reviewRequired = "REVIEW_REQUIRED"
+}
+
+enum CheckStatus: String, Codable, Hashable {
+    case error = "ERROR"
+    case expected = "EXPECTED"
+    case failure = "FAILURE"
+    case pending = "PENDING"
+    case success = "SUCCESS"
+}
+
+struct SubIssueProgress: Codable, Hashable {
+    let completed: Int
+    let total: Int
+}
+
+struct EngineeringSignals: Codable, Hashable {
+    var isDraft = false
+    var mergeability: PullRequestMergeability?
+    var reviewDecision: PullRequestReviewDecision?
+    var checkStatus: CheckStatus?
+    var reviewRequestedLogins: [String] = []
+    var subIssueProgress: SubIssueProgress?
+    var blockedByCount = 0
+    var blockingCount = 0
+
+    func reviewRequested(for login: String) -> Bool {
+        reviewRequestedLogins.contains {
+            $0.caseInsensitiveCompare(login) == .orderedSame
+        }
+    }
+
+    var hasFailedChecks: Bool {
+        checkStatus == .failure || checkStatus == .error
+    }
+
+    var isReadyToMerge: Bool {
+        isDraft == false
+            && mergeability == .mergeable
+            && reviewDecision == .approved
+            && checkStatus != .failure
+            && checkStatus != .error
+            && checkStatus != .pending
+    }
+}
+
 struct Assignee: Codable, Identifiable, Hashable {
     let login: String
     let avatarUrl: String
@@ -56,8 +111,9 @@ struct ProjectItem: Identifiable, Codable, Hashable {
     let labels: [IssueLabel]
     let fieldValues: [String: ProjectFieldValue]
     let linkedPR: LinkedPR?
+    let engineeringSignals: EngineeringSignals?
 
-    init(id: String, contentId: String?, contentType: ItemContentType, title: String, number: Int?, url: String?, issueState: IssueState?, prState: PullRequestState?, updatedAt: String? = nil, status: String?, statusOptionId: String?, assignees: [Assignee], labels: [IssueLabel] = [], fieldValues: [String: ProjectFieldValue] = [:], linkedPR: LinkedPR? = nil) {
+    init(id: String, contentId: String?, contentType: ItemContentType, title: String, number: Int?, url: String?, issueState: IssueState?, prState: PullRequestState?, updatedAt: String? = nil, status: String?, statusOptionId: String?, assignees: [Assignee], labels: [IssueLabel] = [], fieldValues: [String: ProjectFieldValue] = [:], linkedPR: LinkedPR? = nil, engineeringSignals: EngineeringSignals? = nil) {
         self.id = id
         self.contentId = contentId
         self.contentType = contentType
@@ -73,6 +129,11 @@ struct ProjectItem: Identifiable, Codable, Hashable {
         self.labels = labels
         self.fieldValues = fieldValues
         self.linkedPR = linkedPR
+        self.engineeringSignals = engineeringSignals
+    }
+
+    var signals: EngineeringSignals {
+        engineeringSignals ?? EngineeringSignals()
     }
 
     static func == (lhs: ProjectItem, rhs: ProjectItem) -> Bool {

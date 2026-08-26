@@ -8,6 +8,10 @@ enum ProjectChangeKind: Hashable, Sendable {
     case overdue
     case blocked
     case unblocked
+    case reviewRequested
+    case reviewRequestRemoved
+    case ciFailed
+    case ciRecovered
 }
 
 struct ProjectChange: Identifiable, Hashable, Sendable {
@@ -59,6 +63,7 @@ struct MonitoringPolicy: Sendable {
 }
 
 enum ProjectMonitorEvent: Sendable {
+    case snapshots([Project])
     case change(ProjectChange)
     case digest([ProjectChange])
     case rateLimited(String?)
@@ -78,6 +83,28 @@ struct MonitoredItemState: Hashable, Sendable {
     let assignedToCurrentUser: Bool
     let dueState: MonitoredDueState
     let isBlocked: Bool
+    let reviewRequested: Bool
+    let checkStatus: CheckStatus?
+
+    init(
+        projectID: String,
+        itemID: String,
+        status: String?,
+        assignedToCurrentUser: Bool,
+        dueState: MonitoredDueState,
+        isBlocked: Bool,
+        reviewRequested: Bool = false,
+        checkStatus: CheckStatus? = nil
+    ) {
+        self.projectID = projectID
+        self.itemID = itemID
+        self.status = status
+        self.assignedToCurrentUser = assignedToCurrentUser
+        self.dueState = dueState
+        self.isBlocked = isBlocked
+        self.reviewRequested = reviewRequested
+        self.checkStatus = checkStatus
+    }
 }
 
 struct ProjectChangeDetector {
@@ -118,7 +145,9 @@ struct ProjectChangeDetector {
                         status: item.status,
                         assignedToCurrentUser: assigned,
                         dueState: dueState,
-                        isBlocked: isBlocked
+                        isBlocked: isBlocked,
+                        reviewRequested: item.signals.reviewRequested(for: currentUserLogin),
+                        checkStatus: item.signals.checkStatus
                     )
                 )
             }
@@ -172,6 +201,18 @@ struct ProjectChangeDetector {
             }
             if previousState.isBlocked != currentState.isBlocked {
                 append(currentState.isBlocked ? .blocked : .unblocked)
+            }
+            if previousState.reviewRequested != currentState.reviewRequested {
+                append(currentState.reviewRequested ? .reviewRequested : .reviewRequestRemoved)
+            }
+            if previousState.checkStatus != currentState.checkStatus {
+                let wasFailure = previousState.checkStatus == .failure || previousState.checkStatus == .error
+                let isFailure = currentState.checkStatus == .failure || currentState.checkStatus == .error
+                if isFailure {
+                    append(.ciFailed)
+                } else if wasFailure {
+                    append(.ciRecovered)
+                }
             }
         }
         return changes

@@ -599,6 +599,8 @@ struct ItemRow: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
+
+                EngineeringSignalsView(item: item, limit: 2)
             }
 
             Spacer()

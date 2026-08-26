@@ -79,6 +79,7 @@ struct ItemInspectorView: View {
                     Text(itemMetadata(item))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    EngineeringSignalsView(item: item, limit: 5)
                 }
             }
 

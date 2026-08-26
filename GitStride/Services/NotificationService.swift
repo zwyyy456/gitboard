@@ -118,6 +118,14 @@ actor NotificationService {
             return "Blocked: \(change.itemTitle)"
         case .unblocked:
             return "Unblocked: \(change.itemTitle)"
+        case .reviewRequested:
+            return "Review requested: \(change.itemTitle)"
+        case .reviewRequestRemoved:
+            return "Review request cleared: \(change.itemTitle)"
+        case .ciFailed:
+            return "CI failed: \(change.itemTitle)"
+        case .ciRecovered:
+            return "CI recovered: \(change.itemTitle)"
         }
     }
 

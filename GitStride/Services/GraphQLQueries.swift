@@ -157,6 +157,12 @@ enum GraphQLQueries {
                                             closed
                                         }
                                     }
+                                    subIssuesSummary {
+                                        completed
+                                        total
+                                    }
+                                    blockedBy(first: 1) { totalCount }
+                                    blocking(first: 1) { totalCount }
                                 }
                                 ... on PullRequest {
                                     __typename
@@ -166,6 +172,17 @@ enum GraphQLQueries {
                                     url
                                     state
                                     updatedAt
+                                    isDraft
+                                    mergeable
+                                    reviewDecision
+                                    reviewRequests(first: 20) {
+                                        nodes {
+                                            requestedReviewer {
+                                                ... on User { login }
+                                            }
+                                        }
+                                    }
+                                    statusCheckRollup { state }
                                     assignees(first: 100) {
                                         nodes {
                                             login

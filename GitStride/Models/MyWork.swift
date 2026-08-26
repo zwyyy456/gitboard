@@ -49,6 +49,9 @@ struct FollowedProject: Identifiable, Codable, Hashable {
 
 enum MyWorkFilter: String, CaseIterable, Codable, Identifiable {
     case assigned = "Assigned to Me"
+    case reviewRequested = "Review Requested"
+    case readyToMerge = "Ready to Merge"
+    case ciFailed = "CI Failed"
     case due = "Due Soon"
     case blocked = "Blocked"
     case recent = "Recently Updated"
@@ -59,6 +62,9 @@ enum MyWorkFilter: String, CaseIterable, Codable, Identifiable {
     var icon: String {
         switch self {
         case .assigned: "person.crop.circle"
+        case .reviewRequested: "person.crop.circle.badge.questionmark"
+        case .readyToMerge: "arrow.triangle.merge"
+        case .ciFailed: "xmark.octagon"
         case .due: "calendar.badge.clock"
         case .blocked: "exclamationmark.octagon"
         case .recent: "clock.arrow.circlepath"
@@ -78,6 +84,13 @@ enum MyWorkFilter: String, CaseIterable, Codable, Identifiable {
             return item.assignees.contains {
                 $0.login.caseInsensitiveCompare(currentUserLogin) == .orderedSame
             } && workItem.isOpen
+        case .reviewRequested:
+            guard let currentUserLogin else { return false }
+            return workItem.isOpen && item.signals.reviewRequested(for: currentUserLogin)
+        case .readyToMerge:
+            return workItem.isOpen && item.signals.isReadyToMerge
+        case .ciFailed:
+            return workItem.isOpen && item.signals.hasFailedChecks
         case .due:
             guard let dueDate = workItem.dueDate else { return false }
             return workItem.isOpen && dueDate <= now.addingTimeInterval(7 * 24 * 60 * 60)

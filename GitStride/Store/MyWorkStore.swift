@@ -91,6 +91,17 @@ final class MyWorkStore {
             .sorted { $0.updatedDate > $1.updatedDate }
     }
 
+    func attentionCount(currentUserLogin: String?) -> Int {
+        let filters: [MyWorkFilter] = [.reviewRequested, .ciFailed, .due]
+        return Set(filters.flatMap {
+            items(for: $0, currentUserLogin: currentUserLogin).map(\.id)
+        }).count
+    }
+
+    func applyMonitoredSnapshots(_ projects: [Project]) {
+        snapshots = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
+    }
+
     func updateField(
         on workItem: MyWorkItem,
         field: ProjectField,
