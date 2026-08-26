@@ -127,11 +127,13 @@ struct GeneralSettingsView: View {
             }
 
             Section {
+                KeyboardShortcutRow(keys: ["⌥", "⌘", "K"], description: "Open Command Palette globally")
+                KeyboardShortcutRow(keys: ["⌘", "K"], description: "Open Command Palette")
+                KeyboardShortcutRow(keys: ["⇧", "⌘", "N"], description: "Quick Add")
                 KeyboardShortcutRow(keys: ["⌘", "R"], description: "Refresh")
                 KeyboardShortcutRow(keys: ["⌘", "←"], description: "Previous status tab")
                 KeyboardShortcutRow(keys: ["⌘", "→"], description: "Next status tab")
-                KeyboardShortcutRow(keys: [">"], description: "Enter quick create mode")
-                KeyboardShortcutRow(keys: ["Esc"], description: "Exit quick create mode")
+                KeyboardShortcutRow(keys: [">"], description: "Open Quick Add from search")
             } header: {
                 Text("Keyboard Shortcuts")
             }

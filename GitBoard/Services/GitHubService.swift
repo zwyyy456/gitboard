@@ -357,7 +357,7 @@ actor GitHubService {
         title: String,
         labels: [String] = [],
         assignees: [String] = []
-    ) async throws {
+    ) async throws -> String {
         guard let repository = parseRepository(repository) else {
             throw GitHubError.invalidRepository
         }
@@ -390,6 +390,7 @@ actor GitHubService {
         } catch {
             throw GitHubError.issueCreatedButNotAdded(issueURL)
         }
+        return issueURL
     }
 
     func searchItems(query: String) async throws -> [GitHubItemCandidate] {
@@ -547,6 +548,20 @@ actor GitHubService {
                 closed: $0.closed
             )
         }
+        let engineeringSignals = EngineeringSignals(
+            isDraft: content.isDraft ?? false,
+            mergeability: content.mergeable.flatMap(PullRequestMergeability.init),
+            reviewDecision: content.reviewDecision.flatMap(PullRequestReviewDecision.init),
+            checkStatus: content.statusCheckRollup?.state.flatMap(CheckStatus.init),
+            reviewRequestedLogins: content.reviewRequests?.nodes.compactMap {
+                $0.requestedReviewer?.login
+            } ?? [],
+            subIssueProgress: content.subIssuesSummary.flatMap {
+                $0.total > 0 ? SubIssueProgress(completed: $0.completed, total: $0.total) : nil
+            },
+            blockedByCount: content.blockedBy?.totalCount ?? 0,
+            blockingCount: content.blocking?.totalCount ?? 0
+        )
 
         return ProjectItem(
             id: node.id,
@@ -563,7 +578,8 @@ actor GitHubService {
             assignees: assignees,
             labels: labels,
             fieldValues: makeFieldValues(node.fieldValues?.nodes ?? []),
-            linkedPR: linkedPullRequest
+            linkedPR: linkedPullRequest,
+            engineeringSignals: engineeringSignals
         )
     }
 
@@ -878,6 +894,14 @@ private struct ItemNode: Decodable {
         let assignees: AssigneesConnection?
         let labels: LabelsConnection?
         let closedByPullRequestsReferences: PullRequestsConnection?
+        let isDraft: Bool?
+        let mergeable: String?
+        let reviewDecision: String?
+        let reviewRequests: ReviewRequestsConnection?
+        let statusCheckRollup: StatusCheckRollup?
+        let subIssuesSummary: SubIssuesSummary?
+        let blockedBy: CountConnection?
+        let blocking: CountConnection?
 
         enum CodingKeys: String, CodingKey {
             case typename = "__typename"
@@ -890,7 +914,34 @@ private struct ItemNode: Decodable {
             case assignees
             case labels
             case closedByPullRequestsReferences
+            case isDraft, mergeable, reviewDecision, reviewRequests, statusCheckRollup
+            case subIssuesSummary, blockedBy, blocking
         }
+    }
+
+    struct ReviewRequestsConnection: Decodable {
+        let nodes: [ReviewRequestNode]
+    }
+
+    struct ReviewRequestNode: Decodable {
+        let requestedReviewer: RequestedReviewer?
+    }
+
+    struct RequestedReviewer: Decodable {
+        let login: String?
+    }
+
+    struct StatusCheckRollup: Decodable {
+        let state: String?
+    }
+
+    struct SubIssuesSummary: Decodable {
+        let completed: Int
+        let total: Int
+    }
+
+    struct CountConnection: Decodable {
+        let totalCount: Int
     }
 
     struct AssigneesConnection: Decodable {

@@ -352,7 +352,8 @@ final class ProjectStore {
             fieldValues: item.fieldValues.merging([
                 fieldId: .singleSelect(optionId: status.id, name: status.name)
             ]) { _, new in new },
-            linkedPR: item.linkedPR
+            linkedPR: item.linkedPR,
+            engineeringSignals: item.engineeringSignals
         )
 
         // Create new items array and replace the entire project to trigger @Observable update
@@ -495,7 +496,8 @@ final class ProjectStore {
             assignees: newAssignees,
             labels: item.labels,
             fieldValues: item.fieldValues,
-            linkedPR: item.linkedPR
+            linkedPR: item.linkedPR,
+            engineeringSignals: item.engineeringSignals
         )
 
         var newItems = projects[projectIndex].items
@@ -550,7 +552,8 @@ final class ProjectStore {
             assignees: newAssignees,
             labels: item.labels,
             fieldValues: item.fieldValues,
-            linkedPR: item.linkedPR
+            linkedPR: item.linkedPR,
+            engineeringSignals: item.engineeringSignals
         )
 
         var newItems = projects[projectIndex].items
@@ -618,13 +621,31 @@ final class ProjectStore {
         repository: String,
         title: String,
         labels: [String],
-        assignees: [String]
+        assignees: [String],
+        status: String? = nil,
+        priority: String? = nil
     ) async -> Bool {
         guard let project = editableSelectedProject() else { return false }
         operationErrorMessage = nil
 
+        let requestedFields = [("Status", status), ("Priority", priority)].compactMap { name, value in
+            value.map { (name, $0) }
+        }
+        var resolvedFields: [(ProjectField, ProjectFieldOption)] = []
+        for (name, value) in requestedFields {
+            guard let field = project.fields.first(where: {
+                $0.kind == .singleSelect && $0.name.caseInsensitiveCompare(name) == .orderedSame
+            }), let option = field.options.first(where: {
+                $0.name.caseInsensitiveCompare(value) == .orderedSame
+            }) else {
+                operationErrorMessage = "\(name) has no option named \(value)."
+                return false
+            }
+            resolvedFields.append((field, option))
+        }
+
         do {
-            try await gitHubService.createIssueAndAdd(
+            let issueURL = try await gitHubService.createIssueAndAdd(
                 projectId: project.id,
                 repository: repository,
                 title: title,
@@ -632,6 +653,25 @@ final class ProjectStore {
                 assignees: assignees
             )
             await refresh()
+            guard resolvedFields.isEmpty || selectedProject?.items.contains(where: {
+                $0.url == issueURL
+            }) == true else {
+                operationErrorMessage = "The issue was added, but GitBoard could not apply its Project fields."
+                return false
+            }
+            if let item = selectedProject?.items.first(where: { $0.url == issueURL }) {
+                for (field, option) in resolvedFields {
+                    try await gitHubService.updateItemField(
+                        projectId: project.id,
+                        itemId: item.id,
+                        fieldId: field.id,
+                        value: .singleSelect(optionId: option.id, name: option.name)
+                    )
+                }
+                if resolvedFields.isEmpty == false {
+                    await refresh()
+                }
+            }
             return true
         } catch is CancellationError {
             return false

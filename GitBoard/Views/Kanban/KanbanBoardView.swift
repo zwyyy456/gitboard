@@ -497,6 +497,8 @@ struct KanbanCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            EngineeringSignalsView(item: item, limit: 2)
+
             // Footer
             HStack(spacing: 4) {
                 if let number = item.number {

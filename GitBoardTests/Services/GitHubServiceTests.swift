@@ -31,10 +31,10 @@ struct GitHubServiceTests {
             {"data":{"node":{"title":"Work","number":7,"url":"https://github.com/users/me/projects/7","viewerCanUpdate":true,"fields":{"nodes":[{"__typename":"ProjectV2SingleSelectField","id":"F1","name":"Status","dataType":"SINGLE_SELECT","options":[{"id":"todo","name":"Todo","color":"GRAY"}]},{"__typename":"ProjectV2IterationField","id":"F2","name":"Iteration","dataType":"ITERATION","configuration":{"iterations":[{"id":"SPRINT1","title":"Sprint 1","startDate":"2026-08-24","duration":14}],"completedIterations":[]}},{"__typename":"ProjectV2Field","id":"F3","name":"Estimate","dataType":"NUMBER"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
             """,
             """
-            {"data":{"node":{"items":{"nodes":[{"id":"I1","content":{"__typename":"Issue","id":"CONTENT1","title":"First","number":1,"url":"https://github.com/acme/repo/issues/1","state":"OPEN","assignees":{"nodes":[]},"labels":{"nodes":[{"id":"L1","name":"bug","color":"d73a4a"}]},"closedByPullRequestsReferences":{"nodes":[]}},"fieldValueByName":{"name":"Todo","optionId":"todo"},"fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"id":"F1"}},{"__typename":"ProjectV2ItemFieldIterationValue","title":"Sprint 1","iterationId":"SPRINT1","field":{"id":"F2"}},{"__typename":"ProjectV2ItemFieldNumberValue","number":3,"field":{"id":"F3"}}]}}],"pageInfo":{"hasNextPage":true,"endCursor":"items-next"}}}}}
+            {"data":{"node":{"items":{"nodes":[{"id":"I1","content":{"__typename":"Issue","id":"CONTENT1","title":"First","number":1,"url":"https://github.com/acme/repo/issues/1","state":"OPEN","assignees":{"nodes":[]},"labels":{"nodes":[{"id":"L1","name":"bug","color":"d73a4a"}]},"closedByPullRequestsReferences":{"nodes":[]},"subIssuesSummary":{"completed":2,"total":3},"blockedBy":{"totalCount":1},"blocking":{"totalCount":4}},"fieldValueByName":{"name":"Todo","optionId":"todo"},"fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"id":"F1"}},{"__typename":"ProjectV2ItemFieldIterationValue","title":"Sprint 1","iterationId":"SPRINT1","field":{"id":"F2"}},{"__typename":"ProjectV2ItemFieldNumberValue","number":3,"field":{"id":"F3"}}]}}],"pageInfo":{"hasNextPage":true,"endCursor":"items-next"}}}}}
             """,
             """
-            {"data":{"node":{"items":{"nodes":[{"id":"I2","content":null,"fieldValueByName":null}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
+            {"data":{"node":{"items":{"nodes":[{"id":"I2","content":{"__typename":"PullRequest","id":"PR1","title":"Merge safely","number":2,"url":"https://github.com/acme/repo/pull/2","state":"OPEN","updatedAt":"2026-08-27T00:00:00Z","isDraft":false,"mergeable":"MERGEABLE","reviewDecision":"APPROVED","reviewRequests":{"nodes":[{"requestedReviewer":{"login":"octocat"}}]},"statusCheckRollup":{"state":"SUCCESS"},"assignees":{"nodes":[]},"labels":{"nodes":[]}},"fieldValueByName":{"name":"Todo","optionId":"todo"},"fieldValues":{"nodes":[]}},{"id":"I3","content":null,"fieldValueByName":null}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
             """
         ])
         let service = GitHubService(runner: runner)
@@ -51,14 +51,19 @@ struct GitHubServiceTests {
         let project = try await service.fetchProjectWithItems(project: summary)
         let calls = await runner.recordedArguments()
 
-        #expect(project.items.count == 2)
+        #expect(project.items.count == 3)
         #expect(project.items[0].contentId == "CONTENT1")
         #expect(project.items[0].contentId != project.items[0].url)
         #expect(project.fields.map(\.kind) == [.singleSelect, .iteration, .number])
         #expect(project.items[0].labels.map(\.name) == ["bug"])
+        #expect(project.items[0].signals.subIssueProgress == SubIssueProgress(completed: 2, total: 3))
+        #expect(project.items[0].signals.blockedByCount == 1)
+        #expect(project.items[0].signals.blockingCount == 4)
         #expect(project.items[0].fieldValues["F2"] == .iteration(id: "SPRINT1", title: "Sprint 1"))
         #expect(project.items[0].fieldValues["F3"] == .number(3))
-        #expect(project.items[1].contentType == .redacted)
+        #expect(project.items[1].signals.isReadyToMerge)
+        #expect(project.items[1].signals.reviewRequested(for: "octocat"))
+        #expect(project.items[2].contentType == .redacted)
         #expect(calls[2].contains("after=items-next"))
     }
 
@@ -85,7 +90,7 @@ struct GitHubServiceTests {
         ])
         let service = GitHubService(runner: runner)
 
-        try await service.createIssueAndAdd(
+        let issueURL = try await service.createIssueAndAdd(
             projectId: "PROJECT_1",
             repository: "acme/widgets",
             title: "Repair login",
@@ -94,6 +99,7 @@ struct GitHubServiceTests {
         )
         let calls = await runner.recordedArguments()
 
+        #expect(issueURL == "https://github.com/acme/widgets/issues/42")
         #expect(calls.count == 3)
         #expect(calls[0].contains("acme/widgets"))
         #expect(calls[0].contains("Repair login"))
@@ -102,6 +108,21 @@ struct GitHubServiceTests {
         #expect(calls[2].contains("projectId=PROJECT_1"))
     }
 
+}
+
+struct QuickCreateParserTests {
+    @Test func parsesTriageQualifiersWithoutIncludingThemInTheTitle() {
+        let request = QuickCreateParser.parse(
+            "> Repair login flow repo:acme/app status:Todo priority:High @me @octocat #bug"
+        )
+
+        #expect(request.title == "Repair login flow")
+        #expect(request.repository == "acme/app")
+        #expect(request.status == "Todo")
+        #expect(request.priority == "High")
+        #expect(request.assignees == ["me", "octocat"])
+        #expect(request.labels == ["bug"])
+    }
 }
 
 struct ProjectCacheTests {
@@ -218,6 +239,43 @@ struct MyWorkFilterTests {
         #expect(MyWorkFilter.recent.includes(workItem, currentUserLogin: nil, now: now) == false)
         #expect(workItem.id != MyWorkItem(project: secondProject, item: item).id)
     }
+
+    @Test func engineeringViewsUseReviewAndMergeSignals() {
+        let owner = ProjectOwner(id: "U1", login: "octocat", name: nil, kind: .user)
+        let item = ProjectItem(
+            id: "ITEM",
+            contentId: "PR",
+            contentType: .pullRequest,
+            title: "Ready change",
+            number: 9,
+            url: "https://github.com/acme/app/pull/9",
+            issueState: nil,
+            prState: .open,
+            status: "Review",
+            statusOptionId: "REVIEW",
+            assignees: [],
+            engineeringSignals: EngineeringSignals(
+                mergeability: .mergeable,
+                reviewDecision: .approved,
+                checkStatus: .success,
+                reviewRequestedLogins: ["octocat"]
+            )
+        )
+        let project = Project(
+            id: "P1",
+            owner: owner,
+            title: "Work",
+            number: 1,
+            url: "https://github.com/users/octocat/projects/1",
+            viewerCanUpdate: true,
+            items: [item]
+        )
+        let workItem = MyWorkItem(project: project, item: item)
+
+        #expect(MyWorkFilter.reviewRequested.includes(workItem, currentUserLogin: "octocat"))
+        #expect(MyWorkFilter.readyToMerge.includes(workItem, currentUserLogin: "octocat"))
+        #expect(MyWorkFilter.ciFailed.includes(workItem, currentUserLogin: "octocat") == false)
+    }
 }
 
 struct ProjectChangeDetectorTests {
@@ -268,7 +326,9 @@ struct ProjectChangeDetectorTests {
                 status: "Done",
                 assignedToCurrentUser: true,
                 dueState: .overdue,
-                isBlocked: true
+                isBlocked: true,
+                reviewRequested: true,
+                checkStatus: .failure
             ),
             "P1:NEW": MonitoredItemState(
                 projectID: "P1",
@@ -290,7 +350,9 @@ struct ProjectChangeDetectorTests {
             .status(from: "In progress", to: "Done"),
             .assignedToMe,
             .overdue,
-            .blocked
+            .blocked,
+            .reviewRequested,
+            .ciFailed
         ])
         #expect(changes.allSatisfy { $0.itemID == "I1" })
         #expect(changes.allSatisfy { $0.statusFieldID == "STATUS" })

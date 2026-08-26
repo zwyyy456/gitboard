@@ -1,4 +1,5 @@
 import SwiftUI
+import Carbon.HIToolbox
 
 // Environment key for dismissing menubar
 private struct DismissMenuBarKey: EnvironmentKey {
@@ -25,7 +26,18 @@ struct GitBoardApp: App {
                 }
                 .background(MenuBarWindowFinder(window: $menuBarWindow))
         } label: {
-            Image(systemName: "rectangle.split.3x1")
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "rectangle.split.3x1")
+                if model.attentionCount > 0 {
+                    Text(model.attentionCount > 9 ? "9+" : "\(model.attentionCount)")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(2)
+                        .background(.red)
+                        .clipShape(Circle())
+                        .offset(x: 5, y: -4)
+                }
+            }
                 .task {
                     await model.start()
                     let actions = await NotificationService.shared.actions()
@@ -35,6 +47,7 @@ struct GitBoardApp: App {
                         }
                     }
                 }
+                .background(AppHotKeyInstaller())
         }
         .menuBarExtraStyle(.window)
 
@@ -50,6 +63,19 @@ struct GitBoardApp: App {
         .defaultSize(width: 1000, height: 700)
         .windowResizability(.contentMinSize)
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            GitBoardCommands()
+        }
+
+        Window("Command Palette", id: "command-palette") {
+            CommandPaletteView(model: model)
+        }
+        .windowResizability(.contentSize)
+
+        Window("Quick Add", id: "quick-add") {
+            QuickAddWindow(model: model)
+        }
+        .windowResizability(.contentSize)
 
         Window("Settings", id: "settings") {
             SettingsView(model: model)
@@ -57,6 +83,44 @@ struct GitBoardApp: App {
         .windowResizability(.contentSize)
     }
 
+}
+
+private struct GitBoardCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandMenu("GitBoard") {
+            Button("Command Palette…") {
+                openWindow(id: "command-palette")
+            }
+            .keyboardShortcut("k", modifiers: .command)
+
+            Button("Quick Add…") {
+                openWindow(id: "quick-add")
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+        }
+    }
+}
+
+private struct AppHotKeyInstaller: View {
+    @Environment(\.openWindow) private var openWindow
+    @State private var controller: GlobalHotKeyController?
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onAppear {
+                guard controller == nil else { return }
+                controller = GlobalHotKeyController(
+                    keyCode: UInt32(kVK_ANSI_K),
+                    modifiers: UInt32(cmdKey | optionKey)
+                ) {
+                    openWindow(id: "command-palette")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
+    }
 }
 
 // Helper view to capture the NSWindow reference

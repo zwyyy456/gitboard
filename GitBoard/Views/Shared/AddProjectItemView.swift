@@ -8,6 +8,9 @@ struct AddProjectItemView: View {
     @State private var itemType: NewItemType = .issue
     @State private var repository = ""
     @State private var title = ""
+    @State private var quickEntry = ""
+    @State private var status = ""
+    @State private var priority = ""
     @State private var labels = ""
     @State private var assignees = ""
     @State private var query = ""
@@ -95,6 +98,15 @@ struct AddProjectItemView: View {
 
     private var createForm: some View {
         Form {
+            LabeledContent("Quick Entry") {
+                TextField("> title repo:owner/repo status:Todo priority:High @me #bug", text: $quickEntry)
+                    .onSubmit { submitQuickEntry() }
+            }
+
+            Text("Press Return to parse and create. Qualifier values are matched without case sensitivity.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             Picker("Create as", selection: $itemType) {
                 ForEach(NewItemType.allCases) { type in
                     Text(type.rawValue).tag(type)
@@ -133,6 +145,12 @@ struct AddProjectItemView: View {
                 }
                 LabeledContent("Assignees") {
                     TextField("octocat, @me", text: $assignees)
+                }
+                LabeledContent("Status") {
+                    TextField("Optional Project option", text: $status)
+                }
+                LabeledContent("Priority") {
+                    TextField("Optional Project option", text: $priority)
                 }
             }
 
@@ -239,7 +257,9 @@ struct AddProjectItemView: View {
                     repository: repository.trimmed,
                     title: title.trimmed,
                     labels: commaSeparated(labels),
-                    assignees: commaSeparated(assignees).map(normalizeAssignee)
+                    assignees: commaSeparated(assignees).map(normalizeAssignee),
+                    status: status.trimmed.nilIfEmpty,
+                    priority: priority.trimmed.nilIfEmpty
                 )
             }
             isWorking = false
@@ -296,10 +316,41 @@ struct AddProjectItemView: View {
         }
         return login
     }
+
+    private func submitQuickEntry() {
+        guard isWorking == false else { return }
+        let request = QuickCreateParser.parse(quickEntry)
+        guard request.title.isEmpty == false else {
+            store.operationErrorMessage = "Quick Entry needs a title."
+            return
+        }
+
+        title = request.title
+        if let requestedRepository = request.repository {
+            repository = resolvedRepository(requestedRepository)
+        }
+        labels = request.labels.joined(separator: ", ")
+        assignees = request.assignees.map { "@\($0)" }.joined(separator: ", ")
+        status = request.status ?? ""
+        priority = request.priority ?? ""
+        createItem()
+    }
+
+    private func resolvedRepository(_ value: String) -> String {
+        guard value.contains("/") == false else { return value }
+        let matches = store.repositorySuggestions.filter {
+            $0.split(separator: "/").last?.caseInsensitiveCompare(value) == .orderedSame
+        }
+        return matches.count == 1 ? matches[0] : value
+    }
 }
 
 private extension String {
     var trimmed: String {
         trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

@@ -34,6 +34,7 @@ actor ProjectMonitor {
                         }
 
                         let now = Date()
+                        continuation.yield(.snapshots(snapshots))
                         let currentStates = ProjectChangeDetector.states(
                             for: snapshots,
                             currentUserLogin: currentUserLogin,

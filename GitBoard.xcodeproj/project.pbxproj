@@ -36,6 +36,10 @@
 		A0000032 /* GitBoardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000032 /* GitBoardModel.swift */; };
 		A0000033 /* Monitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000033 /* Monitoring.swift */; };
 		A0000034 /* ProjectMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000034 /* ProjectMonitor.swift */; };
+		A0000035 /* QuickCreate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000035 /* QuickCreate.swift */; };
+		A0000036 /* GlobalHotKeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000036 /* GlobalHotKeyController.swift */; };
+		A0000037 /* EngineeringSignalsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000037 /* EngineeringSignalsView.swift */; };
+		A0000038 /* CommandPaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000038 /* CommandPaletteView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -81,6 +85,10 @@
 		A1000032 /* GitBoardModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitBoardModel.swift; sourceTree = "<group>"; };
 		A1000033 /* Monitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Monitoring.swift; sourceTree = "<group>"; };
 		A1000034 /* ProjectMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectMonitor.swift; sourceTree = "<group>"; };
+		A1000035 /* QuickCreate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCreate.swift; sourceTree = "<group>"; };
+		A1000036 /* GlobalHotKeyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotKeyController.swift; sourceTree = "<group>"; };
+		A1000037 /* EngineeringSignalsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineeringSignalsView.swift; sourceTree = "<group>"; };
+		A1000038 /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -137,6 +145,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000033 /* Monitoring.swift */,
+				A1000035 /* QuickCreate.swift */,
 				A1000028 /* MyWork.swift */,
 				A1000002 /* Project.swift */,
 				A1000003 /* ProjectItem.swift */,
@@ -148,6 +157,7 @@
 		A3000003 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				A1000036 /* GlobalHotKeyController.swift */,
 				A1000022 /* GitHubCommandRunner.swift */,
 				A1000027 /* ProjectCache.swift */,
 				A1000034 /* ProjectMonitor.swift */,
@@ -211,6 +221,8 @@
 			isa = PBXGroup;
 			children = (
 				A1000025 /* AddProjectItemView.swift */,
+				A1000038 /* CommandPaletteView.swift */,
+				A1000037 /* EngineeringSignalsView.swift */,
 				A1000026 /* ItemInspectorView.swift */,
 				A1000015 /* ProjectItemRowView.swift */,
 			);
@@ -358,11 +370,13 @@
 			files = (
 				A0000001 /* GitBoardApp.swift in Sources */,
 				A0000033 /* Monitoring.swift in Sources */,
+				A0000035 /* QuickCreate.swift in Sources */,
 				A0000002 /* Project.swift in Sources */,
 				A0000003 /* ProjectItem.swift in Sources */,
 				A0000004 /* StatusOption.swift in Sources */,
 				A0000005 /* GitHubService.swift in Sources */,
 				A0000022 /* GitHubCommandRunner.swift in Sources */,
+				A0000036 /* GlobalHotKeyController.swift in Sources */,
 				A0000027 /* ProjectCache.swift in Sources */,
 				A0000028 /* MyWork.swift in Sources */,
 				A0000006 /* GraphQLQueries.swift in Sources */,
@@ -378,6 +392,8 @@
 				A0000030 /* MainWorkspaceView.swift in Sources */,
 				A0000031 /* MyWorkView.swift in Sources */,
 				A0000025 /* AddProjectItemView.swift in Sources */,
+				A0000038 /* CommandPaletteView.swift in Sources */,
+				A0000037 /* EngineeringSignalsView.swift in Sources */,
 				A0000026 /* ItemInspectorView.swift in Sources */,
 				A0000015 /* ProjectItemRowView.swift in Sources */,
 				A0000019 /* SettingsView.swift in Sources */,

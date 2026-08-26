@@ -139,6 +139,8 @@ private struct MyWorkRow: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+                EngineeringSignalsView(item: workItem.item)
             }
 
             Spacer()

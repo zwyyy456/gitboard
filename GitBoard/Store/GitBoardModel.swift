@@ -21,6 +21,9 @@ final class GitBoardModel {
     private var didStart = false
 
     var mutedProjectCount: Int { mutedProjectIDs.count }
+    var attentionCount: Int {
+        myWorkStore.attentionCount(currentUserLogin: projectStore.currentUserLogin)
+    }
 
     init() {
         let defaults = UserDefaults.standard
@@ -41,6 +44,13 @@ final class GitBoardModel {
     func start() async {
         guard didStart == false else { return }
         didStart = true
+        if projectStore.currentUserLogin == nil {
+            await projectStore.loadProjects()
+        }
+        myWorkStore.activate(accountLogin: projectStore.currentUserLogin)
+        if myWorkStore.followedProjects.isEmpty == false {
+            await myWorkStore.refresh()
+        }
         if monitoringEnabled {
             guard await notificationService.checkPermission() else {
                 monitoringEnabled = false
@@ -48,10 +58,6 @@ final class GitBoardModel {
                 monitoringStatus = "Notifications are disabled in System Settings."
                 return
             }
-            if projectStore.currentUserLogin == nil {
-                await projectStore.loadProjects()
-            }
-            myWorkStore.activate(accountLogin: projectStore.currentUserLogin)
             await restartMonitoring()
         }
     }
@@ -210,6 +216,8 @@ final class GitBoardModel {
     private func handleMonitorEvent(_ event: ProjectMonitorEvent) async {
         do {
             switch event {
+            case .snapshots(let projects):
+                myWorkStore.applyMonitoredSnapshots(projects)
             case .change(let change):
                 guard shouldNotify(change) else { return }
                 try await notificationService.send(change)

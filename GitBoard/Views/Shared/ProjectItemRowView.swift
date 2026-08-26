@@ -63,6 +63,8 @@ struct ProjectItemRowView: View {
                             .clipShape(Capsule())
                     }
                 }
+
+                EngineeringSignalsView(item: item, limit: 2)
             }
 
             Spacer()
