@@ -3,7 +3,8 @@ import Foundation
 import Sparkle
 
 /// Controller for managing app updates via Sparkle framework
-class UpdateController: ObservableObject {
+@MainActor
+final class UpdateController: ObservableObject {
     static let shared = UpdateController()
 
     private var updaterController: SPUStandardUpdaterController

@@ -8,7 +8,7 @@ set -e
 
 VERSION=$1
 NOTES=$2
-DMG_FILE="GitBoard-${VERSION}.dmg"
+DMG_FILE="GitStride-${VERSION}.dmg"
 APPCAST_FILE="appcast.xml"
 PRIVATE_KEY="$HOME/.sparkle_private_key"
 
@@ -76,7 +76,7 @@ NEW_ITEM="        <item>
             <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure
-                url=\"https://github.com/yogesharc/GitBoard/releases/download/v$VERSION/$DMG_FILE\"
+                url=\"https://github.com/yogesharc/GitStride/releases/download/v$VERSION/$DMG_FILE\"
                 sparkle:edSignature=\"$SIGNATURE\"
                 length=\"$FILE_SIZE\"
                 type=\"application/octet-stream\"/>

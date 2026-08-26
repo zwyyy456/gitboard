@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A0000001 /* GitBoardApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001 /* GitBoardApp.swift */; };
+		A0000001 /* GitStrideApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001 /* GitStrideApp.swift */; };
 		A0000002 /* Project.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002 /* Project.swift */; };
 		A0000003 /* ProjectItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000003 /* ProjectItem.swift */; };
 		A0000004 /* StatusOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004 /* StatusOption.swift */; };
@@ -24,11 +24,23 @@
 		A0000019 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000019 /* SettingsView.swift */; };
 		A0000020 /* UpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000020 /* UpdateController.swift */; };
 		A0000021 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A6000001 /* Sparkle */; };
+		A0000022 /* GitHubCommandRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000022 /* GitHubCommandRunner.swift */; };
+		A0000023 /* GitHubServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000023 /* GitHubServiceTests.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		A7000000 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A4000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A4000001;
+			remoteInfo = GitStride;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
-		A1000000 /* GitBoard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GitBoard.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A1000001 /* GitBoardApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitBoardApp.swift; sourceTree = "<group>"; };
+		A1000000 /* GitStride.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GitStride.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000001 /* GitStrideApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitStrideApp.swift; sourceTree = "<group>"; };
 		A1000002 /* Project.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Project.swift; sourceTree = "<group>"; };
 		A1000003 /* ProjectItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectItem.swift; sourceTree = "<group>"; };
 		A1000004 /* StatusOption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusOption.swift; sourceTree = "<group>"; };
@@ -43,9 +55,12 @@
 		A1000015 /* ProjectItemRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectItemRowView.swift; sourceTree = "<group>"; };
 		A1000016 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000017 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A1000018 /* GitBoard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GitBoard.entitlements; sourceTree = "<group>"; };
+		A1000018 /* GitStride.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GitStride.entitlements; sourceTree = "<group>"; };
 		A1000019 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A1000020 /* UpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateController.swift; sourceTree = "<group>"; };
+		A1000022 /* GitHubCommandRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubCommandRunner.swift; sourceTree = "<group>"; };
+		A1000023 /* GitHubServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/GitHubServiceTests.swift; sourceTree = "<group>"; };
+		A1000024 /* GitStrideTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GitStrideTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,13 +72,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A2000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		A3000000 = {
 			isa = PBXGroup;
 			children = (
-				A3000001 /* GitBoard */,
+				A3000001 /* GitStride */,
+				A3000013 /* GitStrideTests */,
 				A3000010 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -75,19 +98,19 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		A3000001 /* GitBoard */ = {
+		A3000001 /* GitStride */ = {
 			isa = PBXGroup;
 			children = (
-				A1000001 /* GitBoardApp.swift */,
+				A1000001 /* GitStrideApp.swift */,
 				A3000002 /* Models */,
 				A3000003 /* Services */,
 				A3000004 /* Store */,
 				A3000005 /* Views */,
 				A3000009 /* Resources */,
 				A1000017 /* Info.plist */,
-				A1000018 /* GitBoard.entitlements */,
+				A1000018 /* GitStride.entitlements */,
 			);
-			path = GitBoard;
+			path = GitStride;
 			sourceTree = "<group>";
 		};
 		A3000002 /* Models */ = {
@@ -103,6 +126,7 @@
 		A3000003 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				A1000022 /* GitHubCommandRunner.swift */,
 				A1000005 /* GitHubService.swift */,
 				A1000006 /* GraphQLQueries.swift */,
 				A1000007 /* NotificationService.swift */,
@@ -175,17 +199,26 @@
 		A3000010 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A1000000 /* GitBoard.app */,
+				A1000000 /* GitStride.app */,
+				A1000024 /* GitStrideTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A3000013 /* GitStrideTests */ = {
+			isa = PBXGroup;
+			children = (
+				A1000023 /* GitHubServiceTests.swift */,
+			);
+			path = GitStrideTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A4000001 /* GitBoard */ = {
+		A4000001 /* GitStride */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A5000003 /* Build configuration list for PBXNativeTarget "GitBoard" */;
+			buildConfigurationList = A5000003 /* Build configuration list for PBXNativeTarget "GitStride" */;
 			buildPhases = (
 				A2000002 /* Sources */,
 				A2000001 /* Frameworks */,
@@ -195,13 +228,31 @@
 			);
 			dependencies = (
 			);
-			name = GitBoard;
+			name = GitStride;
 			packageProductDependencies = (
 				A6000001 /* Sparkle */,
 			);
-			productName = GitBoard;
-			productReference = A1000000 /* GitBoard.app */;
+			productName = GitStride;
+			productReference = A1000000 /* GitStride.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A4000002 /* GitStrideTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A5000009 /* Build configuration list for PBXNativeTarget "GitStrideTests" */;
+			buildPhases = (
+				A2000005 /* Sources */,
+				A2000004 /* Frameworks */,
+				A2000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A7000001 /* PBXTargetDependency */,
+			);
+			name = GitStrideTests;
+			productName = GitStrideTests;
+			productReference = A1000024 /* GitStrideTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -216,9 +267,13 @@
 					A4000001 = {
 						CreatedOnToolsVersion = 15.0;
 					};
+					A4000002 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = A4000001;
+					};
 				};
 			};
-			buildConfigurationList = A5000001 /* Build configuration list for PBXProject "GitBoard" */;
+			buildConfigurationList = A5000001 /* Build configuration list for PBXProject "GitStride" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -234,7 +289,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A4000001 /* GitBoard */,
+				A4000001 /* GitStride */,
+				A4000002 /* GitStrideTests */,
 			);
 		};
 /* End PBXProject section */
@@ -248,6 +304,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A2000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -255,11 +318,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A0000001 /* GitBoardApp.swift in Sources */,
+				A0000001 /* GitStrideApp.swift in Sources */,
 				A0000002 /* Project.swift in Sources */,
 				A0000003 /* ProjectItem.swift in Sources */,
 				A0000004 /* StatusOption.swift in Sources */,
 				A0000005 /* GitHubService.swift in Sources */,
+				A0000022 /* GitHubCommandRunner.swift in Sources */,
 				A0000006 /* GraphQLQueries.swift in Sources */,
 				A0000007 /* NotificationService.swift in Sources */,
 				A0000008 /* ProjectStore.swift in Sources */,
@@ -273,7 +337,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A2000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A0000023 /* GitHubServiceTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A7000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A4000001 /* GitStride */;
+			targetProxy = A7000000 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A5000002 /* Debug */ = {
@@ -399,14 +479,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = GitBoard/GitBoard.entitlements;
+				CODE_SIGN_ENTITLEMENTS = GitStride/GitStride.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = GitBoard/Info.plist;
+				INFOPLIST_FILE = GitStride/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -414,7 +494,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.gitboard.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gitstride.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
@@ -427,14 +507,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = GitBoard/GitBoard.entitlements;
+				CODE_SIGN_ENTITLEMENTS = GitStride/GitStride.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = GitBoard/Info.plist;
+				INFOPLIST_FILE = GitStride/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -442,7 +522,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.gitboard.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gitstride.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
@@ -450,10 +530,40 @@
 			};
 			name = Release;
 		};
+		A5000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gitstride.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GitStride.app/Contents/MacOS/GitStride";
+			};
+			name = Debug;
+		};
+		A5000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gitstride.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GitStride.app/Contents/MacOS/GitStride";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A5000001 /* Build configuration list for PBXProject "GitBoard" */ = {
+		A5000001 /* Build configuration list for PBXProject "GitStride" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A5000002 /* Debug */,
@@ -462,11 +572,20 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A5000003 /* Build configuration list for PBXNativeTarget "GitBoard" */ = {
+		A5000003 /* Build configuration list for PBXNativeTarget "GitStride" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A5000005 /* Debug */,
 				A5000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A5000009 /* Build configuration list for PBXNativeTarget "GitStrideTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A5000007 /* Debug */,
+				A5000008 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

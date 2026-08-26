@@ -10,6 +10,10 @@ struct KanbanBoardView: View {
     @State private var isCreating = false
     @State private var keyMonitor: Any?
 
+    private var canEditSelectedProject: Bool {
+        store.selectedProject?.viewerCanUpdate == true
+    }
+
     private var parsedCreateInput: ProjectStore.QuickCreateInput? {
         guard isCreateMode, !searchText.isEmpty else { return nil }
         return store.parseQuickCreateInput(">" + searchText)
@@ -67,36 +71,7 @@ struct KanbanBoardView: View {
 
     private var toolbar: some View {
         HStack(spacing: 16) {
-            // Project selector
-            if store.projects.count > 1 {
-                Menu {
-                    ForEach(store.projects) { project in
-                        Button {
-                            Task { await store.selectProject(project) }
-                        } label: {
-                            HStack {
-                                Text(project.title)
-                                if project.id == store.selectedProjectId {
-                                    Spacer()
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Text(store.selectedProject?.title ?? "Select Project")
-                            .font(.system(size: 15, weight: .semibold))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .buttonStyle(.plain)
-            } else if let project = store.selectedProject {
-                Text(project.title)
-                    .font(.system(size: 15, weight: .semibold))
-            }
+            ProjectSelectorView(store: store)
 
             // Search bar
             HStack(spacing: 8) {
@@ -111,14 +86,18 @@ struct KanbanBoardView: View {
                 }
 
                 TextField(
-                    isCreateMode ? "Title #label @assignee" : "Search, #number, @me · Type > to create",
+                    isCreateMode
+                        ? "Title #label @assignee"
+                        : canEditSelectedProject
+                            ? "Search, #number, @me · Type > to create"
+                            : "Search, #number, @me",
                     text: $searchText
                 )
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .frame(minWidth: 150, maxWidth: 300)
                 .onChange(of: searchText) { oldValue, newValue in
-                    if !isCreateMode && newValue == ">" {
+                    if canEditSelectedProject && !isCreateMode && newValue == ">" {
                         isCreateMode = true
                         searchText = ""
                     }
@@ -391,7 +370,8 @@ struct KanbanColumn: View {
         .animation(.easeInOut(duration: 0.15), value: isTargeted)
         .dropDestination(for: String.self) { droppedItems, _ in
             guard let itemId = droppedItems.first,
-                  let targetStatus = status else { return false }
+                  let targetStatus = status,
+                  store.selectedProject?.viewerCanUpdate == true else { return false }
 
             // Find the item being dropped from all project items
             if let project = store.selectedProject,
@@ -505,52 +485,54 @@ struct KanbanCard: View {
                 Label("Open in Browser", systemImage: "safari")
             }
 
-            Divider()
+            if store.selectedProject?.viewerCanUpdate == true {
+                Divider()
 
-            Menu {
-                ForEach(allStatuses) { status in
-                    Button {
-                        Task { await store.moveItem(item, toStatus: status) }
-                    } label: {
-                        HStack {
-                            Circle()
-                                .fill(status.swiftUIColor)
-                                .frame(width: 8, height: 8)
-                            Text(status.name)
-                            if item.status == status.name {
-                                Spacer()
-                                Image(systemName: "checkmark")
+                Menu {
+                    ForEach(allStatuses) { status in
+                        Button {
+                            Task { await store.moveItem(item, toStatus: status) }
+                        } label: {
+                            HStack {
+                                Circle()
+                                    .fill(status.swiftUIColor)
+                                    .frame(width: 8, height: 8)
+                                Text(status.name)
+                                if item.status == status.name {
+                                    Spacer()
+                                    Image(systemName: "checkmark")
+                                }
                             }
                         }
-                    }
-                    .disabled(item.status == status.name)
-                }
-            } label: {
-                Label("Move to", systemImage: "arrow.right.circle")
-            }
-
-            Divider()
-
-            if !item.assignees.isEmpty {
-                Menu {
-                    ForEach(item.assignees) { assignee in
-                        Button {
-                            Task { await store.removeAssignee(from: item, user: assignee) }
-                        } label: {
-                            Label(assignee.name ?? assignee.login, systemImage: "person.fill.xmark")
-                        }
+                        .disabled(item.status == status.name)
                     }
                 } label: {
-                    Label("Remove Assignee", systemImage: "person.badge.minus")
+                    Label("Move to", systemImage: "arrow.right.circle")
                 }
 
                 Divider()
-            }
 
-            Button(role: .destructive) {
-                showDeleteConfirmation = true
-            } label: {
-                Label("Delete from Project", systemImage: "trash")
+                if !item.assignees.isEmpty {
+                    Menu {
+                        ForEach(item.assignees) { assignee in
+                            Button {
+                                Task { await store.removeAssignee(from: item, user: assignee) }
+                            } label: {
+                                Label(assignee.name ?? assignee.login, systemImage: "person.fill.xmark")
+                            }
+                        }
+                    } label: {
+                        Label("Remove Assignee", systemImage: "person.badge.minus")
+                    }
+
+                    Divider()
+                }
+
+                Button(role: .destructive) {
+                    showDeleteConfirmation = true
+                } label: {
+                    Label("Delete from Project", systemImage: "trash")
+                }
             }
         }
         .confirmationDialog(
@@ -577,6 +559,8 @@ struct KanbanCard: View {
                 Image(systemName: "arrow.triangle.merge")
             case .draftIssue:
                 Image(systemName: "doc.text")
+            case .redacted:
+                Image(systemName: "lock")
             }
         }
         .font(.system(size: 14))

@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Create DMG installer for GitBoard
+# Create DMG installer for GitStride
 
 set -e
 
-APP_NAME="GitBoard"
+APP_NAME="GitStride"
 VERSION="1.0.0"
 DMG_FILE="${APP_NAME}-${VERSION}.dmg"
 TEMP_DIR="dmg_temp"
@@ -59,5 +59,5 @@ echo "3. Update appcast:"
 echo "   ./update_appcast.sh $VERSION \"Release notes\""
 echo ""
 echo "4. Upload to server:"
-echo "   - $DMG_FILE → https://yogesh.co/gitboard/"
-echo "   - appcast.xml → https://yogesh.co/gitboard/"
+echo "   - $DMG_FILE → https://yogesh.co/gitstride/"
+echo "   - appcast.xml → https://yogesh.co/gitstride/"

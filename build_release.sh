@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# Build and sign GitBoard for release
+# Build and sign GitStride for release
 # Uses existing Developer ID certificate
 
 set -e
 
-APP_NAME="GitBoard"
+APP_NAME="GitStride"
 VERSION="1.0.0"
 BUILD_NUMBER="1"
-BUNDLE_ID="co.yogesh.GitBoard"
+BUNDLE_ID="co.yogesh.GitStride"
 SIGNING_IDENTITY="Developer ID Application: Yogesh Dhakal (7WYP3LRDL8)"
 
 echo "=== Building $APP_NAME v$VERSION (build $BUILD_NUMBER) ==="
@@ -19,7 +19,7 @@ rm -rf "$APP_NAME.app"
 
 # Build Release using xcodebuild
 echo "Building Release configuration..."
-xcodebuild -scheme GitBoard \
+xcodebuild -scheme GitStride \
     -configuration Release \
     -derivedDataPath ./build \
     DEVELOPMENT_TEAM=7WYP3LRDL8 \
@@ -37,7 +37,7 @@ fi
 cp -R "$APP_PATH" "./${APP_NAME}.app"
 
 # Create entitlements file
-ENTITLEMENTS_FILE="/tmp/gitboard-entitlements.plist"
+ENTITLEMENTS_FILE="/tmp/gitstride-entitlements.plist"
 cat > "$ENTITLEMENTS_FILE" << 'ENTITLEMENTS'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

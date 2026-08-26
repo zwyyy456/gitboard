@@ -4,6 +4,7 @@ enum ItemContentType: String, Codable {
     case issue = "ISSUE"
     case pullRequest = "PULL_REQUEST"
     case draftIssue = "DRAFT_ISSUE"
+    case redacted = "REDACTED"
 }
 
 enum IssueState: String, Codable {

@@ -1,8 +1,8 @@
-# GitBoard
+# GitStride
 
 A native macOS menu bar app for GitHub Projects. View your kanban board, filter by status, search issues, and create new ones — all without leaving your workflow.
 
-![GitBoard Menu Bar](https://yogesh.co/gitboard-menubar.webp)
+![GitStride Menu Bar](https://yogesh.co/gitstride-menubar.webp)
 
 ## Features
 
@@ -14,7 +14,7 @@ A native macOS menu bar app for GitHub Projects. View your kanban board, filter 
 - **Status notifications** — know when issues move
 - **GitHub CLI auth** — no API tokens needed
 
-![GitBoard Kanban](https://yogesh.co/gitboard-kanban.webp)
+![GitStride Kanban](https://yogesh.co/gitstride-kanban.webp)
 
 ## Requirements
 
@@ -23,15 +23,15 @@ A native macOS menu bar app for GitHub Projects. View your kanban board, filter 
 
 ## Installation
 
-1. Download from [yogesh.co/gitboard](https://yogesh.co/gitboard?utm_source=gitboard_repo)
-2. Open the DMG and drag GitBoard to your Applications folder
+1. Download from [yogesh.co/gitstride](https://yogesh.co/gitstride?utm_source=gitstride_repo)
+2. Open the DMG and drag GitStride to your Applications folder
 3. Make sure you're logged in to GitHub CLI (`gh auth login`)
-4. Launch GitBoard from Applications
+4. Launch GitStride from Applications
 
 ## Usage
 
 ### Menu Bar
-Click the GitBoard icon in your menu bar to see your projects. Select a project and browse issues by status.
+Click the GitStride icon in your menu bar to see your projects. Select a project and browse issues by status.
 
 ### Search
 Type in the search bar to filter issues by title or number. Use `@username` to filter by assignee.
@@ -55,7 +55,7 @@ Click "Open Board" or use the keyboard shortcut to open the full kanban window. 
 ## Building from Source
 
 1. Clone the repository
-2. Open `GitBoard.xcodeproj` in Xcode
+2. Open `GitStride.xcodeproj` in Xcode
 3. Build and run
 
 ## License
@@ -64,4 +64,4 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ## Author
 
-Built by [Yogesh](https://yogesh.co?utm_source=gitboard_repo)
+Built by [Yogesh](https://yogesh.co?utm_source=gitstride_repo)

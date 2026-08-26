@@ -109,7 +109,7 @@ struct AboutView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.blue)
 
-            Text("GitBoard")
+            Text("GitStride")
                 .font(.system(size: 24, weight: .bold))
 
             Text("Version \(appVersion) (\(buildNumber))")
@@ -127,7 +127,7 @@ struct AboutView: View {
                 .multilineTextAlignment(.center)
 
             HStack(spacing: 16) {
-                Link(destination: URL(string: "https://yogesh.co?utm_source=gitboard")!) {
+                Link(destination: URL(string: "https://yogesh.co?utm_source=gitstride")!) {
                     Text("yogesh.co")
                         .font(.system(size: 12))
                 }
@@ -135,7 +135,7 @@ struct AboutView: View {
                     if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
                 }
 
-                Link(destination: URL(string: "https://www.supalytics.co?utm_source=gitboard")!) {
+                Link(destination: URL(string: "https://www.supalytics.co?utm_source=gitstride")!) {
                     Text("supalytics.co")
                         .font(.system(size: 12))
                 }
