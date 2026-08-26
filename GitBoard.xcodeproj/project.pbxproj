@@ -34,6 +34,8 @@
 		A0000030 /* MainWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000030 /* MainWorkspaceView.swift */; };
 		A0000031 /* MyWorkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000031 /* MyWorkView.swift */; };
 		A0000032 /* GitBoardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000032 /* GitBoardModel.swift */; };
+		A0000033 /* Monitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000033 /* Monitoring.swift */; };
+		A0000034 /* ProjectMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000034 /* ProjectMonitor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -77,6 +79,8 @@
 		A1000030 /* MainWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWorkspaceView.swift; sourceTree = "<group>"; };
 		A1000031 /* MyWorkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyWorkView.swift; sourceTree = "<group>"; };
 		A1000032 /* GitBoardModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitBoardModel.swift; sourceTree = "<group>"; };
+		A1000033 /* Monitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Monitoring.swift; sourceTree = "<group>"; };
+		A1000034 /* ProjectMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectMonitor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -132,6 +136,7 @@
 		A3000002 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				A1000033 /* Monitoring.swift */,
 				A1000028 /* MyWork.swift */,
 				A1000002 /* Project.swift */,
 				A1000003 /* ProjectItem.swift */,
@@ -145,6 +150,7 @@
 			children = (
 				A1000022 /* GitHubCommandRunner.swift */,
 				A1000027 /* ProjectCache.swift */,
+				A1000034 /* ProjectMonitor.swift */,
 				A1000005 /* GitHubService.swift */,
 				A1000006 /* GraphQLQueries.swift */,
 				A1000007 /* NotificationService.swift */,
@@ -351,6 +357,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A0000001 /* GitBoardApp.swift in Sources */,
+				A0000033 /* Monitoring.swift in Sources */,
 				A0000002 /* Project.swift in Sources */,
 				A0000003 /* ProjectItem.swift in Sources */,
 				A0000004 /* StatusOption.swift in Sources */,
@@ -363,6 +370,7 @@
 				A0000008 /* ProjectStore.swift in Sources */,
 				A0000029 /* MyWorkStore.swift in Sources */,
 				A0000032 /* GitBoardModel.swift in Sources */,
+				A0000034 /* ProjectMonitor.swift in Sources */,
 				A0000009 /* MenuBarPopoverView.swift in Sources */,
 				A0000010 /* ProjectSelectorView.swift in Sources */,
 				A0000011 /* StatusSummaryView.swift in Sources */,

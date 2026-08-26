@@ -32,13 +32,11 @@ final class ProjectStore {
     var currentUserLogin: String?
     var isShowingCachedData = false
 
-    private var pollingTask: Task<Void, Never>?
     private var catalogGeneration = 0
     private var projectGeneration = 0
     private var didRestoreCache = false
     private var cachedAccountLogin: String?
 
-    private let notificationService = NotificationService.shared
     private let gitHubService = GitHubService.shared
     private let projectCache = ProjectCache()
 
@@ -51,8 +49,6 @@ final class ProjectStore {
         guard let id = selectedOwnerId else { return nil }
         return owners.first { $0.id == id }
     }
-
-    var pollInterval: TimeInterval = 45
 
     var filteredItems: [ProjectItem] {
         guard let project = selectedProject else { return [] }
@@ -138,9 +134,6 @@ final class ProjectStore {
             guard generation == projectGeneration, selectedProjectId == id else { return }
 
             if let index = projects.firstIndex(where: { $0.id == id }) {
-                let oldItems = projects[index].items
-                await detectStatusChanges(oldItems: oldItems, newItems: detailedProject.items)
-
                 projects[index] = detailedProject
             }
 
@@ -183,46 +176,6 @@ final class ProjectStore {
         }
 
         await loadProjectDetails(id: selectedId)
-    }
-
-    func startPolling() {
-        stopPolling()
-
-        pollingTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(self?.pollInterval ?? 45))
-
-                if Task.isCancelled { break }
-
-                await self?.refresh()
-            }
-        }
-    }
-
-    func stopPolling() {
-        pollingTask?.cancel()
-        pollingTask = nil
-    }
-
-    private func detectStatusChanges(oldItems: [ProjectItem], newItems: [ProjectItem]) async {
-        let oldStatusMap = Dictionary(uniqueKeysWithValues: oldItems.map { ($0.id, $0.status) })
-
-        for newItem in newItems {
-            guard let oldStatus = oldStatusMap[newItem.id] else {
-                continue
-            }
-
-            if oldStatus != newItem.status {
-                let fromStatus = oldStatus ?? "No Status"
-                let toStatus = newItem.status ?? "No Status"
-
-                await notificationService.sendStatusChangeNotification(
-                    itemTitle: newItem.title,
-                    fromStatus: fromStatus,
-                    toStatus: toStatus
-                )
-            }
-        }
     }
 
     func selectProject(_ project: Project) async {

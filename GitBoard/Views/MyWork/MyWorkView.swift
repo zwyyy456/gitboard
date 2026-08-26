@@ -75,7 +75,7 @@ struct MyWorkView: View {
                         ?? reference.displayTitle
                         ?? reference.owner.login
                     Button("Stop Following \(title)", role: .destructive) {
-                        model.myWorkStore.stopFollowing(reference)
+                        Task { await model.stopFollowing(reference) }
                     }
                 }
             } label: {

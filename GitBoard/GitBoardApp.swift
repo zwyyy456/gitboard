@@ -26,6 +26,15 @@ struct GitBoardApp: App {
                 .background(MenuBarWindowFinder(window: $menuBarWindow))
         } label: {
             Image(systemName: "rectangle.split.3x1")
+                .task {
+                    await model.start()
+                    let actions = await NotificationService.shared.actions()
+                    for await action in actions {
+                        if let url = await model.handleNotificationAction(action) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
         }
         .menuBarExtraStyle(.window)
 
@@ -43,15 +52,9 @@ struct GitBoardApp: App {
         .windowStyle(.hiddenTitleBar)
 
         Window("Settings", id: "settings") {
-            SettingsView()
+            SettingsView(model: model)
         }
         .windowResizability(.contentSize)
-    }
-
-    init() {
-        Task {
-            await NotificationService.shared.requestPermission()
-        }
     }
 
 }

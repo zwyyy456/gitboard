@@ -4,11 +4,12 @@ import Sparkle
 #endif
 
 struct SettingsView: View {
+    @Bindable var model: GitBoardModel
     @State private var selectedTab = 1  // Default to About tab
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            GeneralSettingsView()
+            GeneralSettingsView(model: model)
                 .tabItem {
                     Label("General", systemImage: "gear")
                 }
@@ -20,15 +21,88 @@ struct SettingsView: View {
                 }
                 .tag(1)
         }
-        .frame(width: 400, height: 350)
+        .frame(width: 440, height: 500)
     }
 }
 
 struct GeneralSettingsView: View {
+    @Bindable var model: GitBoardModel
     @AppStorage("autoCheckForUpdates") private var autoCheckForUpdates = true
 
     var body: some View {
         Form {
+            Section {
+                Toggle(
+                    "Monitor followed Projects",
+                    isOn: Binding(
+                        get: { model.monitoringEnabled },
+                        set: { enabled in
+                            Task { await model.setMonitoringEnabled(enabled) }
+                        }
+                    )
+                )
+
+                Picker(
+                    "Refresh interval",
+                    selection: Binding(
+                        get: { model.monitoringIntervalMinutes },
+                        set: { minutes in
+                            Task { await model.updateMonitoringSchedule(intervalMinutes: minutes) }
+                        }
+                    )
+                ) {
+                    Text("5 minutes").tag(5)
+                    Text("15 minutes").tag(15)
+                    Text("30 minutes").tag(30)
+                }
+                .disabled(!model.monitoringEnabled)
+
+                HStack {
+                    Picker(
+                        "Quiet from",
+                        selection: Binding(
+                            get: { model.quietStartHour },
+                            set: { hour in
+                                Task { await model.updateMonitoringSchedule(quietStartHour: hour) }
+                            }
+                        )
+                    ) {
+                        ForEach(0..<24, id: \.self) { hour in
+                            Text(hourLabel(hour)).tag(hour)
+                        }
+                    }
+
+                    Picker(
+                        "to",
+                        selection: Binding(
+                            get: { model.quietEndHour },
+                            set: { hour in
+                                Task { await model.updateMonitoringSchedule(quietEndHour: hour) }
+                            }
+                        )
+                    ) {
+                        ForEach(0..<24, id: \.self) { hour in
+                            Text(hourLabel(hour)).tag(hour)
+                        }
+                    }
+                }
+                .disabled(!model.monitoringEnabled)
+
+                if let status = model.monitoringStatus {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if model.mutedProjectCount > 0 {
+                    Button("Clear \(model.mutedProjectCount) Muted Project\(model.mutedProjectCount == 1 ? "" : "s")") {
+                        model.clearMutedProjects()
+                    }
+                }
+            } header: {
+                Text("Monitoring")
+            }
+
             Section {
                 Toggle("Automatically check for updates", isOn: $autoCheckForUpdates)
                     .onChange(of: autoCheckForUpdates) { _, newValue in
@@ -68,6 +142,12 @@ struct GeneralSettingsView: View {
             UpdateController.shared.automaticallyChecksForUpdates = autoCheckForUpdates
             #endif
         }
+    }
+
+    private func hourLabel(_ hour: Int) -> String {
+        DateComponents(calendar: .current, hour: hour)
+            .date?
+            .formatted(date: .omitted, time: .shortened) ?? "\(hour):00"
     }
 }
 
