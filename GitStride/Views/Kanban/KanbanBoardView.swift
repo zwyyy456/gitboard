@@ -6,17 +6,11 @@ struct KanbanBoardView: View {
     @State private var refreshRotation: Double = 0
     @State private var isRefreshing = false
     @State private var searchText = ""
-    @State private var isCreateMode = false
-    @State private var isCreating = false
+    @State private var showsAddItem = false
     @State private var keyMonitor: Any?
 
     private var canEditSelectedProject: Bool {
         store.selectedProject?.viewerCanUpdate == true
-    }
-
-    private var parsedCreateInput: ProjectStore.QuickCreateInput? {
-        guard isCreateMode, !searchText.isEmpty else { return nil }
-        return store.parseQuickCreateInput(">" + searchText)
     }
 
     var body: some View {
@@ -41,6 +35,9 @@ struct KanbanBoardView: View {
         }
         .frame(minWidth: 1000, minHeight: 650)
         .background(Color(red: 0x1a/255, green: 0x1a/255, blue: 0x1a/255))
+        .sheet(isPresented: $showsAddItem) {
+            AddProjectItemView(store: store)
+        }
         .task {
             if store.projects.isEmpty {
                 await store.loadProjects()
@@ -75,61 +72,29 @@ struct KanbanBoardView: View {
 
             // Search bar
             HStack(spacing: 8) {
-                if isCreateMode {
-                    Text(">")
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color.green)
-                } else {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
-                }
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
 
                 TextField(
-                    isCreateMode
-                        ? "Title #label @assignee"
-                        : canEditSelectedProject
-                            ? "Search, #number, @me · Type > to create"
-                            : "Search, #number, @me",
+                    canEditSelectedProject
+                        ? "Search, #number, @me · Type > to add"
+                        : "Search, #number, @me",
                     text: $searchText
                 )
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .frame(minWidth: 150, maxWidth: 300)
                 .onChange(of: searchText) { oldValue, newValue in
-                    if canEditSelectedProject && !isCreateMode && newValue == ">" {
-                        isCreateMode = true
+                    if canEditSelectedProject && newValue == ">" {
                         searchText = ""
+                        showsAddItem = true
                     }
-                }
-                .onSubmit {
-                    if isCreateMode, let input = parsedCreateInput {
-                        Task {
-                            isCreating = true
-                            await store.quickCreate(input)
-                            searchText = ""
-                            isCreateMode = false
-                            isCreating = false
-                        }
-                    }
-                }
-                .onKeyPress(.escape) {
-                    if isCreateMode {
-                        isCreateMode = false
-                        searchText = ""
-                        return .handled
-                    }
-                    return .ignored
                 }
 
-                if isCreating {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .frame(width: 16, height: 16)
-                } else if isCreateMode || !searchText.isEmpty {
+                if !searchText.isEmpty {
                     Button {
                         searchText = ""
-                        isCreateMode = false
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 12))
@@ -140,6 +105,16 @@ struct KanbanBoardView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
+
+            if canEditSelectedProject {
+                Button {
+                    showsAddItem = true
+                } label: {
+                    Label("Add Item", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+                .help("Create an issue or add an existing item")
+            }
 
             Spacer()
 
@@ -231,8 +206,7 @@ struct KanbanBoardView: View {
     }
 
     private func filteredItems(for items: [ProjectItem]) -> [ProjectItem] {
-        // Don't filter in create mode
-        guard !isCreateMode, !searchText.isEmpty else { return items }
+        guard !searchText.isEmpty else { return items }
 
         let query = searchText.lowercased().trimmingCharacters(in: .whitespaces)
 

@@ -27,6 +27,7 @@ final class ProjectStore {
 
     var isLoading = false
     var error: Error?
+    var operationErrorMessage: String?
     var lastUpdated: Date?
     var currentUserLogin: String?
 
@@ -53,6 +54,11 @@ final class ProjectStore {
         guard let project = selectedProject else { return [] }
         guard let filter = selectedStatusFilter else { return project.items }
         return project.items.filter { $0.status == filter }
+    }
+
+    var repositorySuggestions: [String] {
+        guard let project = selectedProject else { return [] }
+        return Array(Set(project.items.compactMap(\.repositoryName))).sorted()
     }
 
     init() {
@@ -422,80 +428,102 @@ final class ProjectStore {
         }
     }
 
-    /// Parsed result from quick create input
-    struct QuickCreateInput {
-        let title: String
-        let labels: [String]
-        let assignees: [String]
-    }
+    func createIssueAndAdd(
+        repository: String,
+        title: String,
+        labels: [String],
+        assignees: [String]
+    ) async -> Bool {
+        guard let project = editableSelectedProject() else { return false }
+        operationErrorMessage = nil
 
-    /// Parse quick create input like ">title #label1 #label2 @user"
-    func parseQuickCreateInput(_ input: String) -> QuickCreateInput? {
-        var text = input
-        guard text.hasPrefix(">") else { return nil }
-        text.removeFirst()
-        text = text.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return nil }
-
-        var labels: [String] = []
-        var assignees: [String] = []
-        var titleParts: [String] = []
-
-        let words = text.components(separatedBy: .whitespaces)
-        for word in words {
-            if word.hasPrefix("#") && word.count > 1 {
-                labels.append(String(word.dropFirst()))
-            } else if word.hasPrefix("@") && word.count > 1 {
-                assignees.append(String(word.dropFirst()))
-            } else if !word.isEmpty {
-                titleParts.append(word)
-            }
+        do {
+            try await gitHubService.createIssueAndAdd(
+                projectId: project.id,
+                repository: repository,
+                title: title,
+                labels: labels,
+                assignees: assignees
+            )
+            await refresh()
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            operationErrorMessage = error.localizedDescription
+            return false
         }
-
-        let title = titleParts.joined(separator: " ")
-        guard !title.isEmpty else { return nil }
-
-        return QuickCreateInput(title: title, labels: labels, assignees: assignees)
     }
 
-    /// Create a draft issue (no labels/assignees)
-    func createDraftIssue(title: String) async {
-        guard let project = selectedProject, project.viewerCanUpdate else { return }
+    func createDraftIssue(title: String) async -> Bool {
+        guard let project = editableSelectedProject() else { return false }
+        operationErrorMessage = nil
 
         do {
             _ = try await gitHubService.createDraftIssue(projectId: project.id, title: title)
             await refresh()
+            return true
+        } catch is CancellationError {
+            return false
         } catch {
-            self.error = error
+            operationErrorMessage = error.localizedDescription
+            return false
         }
     }
 
-    /// Create a real issue with labels and assignees (project workflow will auto-add it)
-    func createIssue(title: String, labels: [String], assignees: [String]) async {
-        guard let project = selectedProject, project.viewerCanUpdate else { return }
+    func searchItems(query: String) async -> [GitHubItemCandidate] {
+        operationErrorMessage = nil
+        do {
+            return try await gitHubService.searchItems(query: query)
+        } catch is CancellationError {
+            return []
+        } catch {
+            operationErrorMessage = error.localizedDescription
+            return []
+        }
+    }
+
+    func addExistingItem(url: String) async -> Bool {
+        guard let project = editableSelectedProject() else { return false }
+        operationErrorMessage = nil
 
         do {
-            // Get repo from existing issues in the project
-            if let repo = try await gitHubService.getProjectRepository(projectId: project.id) {
-                try await gitHubService.createIssue(
-                    owner: repo.owner,
-                    repo: repo.repo,
-                    title: title,
-                    labels: labels,
-                    assignees: assignees
-                )
-            } else {
-                // No repository found, create draft issue instead
-                _ = try await gitHubService.createDraftIssue(projectId: project.id, title: title)
-            }
+            try await gitHubService.addExistingItem(projectId: project.id, url: url)
             await refresh()
+            return true
+        } catch is CancellationError {
+            return false
         } catch {
-            self.error = error
+            operationErrorMessage = error.localizedDescription
+            return false
         }
     }
 
-    /// Quick create from parsed input - always tries to create a real issue if repo is linked
-    func quickCreate(_ input: QuickCreateInput) async {
-        await createIssue(title: input.title, labels: input.labels, assignees: input.assignees)
+    func addExistingItem(_ candidate: GitHubItemCandidate) async -> Bool {
+        guard let project = editableSelectedProject() else { return false }
+        operationErrorMessage = nil
+
+        do {
+            try await gitHubService.addExistingItem(projectId: project.id, candidate: candidate)
+            await refresh()
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            operationErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func clearOperationError() {
+        operationErrorMessage = nil
+    }
+
+    private func editableSelectedProject() -> Project? {
+        guard let project = selectedProject, project.viewerCanUpdate else {
+            operationErrorMessage = "This project is read-only."
+            return nil
+        }
+        return project
     }
 }
