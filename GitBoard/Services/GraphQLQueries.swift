@@ -1,35 +1,88 @@
 import Foundation
 
 enum GraphQLQueries {
-    static let currentUser = """
+    static let sessionProbe = """
         query {
             viewer {
+                id
                 login
+                projectsV2(first: 1) {
+                    totalCount
+                }
             }
         }
         """
 
-    static let listProjects = """
-        query {
+    static let owners = """
+        query($after: String) {
             viewer {
-                projectsV2(first: 20) {
+                id
+                login
+                name
+                organizations(first: 100, after: $after) {
                     nodes {
                         id
-                        title
-                        number
-                        url
+                        login
+                        name
+                    }
+                    pageInfo {
+                        hasNextPage
+                        endCursor
                     }
                 }
             }
         }
         """
 
-    static let projectWithItems = """
-        query($id: ID!) {
+    static let userProjects = """
+        query($after: String) {
+            owner: viewer {
+                projectsV2(first: 100, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
+                    nodes {
+                        id
+                        title
+                        number
+                        url
+                        viewerCanUpdate
+                    }
+                    pageInfo {
+                        hasNextPage
+                        endCursor
+                    }
+                }
+            }
+        }
+        """
+
+    static let organizationProjects = """
+        query($login: String!, $after: String) {
+            owner: organization(login: $login) {
+                projectsV2(first: 100, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
+                    nodes {
+                        id
+                        title
+                        number
+                        url
+                        viewerCanUpdate
+                    }
+                    pageInfo {
+                        hasNextPage
+                        endCursor
+                    }
+                }
+            }
+        }
+        """
+
+    static let projectFields = """
+        query($id: ID!, $after: String) {
             node(id: $id) {
                 ... on ProjectV2 {
                     title
-                    fields(first: 20) {
+                    number
+                    url
+                    viewerCanUpdate
+                    fields(first: 100, after: $after) {
                         nodes {
                             ... on ProjectV2SingleSelectField {
                                 id
@@ -41,13 +94,27 @@ enum GraphQLQueries {
                                 }
                             }
                         }
+                        pageInfo {
+                            hasNextPage
+                            endCursor
+                        }
                     }
-                    items(first: 100) {
+                }
+            }
+        }
+        """
+
+    static let projectItems = """
+        query($id: ID!, $after: String) {
+            node(id: $id) {
+                ... on ProjectV2 {
+                    items(first: 100, after: $after) {
                         nodes {
                             id
                             content {
                                 ... on Issue {
                                     __typename
+                                    id
                                     title
                                     number
                                     url
@@ -71,6 +138,7 @@ enum GraphQLQueries {
                                 }
                                 ... on PullRequest {
                                     __typename
+                                    id
                                     title
                                     number
                                     url
@@ -85,6 +153,7 @@ enum GraphQLQueries {
                                 }
                                 ... on DraftIssue {
                                     __typename
+                                    id
                                     title
                                     assignees(first: 5) {
                                         nodes {
@@ -101,6 +170,10 @@ enum GraphQLQueries {
                                     optionId
                                 }
                             }
+                        }
+                        pageInfo {
+                            hasNextPage
+                            endCursor
                         }
                     }
                 }

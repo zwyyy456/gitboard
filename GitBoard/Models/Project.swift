@@ -1,18 +1,43 @@
 import Foundation
 
+enum ProjectOwnerKind: String, Codable, Hashable {
+    case user
+    case organization
+}
+
+struct ProjectOwner: Identifiable, Codable, Hashable {
+    let id: String
+    let login: String
+    let name: String?
+    let kind: ProjectOwnerKind
+}
+
 struct Project: Identifiable, Codable, Hashable {
     let id: String
+    let owner: ProjectOwner
     let title: String
     let number: Int
     let url: String
+    let viewerCanUpdate: Bool
     var statusField: StatusField?
     var items: [ProjectItem]
 
-    init(id: String, title: String, number: Int, url: String, statusField: StatusField? = nil, items: [ProjectItem] = []) {
+    init(
+        id: String,
+        owner: ProjectOwner,
+        title: String,
+        number: Int,
+        url: String,
+        viewerCanUpdate: Bool,
+        statusField: StatusField? = nil,
+        items: [ProjectItem] = []
+    ) {
         self.id = id
+        self.owner = owner
         self.title = title
         self.number = number
         self.url = url
+        self.viewerCanUpdate = viewerCanUpdate
         self.statusField = statusField
         self.items = items
     }
@@ -44,129 +69,6 @@ struct Project: Identifiable, Codable, Hashable {
     var statusCounts: [(status: StatusOption, count: Int)] {
         statusOptions.map { option in
             (option, itemCount(forStatus: option.name))
-        }
-    }
-}
-
-struct ProjectsListResponse: Codable {
-    let data: DataContainer
-
-    struct DataContainer: Codable {
-        let viewer: Viewer
-    }
-
-    struct Viewer: Codable {
-        let projectsV2: ProjectsConnection
-    }
-
-    struct ProjectsConnection: Codable {
-        let nodes: [ProjectNode]
-    }
-
-    struct ProjectNode: Codable {
-        let id: String
-        let title: String
-        let number: Int
-        let url: String
-    }
-}
-
-struct ProjectDetailResponse: Codable {
-    let data: DataContainer
-
-    struct DataContainer: Codable {
-        let node: ProjectNode
-    }
-
-    struct ProjectNode: Codable {
-        let title: String
-        let fields: FieldsConnection
-        let items: ItemsConnection
-    }
-
-    struct FieldsConnection: Codable {
-        let nodes: [FieldNode]
-    }
-
-    struct FieldNode: Codable {
-        let id: String?
-        let name: String?
-        let options: [OptionNode]?
-
-        enum CodingKeys: String, CodingKey {
-            case id
-            case name
-            case options
-        }
-
-        init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            id = try container.decodeIfPresent(String.self, forKey: .id)
-            name = try container.decodeIfPresent(String.self, forKey: .name)
-            options = try container.decodeIfPresent([OptionNode].self, forKey: .options)
-        }
-    }
-
-    struct OptionNode: Codable {
-        let id: String
-        let name: String
-        let color: String
-    }
-
-    struct ItemsConnection: Codable {
-        let nodes: [ItemNode]
-    }
-
-    struct ItemNode: Codable {
-        let id: String
-        let content: ItemContent?
-        let fieldValueByName: FieldValue?
-
-        struct ItemContent: Codable {
-            let typename: String
-            let title: String
-            let number: Int?
-            let url: String?
-            let state: String?
-            let assignees: AssigneesConnection?
-            let closedByPullRequestsReferences: PRConnection?
-
-            enum CodingKeys: String, CodingKey {
-                case typename = "__typename"
-                case title
-                case number
-                case url
-                case state
-                case assignees
-                case closedByPullRequestsReferences
-            }
-        }
-
-        struct AssigneesConnection: Codable {
-            let nodes: [AssigneeNode]
-        }
-
-        struct AssigneeNode: Codable {
-            let login: String
-            let avatarUrl: String
-            let name: String?
-        }
-
-        struct PRConnection: Codable {
-            let nodes: [PRNode]
-        }
-
-        struct PRNode: Codable {
-            let number: Int
-            let title: String
-            let url: String
-            let merged: Bool
-            let closed: Bool
-        }
-
-        struct FieldValue: Codable {
-            let name: String?
-            let optionId: String?
         }
     }
 }

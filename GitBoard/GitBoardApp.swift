@@ -2,11 +2,11 @@ import SwiftUI
 
 // Environment key for dismissing menubar
 private struct DismissMenuBarKey: EnvironmentKey {
-    static let defaultValue: () -> Void = {}
+    static let defaultValue: @MainActor @Sendable () -> Void = {}
 }
 
 extension EnvironmentValues {
-    var dismissMenuBar: () -> Void {
+    var dismissMenuBar: @MainActor @Sendable () -> Void {
         get { self[DismissMenuBarKey.self] }
         set { self[DismissMenuBarKey.self] = newValue }
     }
@@ -20,7 +20,9 @@ struct GitBoardApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuBarPopoverView(store: store)
-                .environment(\.dismissMenuBar, dismissMenuBar)
+                .environment(\.dismissMenuBar) { @MainActor @Sendable in
+                    menuBarWindow?.close()
+                }
                 .background(MenuBarWindowFinder(window: $menuBarWindow))
         } label: {
             Image(systemName: "rectangle.split.3x1")
@@ -52,9 +54,6 @@ struct GitBoardApp: App {
         }
     }
 
-    private func dismissMenuBar() {
-        menuBarWindow?.close()
-    }
 }
 
 // Helper view to capture the NSWindow reference

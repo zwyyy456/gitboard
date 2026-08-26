@@ -55,6 +55,9 @@ struct ProjectItemRowView: View {
         case .draftIssue:
             Image(systemName: "doc")
                 .foregroundStyle(.secondary)
+        case .redacted:
+            Image(systemName: "lock")
+                .foregroundStyle(.secondary)
         }
     }
 

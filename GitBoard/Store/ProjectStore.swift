@@ -4,7 +4,14 @@ import SwiftUI
 @MainActor
 @Observable
 final class ProjectStore {
+    var sessionState: GitHubSessionState = .checking
+    var owners: [ProjectOwner] = []
     var projects: [Project] = []
+    var selectedOwnerId: String? {
+        didSet {
+            UserDefaults.standard.set(selectedOwnerId, forKey: "selectedOwnerId")
+        }
+    }
     var selectedProjectId: String? {
         didSet {
             UserDefaults.standard.set(selectedProjectId, forKey: "selectedProjectId")
@@ -24,7 +31,8 @@ final class ProjectStore {
     var currentUserLogin: String?
 
     private var pollingTask: Task<Void, Never>?
-    private var previousItemStatuses: [String: String?] = [:]
+    private var catalogGeneration = 0
+    private var projectGeneration = 0
 
     private let notificationService = NotificationService.shared
     private let gitHubService = GitHubService.shared
@@ -32,6 +40,11 @@ final class ProjectStore {
     var selectedProject: Project? {
         guard let id = selectedProjectId else { return nil }
         return projects.first { $0.id == id }
+    }
+
+    var selectedOwner: ProjectOwner? {
+        guard let id = selectedOwnerId else { return nil }
+        return owners.first { $0.id == id }
     }
 
     var pollInterval: TimeInterval = 45
@@ -43,60 +56,89 @@ final class ProjectStore {
     }
 
     init() {
+        selectedOwnerId = UserDefaults.standard.string(forKey: "selectedOwnerId")
         selectedProjectId = UserDefaults.standard.string(forKey: "selectedProjectId")
         selectedStatusFilter = UserDefaults.standard.string(forKey: "selectedStatusFilter")
     }
 
     func loadProjects() async {
+        catalogGeneration += 1
+        let generation = catalogGeneration
         isLoading = true
         error = nil
+        sessionState = .checking
+
+        let session = await gitHubService.inspectSession()
+        guard generation == catalogGeneration else { return }
+        sessionState = session
+
+        guard case .ready(let account) = session else {
+            isLoading = false
+            error = sessionError(for: session)
+            return
+        }
+        currentUserLogin = account.login
 
         do {
-            // Fetch current user login for @me support
-            if currentUserLogin == nil {
-                currentUserLogin = try? await gitHubService.getCurrentUserLogin()
+            let loadedOwners = try await gitHubService.fetchOwners()
+            guard generation == catalogGeneration else { return }
+            owners = loadedOwners
+
+            let owner = loadedOwners.first { $0.id == selectedOwnerId } ?? loadedOwners.first
+            guard let owner else {
+                projects = []
+                selectedOwnerId = nil
+                selectedProjectId = nil
+                isLoading = false
+                return
             }
-
-            projects = try await gitHubService.fetchProjects()
-
-            if selectedProjectId == nil, let firstProject = projects.first {
-                selectedProjectId = firstProject.id
-            }
-
-            if let selectedId = selectedProjectId {
-                await loadProjectDetails(id: selectedId)
-            }
-
-            lastUpdated = Date()
+            selectedOwnerId = owner.id
+            await loadProjects(for: owner, generation: generation)
+        } catch is CancellationError {
+            return
         } catch {
+            guard generation == catalogGeneration else { return }
             self.error = error
+            isLoading = false
         }
-
-        isLoading = false
     }
 
     func loadProjectDetails(id: String) async {
+        projectGeneration += 1
+        let generation = projectGeneration
+
+        guard let project = projects.first(where: { $0.id == id }) else { return }
         do {
-            let detailedProject = try await gitHubService.fetchProjectWithItems(id: id)
+            let detailedProject = try await gitHubService.fetchProjectWithItems(project: project)
+            guard generation == projectGeneration, selectedProjectId == id else { return }
 
             if let index = projects.firstIndex(where: { $0.id == id }) {
                 let oldItems = projects[index].items
                 await detectStatusChanges(oldItems: oldItems, newItems: detailedProject.items)
 
-                projects[index] = Project(
-                    id: projects[index].id,
-                    title: projects[index].title,
-                    number: projects[index].number,
-                    url: projects[index].url,
-                    statusField: detailedProject.statusField,
-                    items: detailedProject.items
-                )
+                projects[index] = detailedProject
             }
 
             lastUpdated = Date()
+        } catch is CancellationError {
+            return
         } catch {
+            guard generation == projectGeneration, selectedProjectId == id else { return }
             self.error = error
         }
+    }
+
+    func selectOwner(_ owner: ProjectOwner) async {
+        guard owner.id != selectedOwnerId else { return }
+        catalogGeneration += 1
+        let generation = catalogGeneration
+        selectedOwnerId = owner.id
+        selectedProjectId = nil
+        selectedStatusFilter = nil
+        isLoading = true
+        error = nil
+
+        await loadProjects(for: owner, generation: generation)
     }
 
     func refresh() async {
@@ -152,12 +194,58 @@ final class ProjectStore {
     }
 
     func selectProject(_ project: Project) async {
+        guard project.id != selectedProjectId || project.items.isEmpty else { return }
         selectedProjectId = project.id
+        selectedStatusFilter = nil
+        error = nil
         await loadProjectDetails(id: project.id)
     }
 
+    private func loadProjects(for owner: ProjectOwner, generation: Int) async {
+        do {
+            let loadedProjects = try await gitHubService.fetchProjects(owner: owner)
+            guard generation == catalogGeneration, selectedOwnerId == owner.id else { return }
+            projects = loadedProjects
+
+            let selectedProject = loadedProjects.first { $0.id == selectedProjectId }
+                ?? loadedProjects.first
+            selectedProjectId = selectedProject?.id
+
+            if let selectedProject {
+                await loadProjectDetails(id: selectedProject.id)
+            }
+
+            guard generation == catalogGeneration else { return }
+            lastUpdated = Date()
+            isLoading = false
+        } catch is CancellationError {
+            return
+        } catch {
+            guard generation == catalogGeneration else { return }
+            projects = []
+            selectedProjectId = nil
+            self.error = error
+            isLoading = false
+        }
+    }
+
+    private func sessionError(for state: GitHubSessionState) -> GitHubError? {
+        switch state {
+        case .checking, .ready:
+            return nil
+        case .missingCLI:
+            return .ghCLINotFound
+        case .signedOut:
+            return .notAuthenticated
+        case .missingProjectScope:
+            return .missingProjectScope
+        case .failed(let message):
+            return .processError(message)
+        }
+    }
+
     func moveItem(_ item: ProjectItem, toStatus status: StatusOption) async {
-        guard let project = selectedProject,
+        guard let project = selectedProject, project.viewerCanUpdate,
               let fieldId = project.statusField?.id,
               let projectIndex = projects.firstIndex(where: { $0.id == project.id }),
               let itemIndex = projects[projectIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
@@ -186,9 +274,11 @@ final class ProjectStore {
         newItems[itemIndex] = updatedItem
         projects[projectIndex] = Project(
             id: project.id,
+            owner: project.owner,
             title: project.title,
             number: project.number,
             url: project.url,
+            viewerCanUpdate: project.viewerCanUpdate,
             statusField: project.statusField,
             items: newItems
         )
@@ -210,7 +300,7 @@ final class ProjectStore {
     }
 
     func deleteItem(_ item: ProjectItem) async {
-        guard let project = selectedProject else { return }
+        guard let project = selectedProject, project.viewerCanUpdate else { return }
 
         do {
             try await gitHubService.deleteItem(projectId: project.id, itemId: item.id)
@@ -231,7 +321,7 @@ final class ProjectStore {
 
     func addAssignee(to item: ProjectItem, user: Assignee) async {
         guard let url = item.url,
-              let project = selectedProject,
+              let project = selectedProject, project.viewerCanUpdate,
               let projectIndex = projects.firstIndex(where: { $0.id == project.id }),
               let itemIndex = projects[projectIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
 
@@ -263,9 +353,11 @@ final class ProjectStore {
         newItems[itemIndex] = updatedItem
         projects[projectIndex] = Project(
             id: project.id,
+            owner: project.owner,
             title: project.title,
             number: project.number,
             url: project.url,
+            viewerCanUpdate: project.viewerCanUpdate,
             statusField: project.statusField,
             items: newItems
         )
@@ -282,7 +374,7 @@ final class ProjectStore {
 
     func removeAssignee(from item: ProjectItem, user: Assignee) async {
         guard let url = item.url,
-              let project = selectedProject,
+              let project = selectedProject, project.viewerCanUpdate,
               let projectIndex = projects.firstIndex(where: { $0.id == project.id }),
               let itemIndex = projects[projectIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
 
@@ -311,9 +403,11 @@ final class ProjectStore {
         newItems[itemIndex] = updatedItem
         projects[projectIndex] = Project(
             id: project.id,
+            owner: project.owner,
             title: project.title,
             number: project.number,
             url: project.url,
+            viewerCanUpdate: project.viewerCanUpdate,
             statusField: project.statusField,
             items: newItems
         )
@@ -366,7 +460,7 @@ final class ProjectStore {
 
     /// Create a draft issue (no labels/assignees)
     func createDraftIssue(title: String) async {
-        guard let project = selectedProject else { return }
+        guard let project = selectedProject, project.viewerCanUpdate else { return }
 
         do {
             _ = try await gitHubService.createDraftIssue(projectId: project.id, title: title)
@@ -378,7 +472,7 @@ final class ProjectStore {
 
     /// Create a real issue with labels and assignees (project workflow will auto-add it)
     func createIssue(title: String, labels: [String], assignees: [String]) async {
-        guard let project = selectedProject else { return }
+        guard let project = selectedProject, project.viewerCanUpdate else { return }
 
         do {
             // Get repo from existing issues in the project

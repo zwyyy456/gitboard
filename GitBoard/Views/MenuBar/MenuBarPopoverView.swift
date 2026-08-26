@@ -10,6 +10,10 @@ struct MenuBarPopoverView: View {
     @State private var isCreating = false
     @State private var isCreateMode = false
 
+    private var canEditSelectedProject: Bool {
+        store.selectedProject?.viewerCanUpdate == true
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerView
@@ -87,41 +91,8 @@ struct MenuBarPopoverView: View {
 
     private var headerView: some View {
         HStack(spacing: 10) {
-            if store.projects.count > 1 {
-                Menu {
-                    ForEach(store.projects) { project in
-                        Button {
-                            Task { await store.selectProject(project) }
-                        } label: {
-                            HStack {
-                                Text(project.title)
-                                if project.id == store.selectedProjectId {
-                                    Spacer()
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(store.selectedProject?.title ?? "Select Project")
-                            .font(.system(size: 14, weight: .semibold))
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .buttonStyle(.plain)
+            ProjectSelectorView(store: store, compact: true)
                 .frame(maxWidth: 200, alignment: .leading)
-            } else if let project = store.selectedProject {
-                Text(project.title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1)
-            } else {
-                Text("GitBoard")
-                    .font(.system(size: 14, weight: .semibold))
-            }
 
             Spacer()
 
@@ -215,6 +186,17 @@ struct MenuBarPopoverView: View {
                         icon: "person.crop.circle.badge.questionmark",
                         title: "Sign in to GitHub",
                         message: "Open Terminal and run:\ngh auth login",
+                        buttonTitle: "Try Again",
+                        buttonAction: {
+                            Task { await store.loadProjects() }
+                        }
+                    )
+
+                case .missingProjectScope:
+                    onboardingView(
+                        icon: "lock.shield",
+                        title: "Project Access Required",
+                        message: "Open Terminal and run:\ngh auth refresh -s project",
                         buttonTitle: "Try Again",
                         buttonAction: {
                             Task { await store.loadProjects() }
@@ -351,14 +333,18 @@ struct MenuBarPopoverView: View {
             }
 
             TextField(
-                isCreateMode ? "Title #label @assignee" : "Search, #number, @me · Type > to create",
+                isCreateMode
+                    ? "Title #label @assignee"
+                    : canEditSelectedProject
+                        ? "Search, #number, @me · Type > to create"
+                        : "Search, #number, @me",
                 text: $searchText
             )
             .textFieldStyle(.plain)
             .font(.system(size: 13))
             .onChange(of: searchText) { oldValue, newValue in
                 // Enter create mode when user types >
-                if !isCreateMode && newValue == ">" {
+                if canEditSelectedProject && !isCreateMode && newValue == ">" {
                     isCreateMode = true
                     searchText = ""
                 }
@@ -707,46 +693,47 @@ struct ItemRow: View {
                 Label("Open in Browser", systemImage: "safari")
             }
 
-            Divider()
+            if project.viewerCanUpdate {
+                Divider()
 
-            Menu {
-                ForEach(project.statusOptions) { status in
-                    Button {
-                        Task { await store.moveItem(item, toStatus: status) }
-                    } label: {
-                        HStack {
-                            Circle()
-                                .fill(status.swiftUIColor)
-                                .frame(width: 8, height: 8)
-                            Text(status.name)
-                            if item.status == status.name {
-                                Spacer()
-                                Image(systemName: "checkmark")
+                Menu {
+                    ForEach(project.statusOptions) { status in
+                        Button {
+                            Task { await store.moveItem(item, toStatus: status) }
+                        } label: {
+                            HStack {
+                                Circle()
+                                    .fill(status.swiftUIColor)
+                                    .frame(width: 8, height: 8)
+                                Text(status.name)
+                                if item.status == status.name {
+                                    Spacer()
+                                    Image(systemName: "checkmark")
+                                }
                             }
                         }
-                    }
-                    .disabled(item.status == status.name)
-                }
-            } label: {
-                Label("Move to", systemImage: "arrow.right.circle")
-            }
-
-            Divider()
-
-            if !item.assignees.isEmpty {
-                Menu {
-                    ForEach(item.assignees) { assignee in
-                        Button {
-                            Task { await store.removeAssignee(from: item, user: assignee) }
-                        } label: {
-                            Label(assignee.name ?? assignee.login, systemImage: "person.fill.xmark")
-                        }
+                        .disabled(item.status == status.name)
                     }
                 } label: {
-                    Label("Assignees (\(item.assignees.count))", systemImage: "person.2")
+                    Label("Move to", systemImage: "arrow.right.circle")
+                }
+
+                Divider()
+
+                if !item.assignees.isEmpty {
+                    Menu {
+                        ForEach(item.assignees) { assignee in
+                            Button {
+                                Task { await store.removeAssignee(from: item, user: assignee) }
+                            } label: {
+                                Label(assignee.name ?? assignee.login, systemImage: "person.fill.xmark")
+                            }
+                        }
+                    } label: {
+                        Label("Assignees (\(item.assignees.count))", systemImage: "person.2")
+                    }
                 }
             }
-
         }
     }
 
@@ -760,6 +747,8 @@ struct ItemRow: View {
                 Image(systemName: "arrow.triangle.merge")
             case .draftIssue:
                 Image(systemName: "doc.text")
+            case .redacted:
+                Image(systemName: "lock")
             }
         }
         .font(.system(size: 13))
