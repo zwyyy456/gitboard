@@ -272,6 +272,10 @@ final class ProjectStore {
             status: status.name,
             statusOptionId: status.id,
             assignees: item.assignees,
+            labels: item.labels,
+            fieldValues: item.fieldValues.merging([
+                fieldId: .singleSelect(optionId: status.id, name: status.name)
+            ]) { _, new in new },
             linkedPR: item.linkedPR
         )
 
@@ -285,6 +289,7 @@ final class ProjectStore {
             number: project.number,
             url: project.url,
             viewerCanUpdate: project.viewerCanUpdate,
+            fields: project.fields,
             statusField: project.statusField,
             items: newItems
         )
@@ -301,7 +306,7 @@ final class ProjectStore {
         } catch {
             // Revert on error - restore original project
             projects[projectIndex] = originalProject
-            self.error = error
+            operationErrorMessage = error.localizedDescription
         }
     }
 
@@ -312,15 +317,72 @@ final class ProjectStore {
             try await gitHubService.deleteItem(projectId: project.id, itemId: item.id)
             await refresh()
         } catch {
-            self.error = error
+            operationErrorMessage = error.localizedDescription
+        }
+    }
+
+    func archiveItem(_ item: ProjectItem) async -> Bool {
+        guard let project = editableSelectedProject() else { return false }
+        operationErrorMessage = nil
+
+        do {
+            try await gitHubService.archiveItem(projectId: project.id, itemId: item.id)
+            if let projectIndex = projects.firstIndex(where: { $0.id == project.id }) {
+                projects[projectIndex].items.removeAll { $0.id == item.id }
+            }
+            lastUpdated = Date()
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            operationErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func updateField(
+        on item: ProjectItem,
+        field: ProjectField,
+        value: ProjectFieldValue?
+    ) async -> Bool {
+        guard let project = editableSelectedProject() else { return false }
+        operationErrorMessage = nil
+
+        do {
+            try await gitHubService.updateItemField(
+                projectId: project.id,
+                itemId: item.id,
+                fieldId: field.id,
+                value: value
+            )
+            await loadProjectDetails(id: project.id)
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            operationErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func moveItems(_ items: [ProjectItem], to status: StatusOption) async {
+        for item in items where item.status != status.name {
+            await moveItem(item, toStatus: status)
+        }
+    }
+
+    func archiveItems(_ items: [ProjectItem]) async {
+        for item in items {
+            _ = await archiveItem(item)
         }
     }
 
     func searchUsers(query: String) async -> [Assignee] {
+        operationErrorMessage = nil
         do {
             return try await gitHubService.searchUsers(query: query)
         } catch {
-            self.error = error
+            operationErrorMessage = error.localizedDescription
             return []
         }
     }
@@ -352,6 +414,8 @@ final class ProjectStore {
             status: item.status,
             statusOptionId: item.statusOptionId,
             assignees: newAssignees,
+            labels: item.labels,
+            fieldValues: item.fieldValues,
             linkedPR: item.linkedPR
         )
 
@@ -364,6 +428,7 @@ final class ProjectStore {
             number: project.number,
             url: project.url,
             viewerCanUpdate: project.viewerCanUpdate,
+            fields: project.fields,
             statusField: project.statusField,
             items: newItems
         )
@@ -374,7 +439,7 @@ final class ProjectStore {
         } catch {
             // Revert on error
             projects[projectIndex] = originalProject
-            self.error = error
+            operationErrorMessage = error.localizedDescription
         }
     }
 
@@ -402,6 +467,8 @@ final class ProjectStore {
             status: item.status,
             statusOptionId: item.statusOptionId,
             assignees: newAssignees,
+            labels: item.labels,
+            fieldValues: item.fieldValues,
             linkedPR: item.linkedPR
         )
 
@@ -414,6 +481,7 @@ final class ProjectStore {
             number: project.number,
             url: project.url,
             viewerCanUpdate: project.viewerCanUpdate,
+            fields: project.fields,
             statusField: project.statusField,
             items: newItems
         )
@@ -424,7 +492,43 @@ final class ProjectStore {
         } catch {
             // Revert on error
             projects[projectIndex] = originalProject
-            self.error = error
+            operationErrorMessage = error.localizedDescription
+        }
+    }
+
+    func addLabel(to item: ProjectItem, name: String) async -> Bool {
+        guard let url = item.url, editableSelectedProject() != nil else { return false }
+        operationErrorMessage = nil
+
+        do {
+            try await gitHubService.addLabel(issueUrl: url, label: name)
+            if let projectId = selectedProjectId {
+                await loadProjectDetails(id: projectId)
+            }
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            operationErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func removeLabel(from item: ProjectItem, name: String) async -> Bool {
+        guard let url = item.url, editableSelectedProject() != nil else { return false }
+        operationErrorMessage = nil
+
+        do {
+            try await gitHubService.removeLabel(issueUrl: url, label: name)
+            if let projectId = selectedProjectId {
+                await loadProjectDetails(id: projectId)
+            }
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            operationErrorMessage = error.localizedDescription
+            return false
         }
     }
 

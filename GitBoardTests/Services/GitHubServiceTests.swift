@@ -28,10 +28,10 @@ struct GitHubServiceTests {
     @Test func projectLoadKeepsContentIdentityAndRedactedItems() async throws {
         let runner = FixtureGitHubCommandRunner(responses: [
             """
-            {"data":{"node":{"title":"Work","number":7,"url":"https://github.com/users/me/projects/7","viewerCanUpdate":true,"fields":{"nodes":[{"id":"F1","name":"Status","options":[{"id":"todo","name":"Todo","color":"GRAY"}]}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
+            {"data":{"node":{"title":"Work","number":7,"url":"https://github.com/users/me/projects/7","viewerCanUpdate":true,"fields":{"nodes":[{"__typename":"ProjectV2SingleSelectField","id":"F1","name":"Status","dataType":"SINGLE_SELECT","options":[{"id":"todo","name":"Todo","color":"GRAY"}]},{"__typename":"ProjectV2IterationField","id":"F2","name":"Iteration","dataType":"ITERATION","configuration":{"iterations":[{"id":"SPRINT1","title":"Sprint 1","startDate":"2026-08-24","duration":14}],"completedIterations":[]}},{"__typename":"ProjectV2Field","id":"F3","name":"Estimate","dataType":"NUMBER"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
             """,
             """
-            {"data":{"node":{"items":{"nodes":[{"id":"I1","content":{"__typename":"Issue","id":"CONTENT1","title":"First","number":1,"url":"https://github.com/acme/repo/issues/1","state":"OPEN","assignees":{"nodes":[]},"closedByPullRequestsReferences":{"nodes":[]}},"fieldValueByName":{"name":"Todo","optionId":"todo"}}],"pageInfo":{"hasNextPage":true,"endCursor":"items-next"}}}}}
+            {"data":{"node":{"items":{"nodes":[{"id":"I1","content":{"__typename":"Issue","id":"CONTENT1","title":"First","number":1,"url":"https://github.com/acme/repo/issues/1","state":"OPEN","assignees":{"nodes":[]},"labels":{"nodes":[{"id":"L1","name":"bug","color":"d73a4a"}]},"closedByPullRequestsReferences":{"nodes":[]}},"fieldValueByName":{"name":"Todo","optionId":"todo"},"fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"id":"F1"}},{"__typename":"ProjectV2ItemFieldIterationValue","title":"Sprint 1","iterationId":"SPRINT1","field":{"id":"F2"}},{"__typename":"ProjectV2ItemFieldNumberValue","number":3,"field":{"id":"F3"}}]}}],"pageInfo":{"hasNextPage":true,"endCursor":"items-next"}}}}}
             """,
             """
             {"data":{"node":{"items":{"nodes":[{"id":"I2","content":null,"fieldValueByName":null}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
@@ -54,6 +54,10 @@ struct GitHubServiceTests {
         #expect(project.items.count == 2)
         #expect(project.items[0].contentId == "CONTENT1")
         #expect(project.items[0].contentId != project.items[0].url)
+        #expect(project.fields.map(\.kind) == [.singleSelect, .iteration, .number])
+        #expect(project.items[0].labels.map(\.name) == ["bug"])
+        #expect(project.items[0].fieldValues["F2"] == .iteration(id: "SPRINT1", title: "Sprint 1"))
+        #expect(project.items[0].fieldValues["F3"] == .number(3))
         #expect(project.items[1].contentType == .redacted)
         #expect(calls[2].contains("after=items-next"))
     }
@@ -97,6 +101,7 @@ struct GitHubServiceTests {
         #expect(calls[2].contains("contentId=ISSUE_NODE_42"))
         #expect(calls[2].contains("projectId=PROJECT_1"))
     }
+
 }
 
 private actor FixtureGitHubCommandRunner: GitHubCommandRunning {

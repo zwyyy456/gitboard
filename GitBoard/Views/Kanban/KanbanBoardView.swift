@@ -7,6 +7,9 @@ struct KanbanBoardView: View {
     @State private var isRefreshing = false
     @State private var searchText = ""
     @State private var showsAddItem = false
+    @State private var isSelecting = false
+    @State private var selectedItemIDs: Set<String> = []
+    @State private var isBulkWorking = false
     @State private var keyMonitor: Any?
 
     private var canEditSelectedProject: Bool {
@@ -21,6 +24,8 @@ struct KanbanBoardView: View {
                 .padding(.vertical, 14)
 
             Divider()
+
+            OperationErrorBanner(store: store)
 
             // Board content
             if store.isLoading && store.selectedProject == nil {
@@ -37,6 +42,10 @@ struct KanbanBoardView: View {
         .background(Color(red: 0x1a/255, green: 0x1a/255, blue: 0x1a/255))
         .sheet(isPresented: $showsAddItem) {
             AddProjectItemView(store: store)
+        }
+        .onChange(of: store.selectedProjectId) { _, _ in
+            isSelecting = false
+            selectedItemIDs.removeAll()
         }
         .task {
             if store.projects.isEmpty {
@@ -114,6 +123,30 @@ struct KanbanBoardView: View {
                 }
                 .buttonStyle(.bordered)
                 .help("Create an issue or add an existing item")
+
+                Button(isSelecting ? "Done" : "Select") {
+                    isSelecting.toggle()
+                    if isSelecting == false { selectedItemIDs.removeAll() }
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if isSelecting {
+                Text("\(selectedItemIDs.count) selected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Menu("Move to") {
+                    ForEach(store.selectedProject?.statusOptions ?? []) { status in
+                        Button(status.name) { moveSelection(to: status) }
+                    }
+                }
+                .disabled(selectedItemIDs.isEmpty || isBulkWorking)
+
+                Button("Archive", systemImage: "archivebox") {
+                    archiveSelection()
+                }
+                .disabled(selectedItemIDs.isEmpty || isBulkWorking)
             }
 
             Spacer()
@@ -253,7 +286,9 @@ struct KanbanBoardView: View {
                             status: status,
                             items: statusItems,
                             allStatuses: project.statusOptions,
-                            store: store
+                            store: store,
+                            isSelecting: isSelecting,
+                            selectedItemIDs: $selectedItemIDs
                         )
                         .frame(height: geometry.size.height - 32)
                     }
@@ -264,7 +299,9 @@ struct KanbanBoardView: View {
                             status: nil,
                             items: noStatusFiltered,
                             allStatuses: project.statusOptions,
-                            store: store
+                            store: store,
+                            isSelecting: isSelecting,
+                            selectedItemIDs: $selectedItemIDs
                         )
                         .frame(height: geometry.size.height - 32)
                     }
@@ -272,6 +309,32 @@ struct KanbanBoardView: View {
                 .padding(16)
             }
             .scrollIndicators(.never)
+        }
+    }
+
+    private var selectedItems: [ProjectItem] {
+        store.selectedProject?.items.filter { selectedItemIDs.contains($0.id) } ?? []
+    }
+
+    private func moveSelection(to status: StatusOption) {
+        let items = selectedItems
+        guard items.isEmpty == false else { return }
+        isBulkWorking = true
+        Task {
+            await store.moveItems(items, to: status)
+            selectedItemIDs.removeAll()
+            isBulkWorking = false
+        }
+    }
+
+    private func archiveSelection() {
+        let items = selectedItems
+        guard items.isEmpty == false else { return }
+        isBulkWorking = true
+        Task {
+            await store.archiveItems(items)
+            selectedItemIDs.removeAll()
+            isBulkWorking = false
         }
     }
 }
@@ -283,6 +346,8 @@ struct KanbanColumn: View {
     let items: [ProjectItem]
     let allStatuses: [StatusOption]
     @Bindable var store: ProjectStore
+    let isSelecting: Bool
+    @Binding var selectedItemIDs: Set<String>
 
     @State private var isTargeted = false
 
@@ -322,10 +387,29 @@ struct KanbanColumn: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 10) {
                     ForEach(items) { item in
-                        KanbanCard(item: item, allStatuses: allStatuses, store: store)
+                        if isSelecting {
+                            KanbanCard(
+                                item: item,
+                                allStatuses: allStatuses,
+                                store: store,
+                                isSelecting: true,
+                                isSelected: selectedItemIDs.contains(item.id)
+                            ) {
+                                toggleSelection(item.id)
+                            }
+                        } else {
+                            KanbanCard(
+                                item: item,
+                                allStatuses: allStatuses,
+                                store: store,
+                                isSelecting: false,
+                                isSelected: false,
+                                onSelect: {}
+                            )
                             .draggable(item.id) {
                                 KanbanCardPreview(item: item)
                             }
+                        }
                     }
                 }
                 .padding(12)
@@ -345,6 +429,7 @@ struct KanbanColumn: View {
         .dropDestination(for: String.self) { droppedItems, _ in
             guard let itemId = droppedItems.first,
                   let targetStatus = status,
+                  isSelecting == false,
                   store.selectedProject?.viewerCanUpdate == true else { return false }
 
             // Find the item being dropped from all project items
@@ -362,6 +447,14 @@ struct KanbanColumn: View {
             isTargeted = targeted
         }
     }
+
+    private func toggleSelection(_ itemID: String) {
+        if selectedItemIDs.contains(itemID) {
+            selectedItemIDs.remove(itemID)
+        } else {
+            selectedItemIDs.insert(itemID)
+        }
+    }
 }
 
 // MARK: - Kanban Card
@@ -370,9 +463,13 @@ struct KanbanCard: View {
     let item: ProjectItem
     let allStatuses: [StatusOption]
     @Bindable var store: ProjectStore
+    let isSelecting: Bool
+    let isSelected: Bool
+    let onSelect: () -> Void
 
     @State private var isHovered = false
     @State private var showDeleteConfirmation = false
+    @State private var showsInspector = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -438,19 +535,37 @@ struct KanbanCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.08), lineWidth: isSelected ? 2 : 1)
         )
+        .overlay(alignment: .topTrailing) {
+            if isSelecting {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    .padding(8)
+            }
+        }
         .scaleEffect(isHovered ? 1.01 : 1.0)
         .animation(.easeOut(duration: 0.15), value: isHovered)
         .onHover { hovering in
             isHovered = hovering
         }
         .onTapGesture {
-            if let urlString = item.url, let url = URL(string: urlString) {
-                NSWorkspace.shared.open(url)
+            if isSelecting {
+                onSelect()
+            } else {
+                showsInspector = true
             }
         }
+        .sheet(isPresented: $showsInspector) {
+            ItemInspectorView(store: store, itemID: item.id)
+        }
         .contextMenu {
+            Button {
+                showsInspector = true
+            } label: {
+                Label("Show Details", systemImage: "sidebar.right")
+            }
+
             Button {
                 if let urlString = item.url, let url = URL(string: urlString) {
                     NSWorkspace.shared.open(url)
@@ -502,24 +617,32 @@ struct KanbanCard: View {
                     Divider()
                 }
 
+                Button {
+                    Task { _ = await store.archiveItem(item) }
+                } label: {
+                    Label("Archive from Project", systemImage: "archivebox")
+                }
+
+                Divider()
+
                 Button(role: .destructive) {
                     showDeleteConfirmation = true
                 } label: {
-                    Label("Delete from Project", systemImage: "trash")
+                    Label("Remove from Project", systemImage: "trash")
                 }
             }
         }
         .confirmationDialog(
-            "Delete \"\(item.title)\"?",
+            "Remove \"\(item.title)\" from the project?",
             isPresented: $showDeleteConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Delete", role: .destructive) {
+            Button("Remove", role: .destructive) {
                 Task { await store.deleteItem(item) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will remove the item from the project.")
+            Text("Archive is recommended when you may need the item again.")
         }
     }
 

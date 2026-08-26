@@ -173,14 +173,16 @@ actor GitHubService {
         let projectData = try await fetchProjectFields(projectID: project.id)
         let itemNodes = try await fetchProjectItemNodes(projectID: project.id)
 
-        let statusField = projectData.fields.first { $0.name == "Status" && $0.options != nil }
+        let fields = projectData.fields.compactMap(makeProjectField)
+
+        let statusField = fields.first { $0.name == "Status" && $0.kind == .singleSelect }
             .map { field in
                 StatusField(
-                    id: field.id ?? "",
-                    name: field.name ?? "Status",
-                    options: field.options?.map {
-                        StatusOption(id: $0.id, name: $0.name, color: $0.color)
-                    } ?? []
+                    id: field.id,
+                    name: field.name,
+                    options: field.options.map {
+                        StatusOption(id: $0.id, name: $0.name, color: $0.color ?? "GRAY")
+                    }
                 )
             }
 
@@ -191,6 +193,7 @@ actor GitHubService {
             number: projectData.number,
             url: projectData.url,
             viewerCanUpdate: projectData.viewerCanUpdate,
+            fields: fields,
             statusField: statusField,
             items: itemNodes.map(makeProjectItem)
         )
@@ -210,6 +213,65 @@ actor GitHubService {
                 "fieldId": fieldId,
                 "optionId": optionId
             ],
+            as: EmptyPayload.self
+        )
+    }
+
+    func updateItemField(
+        projectId: String,
+        itemId: String,
+        fieldId: String,
+        value: ProjectFieldValue?
+    ) async throws {
+        guard let value else {
+            let _: EmptyPayload = try await request(
+                GraphQLQueries.clearItemField,
+                variables: ["projectId": projectId, "itemId": itemId, "fieldId": fieldId],
+                as: EmptyPayload.self
+            )
+            return
+        }
+
+        let variables = ["projectId": projectId, "itemId": itemId, "fieldId": fieldId]
+        switch value {
+        case .singleSelect(let optionId, _):
+            let _: EmptyPayload = try await request(
+                GraphQLQueries.updateItemStatus,
+                variables: variables.merging(["optionId": optionId]) { _, new in new },
+                as: EmptyPayload.self
+            )
+        case .iteration(let id, _):
+            let _: EmptyPayload = try await request(
+                GraphQLQueries.updateIterationField,
+                variables: variables.merging(["iterationId": id]) { _, new in new },
+                as: EmptyPayload.self
+            )
+        case .date(let date):
+            let _: EmptyPayload = try await request(
+                GraphQLQueries.updateDateField,
+                variables: variables.merging(["date": date]) { _, new in new },
+                as: EmptyPayload.self
+            )
+        case .number(let number):
+            let _: EmptyPayload = try await request(
+                GraphQLQueries.updateNumberField,
+                variables: variables,
+                numberVariables: ["number": number],
+                as: EmptyPayload.self
+            )
+        case .text(let text):
+            let _: EmptyPayload = try await request(
+                GraphQLQueries.updateTextField,
+                variables: variables.merging(["text": text]) { _, new in new },
+                as: EmptyPayload.self
+            )
+        }
+    }
+
+    func archiveItem(projectId: String, itemId: String) async throws {
+        let _: EmptyPayload = try await request(
+            GraphQLQueries.archiveItem,
+            variables: ["projectId": projectId, "itemId": itemId],
             as: EmptyPayload.self
         )
     }
@@ -241,7 +303,7 @@ actor GitHubService {
             throw GitHubError.graphQLError("Invalid issue URL")
         }
         _ = try await run([
-            "issue", "edit", String(components.number),
+            components.command, "edit", String(components.number),
             "--repo", "\(components.owner)/\(components.repository)",
             "--add-assignee", userLogin
         ])
@@ -252,9 +314,31 @@ actor GitHubService {
             throw GitHubError.graphQLError("Invalid issue URL")
         }
         _ = try await run([
-            "issue", "edit", String(components.number),
+            components.command, "edit", String(components.number),
             "--repo", "\(components.owner)/\(components.repository)",
             "--remove-assignee", userLogin
+        ])
+    }
+
+    func addLabel(issueUrl: String, label: String) async throws {
+        guard let components = parseIssueURL(issueUrl) else {
+            throw GitHubError.invalidItemURL
+        }
+        _ = try await run([
+            components.command, "edit", String(components.number),
+            "--repo", "\(components.owner)/\(components.repository)",
+            "--add-label", label
+        ])
+    }
+
+    func removeLabel(issueUrl: String, label: String) async throws {
+        guard let components = parseIssueURL(issueUrl) else {
+            throw GitHubError.invalidItemURL
+        }
+        _ = try await run([
+            components.command, "edit", String(components.number),
+            "--repo", "\(components.owner)/\(components.repository)",
+            "--remove-label", label
         ])
     }
 
@@ -434,7 +518,8 @@ actor GitHubService {
                 prState: nil,
                 status: node.fieldValueByName?.name,
                 statusOptionId: node.fieldValueByName?.optionId,
-                assignees: []
+                assignees: [],
+                fieldValues: makeFieldValues(node.fieldValues?.nodes ?? [])
             )
         }
 
@@ -448,6 +533,9 @@ actor GitHubService {
 
         let assignees = content.assignees?.nodes.map {
             Assignee(login: $0.login, avatarUrl: $0.avatarUrl, name: $0.name)
+        } ?? []
+        let labels = content.labels?.nodes.map {
+            IssueLabel(id: $0.id, name: $0.name, color: $0.color)
         } ?? []
         let linkedPullRequest = content.closedByPullRequestsReferences?.nodes.first.map {
             LinkedPR(
@@ -471,19 +559,83 @@ actor GitHubService {
             status: node.fieldValueByName?.name,
             statusOptionId: node.fieldValueByName?.optionId,
             assignees: assignees,
+            labels: labels,
+            fieldValues: makeFieldValues(node.fieldValues?.nodes ?? []),
             linkedPR: linkedPullRequest
         )
+    }
+
+    private func makeProjectField(from node: FieldNode) -> ProjectField? {
+        guard let id = node.id, let name = node.name else { return nil }
+        let kind: ProjectFieldKind
+        switch node.isIssueField == true ? nil : node.dataType {
+        case "SINGLE_SELECT": kind = .singleSelect
+        case "ITERATION": kind = .iteration
+        case "DATE": kind = .date
+        case "NUMBER": kind = .number
+        case "TEXT": kind = .text
+        default: kind = .unsupported
+        }
+        let iterations = (node.configuration?.iterations ?? [])
+            + (node.configuration?.completedIterations ?? [])
+        return ProjectField(
+            id: id,
+            name: name,
+            kind: kind,
+            options: node.options?.map {
+                ProjectFieldOption(id: $0.id, name: $0.name, color: $0.color)
+            } ?? [],
+            iterations: iterations.map {
+                ProjectIteration(
+                    id: $0.id,
+                    title: $0.title,
+                    startDate: $0.startDate,
+                    duration: $0.duration
+                )
+            }
+        )
+    }
+
+    private func makeFieldValues(_ nodes: [ItemFieldValueNode]) -> [String: ProjectFieldValue] {
+        var values: [String: ProjectFieldValue] = [:]
+        for node in nodes {
+            guard let fieldId = node.field?.id else { continue }
+            switch node.typename {
+            case "ProjectV2ItemFieldSingleSelectValue":
+                if let optionId = node.optionId, let name = node.name {
+                    values[fieldId] = .singleSelect(optionId: optionId, name: name)
+                }
+            case "ProjectV2ItemFieldIterationValue":
+                if let iterationId = node.iterationId, let title = node.title {
+                    values[fieldId] = .iteration(id: iterationId, title: title)
+                }
+            case "ProjectV2ItemFieldDateValue":
+                if let date = node.date { values[fieldId] = .date(date) }
+            case "ProjectV2ItemFieldNumberValue":
+                if let number = node.number { values[fieldId] = .number(number) }
+            case "ProjectV2ItemFieldTextValue":
+                if let text = node.text { values[fieldId] = .text(text) }
+            default:
+                continue
+            }
+        }
+        return values
     }
 
     private func request<Payload: Decodable>(
         _ query: String,
         variables: [String: String] = [:],
+        numberVariables: [String: Double] = [:],
         as type: Payload.Type
     ) async throws -> Payload {
         var arguments = ["api", "graphql", "-f", "query=\(query)"]
         for key in variables.keys.sorted() {
             guard let value = variables[key] else { continue }
             arguments += ["-f", "\(key)=\(value)"]
+        }
+        for key in numberVariables.keys.sorted() {
+            guard let value = numberVariables[key] else { continue }
+            arguments += ["-F", "\(key)=\(value)"]
         }
 
         let result = try await run(arguments)
@@ -557,7 +709,7 @@ actor GitHubService {
         return parts.joined(separator: "/")
     }
 
-    private func parseIssueURL(_ value: String) -> (owner: String, repository: String, number: Int)? {
+    private func parseIssueURL(_ value: String) -> (owner: String, repository: String, number: Int, command: String)? {
         guard let url = URLComponents(string: value),
               url.scheme?.lowercased() == "https",
               url.host?.lowercased() == "github.com" else { return nil }
@@ -565,7 +717,12 @@ actor GitHubService {
         guard path.count == 4,
               path[2] == "issues" || path[2] == "pull",
               let number = Int(path[3]) else { return nil }
-        return (String(path[0]), String(path[1]), number)
+        return (
+            String(path[0]),
+            String(path[1]),
+            number,
+            path[2] == "pull" ? "pr" : "issue"
+        )
     }
 }
 
@@ -665,12 +822,27 @@ private struct ProjectFieldsResult {
 private struct FieldNode: Decodable {
     let id: String?
     let name: String?
+    let dataType: String?
+    let isIssueField: Bool?
     let options: [OptionNode]?
+    let configuration: IterationConfiguration?
 
     struct OptionNode: Decodable {
         let id: String
         let name: String
         let color: String
+    }
+
+    struct IterationConfiguration: Decodable {
+        let iterations: [IterationNode]
+        let completedIterations: [IterationNode]
+    }
+
+    struct IterationNode: Decodable {
+        let id: String
+        let title: String
+        let startDate: String
+        let duration: Int
     }
 }
 
@@ -691,6 +863,7 @@ private struct ItemNode: Decodable {
     let id: String
     let content: ItemContent?
     let fieldValueByName: FieldValue?
+    let fieldValues: FieldValuesConnection?
 
     struct ItemContent: Decodable {
         let typename: String
@@ -700,6 +873,7 @@ private struct ItemNode: Decodable {
         let url: String?
         let state: String?
         let assignees: AssigneesConnection?
+        let labels: LabelsConnection?
         let closedByPullRequestsReferences: PullRequestsConnection?
 
         enum CodingKeys: String, CodingKey {
@@ -710,6 +884,7 @@ private struct ItemNode: Decodable {
             case url
             case state
             case assignees
+            case labels
             case closedByPullRequestsReferences
         }
     }
@@ -722,6 +897,16 @@ private struct ItemNode: Decodable {
         let login: String
         let avatarUrl: String
         let name: String?
+    }
+
+    struct LabelsConnection: Decodable {
+        let nodes: [LabelNode]
+    }
+
+    struct LabelNode: Decodable {
+        let id: String
+        let name: String
+        let color: String
     }
 
     struct PullRequestsConnection: Decodable {
@@ -739,6 +924,31 @@ private struct ItemNode: Decodable {
     struct FieldValue: Decodable {
         let name: String?
         let optionId: String?
+    }
+
+    struct FieldValuesConnection: Decodable {
+        let nodes: [ItemFieldValueNode]
+    }
+}
+
+private struct ItemFieldValueNode: Decodable {
+    let typename: String
+    let name: String?
+    let optionId: String?
+    let title: String?
+    let iterationId: String?
+    let date: String?
+    let number: Double?
+    let text: String?
+    let field: FieldReference?
+
+    enum CodingKeys: String, CodingKey {
+        case typename = "__typename"
+        case name, optionId, title, iterationId, date, number, text, field
+    }
+
+    struct FieldReference: Decodable {
+        let id: String?
     }
 }
 

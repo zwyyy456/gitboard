@@ -27,6 +27,7 @@
 		A0000022 /* GitHubCommandRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000022 /* GitHubCommandRunner.swift */; };
 		A0000023 /* GitHubServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000023 /* GitHubServiceTests.swift */; };
 		A0000025 /* AddProjectItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000025 /* AddProjectItemView.swift */; };
+		A0000026 /* ItemInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000026 /* ItemInspectorView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,6 +64,7 @@
 		A1000023 /* GitHubServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/GitHubServiceTests.swift; sourceTree = "<group>"; };
 		A1000024 /* GitBoardTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GitBoardTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000025 /* AddProjectItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddProjectItemView.swift; sourceTree = "<group>"; };
+		A1000026 /* ItemInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemInspectorView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -186,6 +188,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000025 /* AddProjectItemView.swift */,
+				A1000026 /* ItemInspectorView.swift */,
 				A1000015 /* ProjectItemRowView.swift */,
 			);
 			path = Shared;
@@ -335,6 +338,7 @@
 				A0000011 /* StatusSummaryView.swift in Sources */,
 				A0000012 /* KanbanBoardView.swift in Sources */,
 				A0000025 /* AddProjectItemView.swift in Sources */,
+				A0000026 /* ItemInspectorView.swift in Sources */,
 				A0000015 /* ProjectItemRowView.swift in Sources */,
 				A0000019 /* SettingsView.swift in Sources */,
 				A0000020 /* UpdateController.swift in Sources */,
