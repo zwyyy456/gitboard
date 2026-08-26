@@ -137,6 +137,7 @@ enum GraphQLQueries {
                                     number
                                     url
                                     state
+                                    updatedAt
                                     assignees(first: 100) {
                                         nodes {
                                             login
@@ -164,6 +165,7 @@ enum GraphQLQueries {
                                     number
                                     url
                                     state
+                                    updatedAt
                                     assignees(first: 100) {
                                         nodes {
                                             login
@@ -179,6 +181,7 @@ enum GraphQLQueries {
                                     __typename
                                     id
                                     title
+                                    updatedAt
                                     assignees(first: 100) {
                                         nodes {
                                             login

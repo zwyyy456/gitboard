@@ -29,6 +29,11 @@
 		A0000025 /* AddProjectItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000025 /* AddProjectItemView.swift */; };
 		A0000026 /* ItemInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000026 /* ItemInspectorView.swift */; };
 		A0000027 /* ProjectCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000027 /* ProjectCache.swift */; };
+		A0000028 /* MyWork.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000028 /* MyWork.swift */; };
+		A0000029 /* MyWorkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000029 /* MyWorkStore.swift */; };
+		A0000030 /* MainWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000030 /* MainWorkspaceView.swift */; };
+		A0000031 /* MyWorkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000031 /* MyWorkView.swift */; };
+		A0000032 /* GitBoardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000032 /* GitBoardModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -67,6 +72,11 @@
 		A1000025 /* AddProjectItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddProjectItemView.swift; sourceTree = "<group>"; };
 		A1000026 /* ItemInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemInspectorView.swift; sourceTree = "<group>"; };
 		A1000027 /* ProjectCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectCache.swift; sourceTree = "<group>"; };
+		A1000028 /* MyWork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyWork.swift; sourceTree = "<group>"; };
+		A1000029 /* MyWorkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyWorkStore.swift; sourceTree = "<group>"; };
+		A1000030 /* MainWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWorkspaceView.swift; sourceTree = "<group>"; };
+		A1000031 /* MyWorkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyWorkView.swift; sourceTree = "<group>"; };
+		A1000032 /* GitBoardModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitBoardModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -122,6 +132,7 @@
 		A3000002 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				A1000028 /* MyWork.swift */,
 				A1000002 /* Project.swift */,
 				A1000003 /* ProjectItem.swift */,
 				A1000004 /* StatusOption.swift */,
@@ -145,6 +156,8 @@
 		A3000004 /* Store */ = {
 			isa = PBXGroup;
 			children = (
+				A1000032 /* GitBoardModel.swift */,
+				A1000029 /* MyWorkStore.swift */,
 				A1000008 /* ProjectStore.swift */,
 			);
 			path = Store;
@@ -153,6 +166,7 @@
 		A3000005 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				A3000014 /* MyWork */,
 				A3000006 /* MenuBar */,
 				A3000007 /* Kanban */,
 				A3000008 /* Shared */,
@@ -220,6 +234,15 @@
 				A1000023 /* GitHubServiceTests.swift */,
 			);
 			path = GitBoardTests;
+			sourceTree = "<group>";
+		};
+		A3000014 /* MyWork */ = {
+			isa = PBXGroup;
+			children = (
+				A1000030 /* MainWorkspaceView.swift */,
+				A1000031 /* MyWorkView.swift */,
+			);
+			path = MyWork;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -334,13 +357,18 @@
 				A0000005 /* GitHubService.swift in Sources */,
 				A0000022 /* GitHubCommandRunner.swift in Sources */,
 				A0000027 /* ProjectCache.swift in Sources */,
+				A0000028 /* MyWork.swift in Sources */,
 				A0000006 /* GraphQLQueries.swift in Sources */,
 				A0000007 /* NotificationService.swift in Sources */,
 				A0000008 /* ProjectStore.swift in Sources */,
+				A0000029 /* MyWorkStore.swift in Sources */,
+				A0000032 /* GitBoardModel.swift in Sources */,
 				A0000009 /* MenuBarPopoverView.swift in Sources */,
 				A0000010 /* ProjectSelectorView.swift in Sources */,
 				A0000011 /* StatusSummaryView.swift in Sources */,
 				A0000012 /* KanbanBoardView.swift in Sources */,
+				A0000030 /* MainWorkspaceView.swift in Sources */,
+				A0000031 /* MyWorkView.swift in Sources */,
 				A0000025 /* AddProjectItemView.swift in Sources */,
 				A0000026 /* ItemInspectorView.swift in Sources */,
 				A0000015 /* ProjectItemRowView.swift in Sources */,

@@ -233,6 +233,16 @@ final class ProjectStore {
         await loadProjectDetails(id: project.id)
     }
 
+    func openProject(_ reference: FollowedProject) async {
+        if selectedOwnerId != reference.owner.id {
+            let owner = owners.first { $0.id == reference.owner.id } ?? reference.owner
+            await selectOwner(owner)
+        }
+        if let project = projects.first(where: { $0.id == reference.id }) {
+            await selectProject(project)
+        }
+    }
+
     private func loadProjects(for owner: ProjectOwner, generation: Int) async {
         do {
             let loadedProjects = try await gitHubService.fetchProjects(owner: owner)
@@ -381,6 +391,7 @@ final class ProjectStore {
             url: item.url,
             issueState: item.issueState,
             prState: item.prState,
+            updatedAt: item.updatedAt,
             status: status.name,
             statusOptionId: status.id,
             assignees: item.assignees,
@@ -525,6 +536,7 @@ final class ProjectStore {
             url: item.url,
             issueState: item.issueState,
             prState: item.prState,
+            updatedAt: item.updatedAt,
             status: item.status,
             statusOptionId: item.statusOptionId,
             assignees: newAssignees,
@@ -579,6 +591,7 @@ final class ProjectStore {
             url: item.url,
             issueState: item.issueState,
             prState: item.prState,
+            updatedAt: item.updatedAt,
             status: item.status,
             statusOptionId: item.statusOptionId,
             assignees: newAssignees,
