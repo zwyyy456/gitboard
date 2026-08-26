@@ -516,6 +516,7 @@ actor GitHubService {
                 url: nil,
                 issueState: nil,
                 prState: nil,
+                updatedAt: nil,
                 status: node.fieldValueByName?.name,
                 statusOptionId: node.fieldValueByName?.optionId,
                 assignees: [],
@@ -556,6 +557,7 @@ actor GitHubService {
             url: content.url,
             issueState: contentType == .issue ? content.state.flatMap(IssueState.init) : nil,
             prState: contentType == .pullRequest ? content.state.flatMap(PullRequestState.init) : nil,
+            updatedAt: content.updatedAt,
             status: node.fieldValueByName?.name,
             statusOptionId: node.fieldValueByName?.optionId,
             assignees: assignees,
@@ -872,6 +874,7 @@ private struct ItemNode: Decodable {
         let number: Int?
         let url: String?
         let state: String?
+        let updatedAt: String?
         let assignees: AssigneesConnection?
         let labels: LabelsConnection?
         let closedByPullRequestsReferences: PullRequestsConnection?
@@ -883,6 +886,7 @@ private struct ItemNode: Decodable {
             case number
             case url
             case state
+            case updatedAt
             case assignees
             case labels
             case closedByPullRequestsReferences

@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct KanbanBoardView: View {
     @Bindable var store: ProjectStore
+    @Bindable var myWorkStore: MyWorkStore
     @State private var refreshRotation: Double = 0
     @State private var isRefreshing = false
     @State private var searchText = ""
@@ -129,6 +130,18 @@ struct KanbanBoardView: View {
                     if isSelecting == false { selectedItemIDs.removeAll() }
                 }
                 .buttonStyle(.bordered)
+            }
+
+            if let project = store.selectedProject {
+                Button {
+                    Task { await myWorkStore.toggleFollowing(project) }
+                } label: {
+                    Image(systemName: myWorkStore.isFollowing(project.id) ? "star.fill" : "star")
+                }
+                .buttonStyle(.bordered)
+                .help(myWorkStore.isFollowing(project.id)
+                    ? "Remove from My Work"
+                    : "Follow in My Work")
             }
 
             if isSelecting {

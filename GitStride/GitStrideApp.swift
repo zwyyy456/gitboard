@@ -14,12 +14,12 @@ extension EnvironmentValues {
 
 @main
 struct GitStrideApp: App {
-    @State private var store = ProjectStore()
+    @State private var model = GitStrideModel()
     @State private var menuBarWindow: NSWindow?
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarPopoverView(store: store)
+            MenuBarPopoverView(store: model.projectStore)
                 .environment(\.dismissMenuBar) { @MainActor @Sendable in
                     menuBarWindow?.close()
                 }
@@ -30,7 +30,7 @@ struct GitStrideApp: App {
         .menuBarExtraStyle(.window)
 
         Window("", id: "kanban-board") {
-            KanbanBoardView(store: store)
+            MainWorkspaceView(model: model)
                 .background(KanbanWindowBackground())
                 .onAppear {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
