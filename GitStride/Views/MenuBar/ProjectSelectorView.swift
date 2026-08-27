@@ -21,7 +21,9 @@ struct ProjectSelectorView: View {
                 } label: {
                     ownerLabel
                 }
+                .menuIndicator(compact ? .hidden : .visible)
                 .help(store.selectedOwner?.login ?? "Select owner")
+                .accessibilityLabel("Select owner, current owner \(store.selectedOwner?.login ?? "none")")
             }
 
             Menu {
@@ -37,15 +39,12 @@ struct ProjectSelectorView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 6) {
-                    Text(store.selectedProject?.title ?? "Select Project")
-                        .lineLimit(1)
-                    Image(systemName: "chevron.down")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.tertiary)
-                }
+                Text(store.selectedProject?.title ?? "Select Project")
+                    .lineLimit(1)
             }
             .disabled(store.projects.isEmpty || store.isLoading)
+            .help("Select project")
+            .accessibilityLabel("Select project, current project \(store.selectedProject?.title ?? "none")")
 
             if store.selectedProject?.viewerCanUpdate == false {
                 let label = store.isShowingCachedData
@@ -58,7 +57,7 @@ struct ProjectSelectorView: View {
                     .accessibilityLabel(label)
             }
         }
-        .font(.callout.bold())
+        .font(.callout.weight(.semibold))
     }
 
     @ViewBuilder
