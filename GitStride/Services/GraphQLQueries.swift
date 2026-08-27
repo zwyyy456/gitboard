@@ -216,30 +216,26 @@ enum GraphQLQueries {
                             }
                             fieldValues(first: 100) {
                                 nodes {
+                                    __typename
                                     ... on ProjectV2ItemFieldSingleSelectValue {
-                                        __typename
                                         name
                                         optionId
                                         field { ... on ProjectV2SingleSelectField { id } }
                                     }
                                     ... on ProjectV2ItemFieldIterationValue {
-                                        __typename
                                         title
                                         iterationId
                                         field { ... on ProjectV2IterationField { id } }
                                     }
                                     ... on ProjectV2ItemFieldDateValue {
-                                        __typename
                                         date
                                         field { ... on ProjectV2Field { id } }
                                     }
                                     ... on ProjectV2ItemFieldNumberValue {
-                                        __typename
                                         number
                                         field { ... on ProjectV2Field { id } }
                                     }
                                     ... on ProjectV2ItemFieldTextValue {
-                                        __typename
                                         text
                                         field { ... on ProjectV2Field { id } }
                                     }
