@@ -28,3 +28,4 @@
 - The default compile check is the macOS app build documented in `docs-index.md`.
 - Use `GitBoardTests` only for important deterministic behavior, external-data decoding boundaries, and confirmed regressions likely to recur.
 - Do not run UI tests unless the user explicitly requests them.
+- Do not launch or relaunch the app, or capture screenshots, as post-build visual validation. When visual evidence is needed, rely on screenshots provided by the user from their running app.
