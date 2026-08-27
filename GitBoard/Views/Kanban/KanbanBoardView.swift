@@ -41,7 +41,6 @@ struct KanbanBoardView: View {
             }
         }
         .frame(minWidth: 1000, minHeight: 650)
-        .background(Color(red: 0x1a/255, green: 0x1a/255, blue: 0x1a/255))
         .sheet(isPresented: $showsAddItem) {
             AddProjectItemView(store: store)
         }
@@ -431,10 +430,6 @@ struct KanbanColumn: View {
             .scrollIndicators(.never)
         }
         .frame(width: 300)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(red: 0x1a/255, green: 0x1a/255, blue: 0x1a/255))
-        )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isTargeted ? statusColor.opacity(0.8) : Color.clear, lineWidth: 2)
@@ -529,7 +524,9 @@ struct KanbanCard: View {
                             }
                             .frame(width: 20, height: 20)
                             .clipShape(Circle())
-                            .overlay(Circle().stroke(Color(white: 0.12), lineWidth: 1.5))
+                            .overlay(
+                                Circle().stroke(Color(nsColor: .controlBackgroundColor), lineWidth: 1.5)
+                            )
                         }
 
                         if item.assignees.count > 3 {
@@ -546,12 +543,15 @@ struct KanbanCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(Color(white: 0.12))
+                .fill(Color(nsColor: .controlBackgroundColor))
                 .shadow(color: .black.opacity(isHovered ? 0.3 : 0.15), radius: isHovered ? 6 : 3, x: 0, y: isHovered ? 3 : 1)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.08), lineWidth: isSelected ? 2 : 1)
+                .stroke(
+                    isSelected ? Color.accentColor : Color(nsColor: .separatorColor),
+                    lineWidth: isSelected ? 2 : 1
+                )
         )
         .overlay(alignment: .topTrailing) {
             if isSelecting {
@@ -720,7 +720,7 @@ struct KanbanCardPreview: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color(white: 0.15))
+                .fill(Color(nsColor: .controlBackgroundColor))
                 .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
         )
     }

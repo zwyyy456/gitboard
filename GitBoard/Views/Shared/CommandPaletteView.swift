@@ -200,13 +200,7 @@ struct QuickAddWindow: View {
     @Bindable var model: GitBoardModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            ProjectSelectorView(store: model.projectStore)
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            AddProjectItemView(store: model.projectStore)
-        }
+        AddProjectItemView(store: model.projectStore, presentation: .window)
         .task {
             if model.projectStore.projects.isEmpty {
                 await model.projectStore.loadProjects()

@@ -19,6 +19,22 @@ struct GitBoardApp: App {
     @State private var menuBarWindow: NSWindow?
 
     var body: some Scene {
+        Window("GitBoard", id: "kanban-board") {
+            MainWorkspaceView(model: model)
+                .background(KanbanWindowConfigurator())
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
+                }
+        }
+        .defaultSize(width: 1000, height: 700)
+        .windowResizability(.contentMinSize)
+        .windowStyle(.hiddenTitleBar)
+        .commands {
+            GitBoardCommands()
+        }
+
         MenuBarExtra {
             MenuBarPopoverView(store: model.projectStore)
                 .environment(\.dismissMenuBar) { @MainActor @Sendable in
@@ -51,30 +67,15 @@ struct GitBoardApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("", id: "kanban-board") {
-            MainWorkspaceView(model: model)
-                .background(KanbanWindowBackground())
-                .onAppear {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        NSApp.activate(ignoringOtherApps: true)
-                    }
-                }
-        }
-        .defaultSize(width: 1000, height: 700)
-        .windowResizability(.contentMinSize)
-        .windowStyle(.hiddenTitleBar)
-        .commands {
-            GitBoardCommands()
-        }
-
         Window("Command Palette", id: "command-palette") {
             CommandPaletteView(model: model)
         }
         .windowResizability(.contentSize)
 
-        Window("Quick Add", id: "quick-add") {
+        Window("Add to Project", id: "quick-add") {
             QuickAddWindow(model: model)
         }
+        .defaultSize(width: 520, height: 400)
         .windowResizability(.contentSize)
 
         Window("Settings", id: "settings") {
@@ -145,14 +146,13 @@ struct MenuBarWindowFinder: NSViewRepresentable {
 }
 
 // Helper to make window titlebar seamless with content
-struct KanbanWindowBackground: NSViewRepresentable {
+struct KanbanWindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
             if let window = view.window {
                 window.titlebarAppearsTransparent = true
                 window.titleVisibility = .hidden
-                window.backgroundColor = NSColor(red: 0x1a/255, green: 0x1a/255, blue: 0x1a/255, alpha: 1)
                 window.isMovableByWindowBackground = true
             }
         }

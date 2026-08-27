@@ -1,8 +1,16 @@
 import SwiftUI
 
 struct AddProjectItemView: View {
+    enum Presentation {
+        case sheet
+        case window
+    }
+
     @Bindable var store: ProjectStore
+    let presentation: Presentation
+
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissWindow) private var dismissWindow
 
     @State private var mode: Mode = .create
     @State private var itemType: NewItemType = .issue
@@ -16,11 +24,18 @@ struct AddProjectItemView: View {
     @State private var query = ""
     @State private var results: [GitHubItemCandidate] = []
     @State private var isWorking = false
+    @State private var showsMoreOptions = false
     @FocusState private var focusedField: Field?
 
+    init(store: ProjectStore, presentation: Presentation = .sheet) {
+        self.store = store
+        self.presentation = presentation
+    }
+
     private enum Mode: String, CaseIterable, Identifiable {
-        case create = "Create"
-        case existing = "Add Existing"
+        case create = "New Item"
+        case existing = "Existing Item"
+        case quickEntry = "Quick Entry"
 
         var id: Self { self }
     }
@@ -35,51 +50,95 @@ struct AddProjectItemView: View {
     private enum Field {
         case title
         case query
+        case quickEntry
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
+        VStack(spacing: 0) {
+            if presentation == .sheet {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Add to Project")
-                        .font(.title3.bold())
+                        .font(.headline)
                     Text(store.selectedProject?.title ?? "No project selected")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+
+                Divider()
             }
 
-            Picker("Mode", selection: $mode) {
-                ForEach(Mode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+            VStack(alignment: .leading, spacing: 14) {
+                if presentation == .window {
+                    HStack(alignment: .bottom, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Project")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+
+                            ProjectSelectorView(store: store)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxWidth: 160, alignment: .leading)
+
+                        Spacer(minLength: 12)
+
+                        Picker("Item source", selection: $mode) {
+                            ForEach(Mode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize(horizontal: true, vertical: false)
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    Picker("Item source", selection: $mode) {
+                        ForEach(Mode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize(horizontal: true, vertical: false)
+                }
+
+                Group {
+                    switch mode {
+                    case .create:
+                        createForm
+                    case .existing:
+                        existingItemForm
+                    case .quickEntry:
+                        quickEntryForm
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+                if let message = store.operationErrorMessage {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-            Group {
-                switch mode {
-                case .create:
-                    createForm
-                case .existing:
-                    existingItemForm
-                }
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
-
-            if let message = store.operationErrorMessage {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+            if presentation == .sheet || mode != .existing {
+                Divider()
+                actionBar
             }
         }
-        .padding(20)
-        .frame(width: 520, height: 460)
+        .frame(
+            width: presentation == .window ? 520 : nil,
+            height: presentation == .window ? preferredWindowHeight : nil
+        )
+        .frame(minWidth: 520, minHeight: 340)
         .task {
             store.clearOperationError()
             if repository.isEmpty {
@@ -87,9 +146,22 @@ struct AddProjectItemView: View {
             }
             focusedField = .title
         }
+        .onChange(of: store.selectedProjectId) { _, _ in
+            guard presentation == .window else { return }
+            repository = store.repositorySuggestions.first ?? ""
+            status = ""
+            priority = ""
+        }
         .onChange(of: mode) { _, newMode in
             store.clearOperationError()
-            focusedField = newMode == .create ? .title : .query
+            switch newMode {
+            case .create:
+                focusedField = .title
+            case .existing:
+                focusedField = .query
+            case .quickEntry:
+                focusedField = .quickEntry
+            }
         }
         .onDisappear {
             store.clearOperationError()
@@ -97,81 +169,152 @@ struct AddProjectItemView: View {
     }
 
     private var createForm: some View {
-        Form {
-            LabeledContent("Quick Entry") {
-                TextField("> title repo:owner/repo status:Todo priority:High @me #bug", text: $quickEntry)
-                    .onSubmit { submitQuickEntry() }
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Type")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
 
-            Text("Press Return to parse and create. Qualifier values are matched without case sensitivity.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Picker("Create as", selection: $itemType) {
-                ForEach(NewItemType.allCases) { type in
-                    Text(type.rawValue).tag(type)
-                }
-            }
-            .pickerStyle(.radioGroup)
-
-            if itemType == .issue {
-                LabeledContent("Repository") {
-                    HStack {
-                        TextField("owner/repository", text: $repository)
-                        if store.repositorySuggestions.isEmpty == false {
-                            Menu {
-                                ForEach(store.repositorySuggestions, id: \.self) { repository in
-                                    Button(repository) { self.repository = repository }
-                                }
-                            } label: {
-                                Image(systemName: "chevron.down")
+                        Picker("Type", selection: $itemType) {
+                            ForEach(NewItemType.allCases) { type in
+                                Text(type.rawValue).tag(type)
                             }
-                            .menuStyle(.borderlessButton)
-                            .fixedSize()
-                            .help("Repositories already used in this project")
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 132, alignment: .leading)
+                    }
+
+                    if itemType == .issue {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Repository")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+
+                            HStack(spacing: 8) {
+                                TextField("owner/repository", text: $repository)
+                                    .accessibilityLabel("Repository")
+
+                                if store.repositorySuggestions.isEmpty == false {
+                                    Menu("Recent") {
+                                        ForEach(store.repositorySuggestions, id: \.self) { repository in
+                                            Button(repository) { self.repository = repository }
+                                        }
+                                    }
+                                    .fixedSize()
+                                    .help("Repositories already used in this project")
+                                }
+                            }
                         }
                     }
                 }
-            }
 
-            LabeledContent("Title") {
-                TextField("Required", text: $title)
-                    .focused($focusedField, equals: .title)
-            }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 5) {
+                        Text("Title")
+                            .font(.subheadline)
+                        Text("Required")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
 
-            if itemType == .issue {
-                LabeledContent("Labels") {
-                    TextField("bug, enhancement", text: $labels)
+                    TextField("Enter a title", text: $title)
+                        .accessibilityLabel("Title, required")
+                        .focused($focusedField, equals: .title)
                 }
-                LabeledContent("Assignees") {
-                    TextField("octocat, @me", text: $assignees)
-                }
-                LabeledContent("Status") {
-                    TextField("Optional Project option", text: $status)
-                }
-                LabeledContent("Priority") {
-                    TextField("Optional Project option", text: $priority)
-                }
-            }
 
-            HStack {
-                Spacer()
-                Button(itemType == .issue ? "Create and Add" : "Create Draft") {
-                    createItem()
+                if itemType == .issue {
+                    DisclosureGroup("Additional Details", isExpanded: $showsMoreOptions) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Labels")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+
+                                TextField("bug, enhancement", text: $labels)
+                                    .accessibilityLabel("Labels")
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Assignees")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+
+                                TextField("octocat, @me", text: $assignees)
+                                    .accessibilityLabel("Assignees")
+                            }
+
+                            HStack(alignment: .top, spacing: 12) {
+                                if statusOptions.isEmpty == false {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text("Status")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+
+                                        Picker("Status", selection: $status) {
+                                            Text("None").tag("")
+                                            ForEach(statusOptions, id: \.self) { option in
+                                                Text(option).tag(option)
+                                            }
+                                        }
+                                        .pickerStyle(.menu)
+                                        .labelsHidden()
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+
+                                if priorityOptions.isEmpty == false {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text("Priority")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+
+                                        Picker("Priority", selection: $priority) {
+                                            Text("None").tag("")
+                                            ForEach(priorityOptions, id: \.self) { option in
+                                                Text(option).tag(option)
+                                            }
+                                        }
+                                        .pickerStyle(.menu)
+                                        .labelsHidden()
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.top, 10)
+                    }
                 }
-                .keyboardShortcut(.defaultAction)
-                .disabled(isWorking || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    || (itemType == .issue && repository.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             }
+            .padding(.trailing, 8)
         }
-        .formStyle(.grouped)
+        .scrollIndicators(.automatic)
         .disabled(isWorking)
-        .overlay {
-            if isWorking {
-                ProgressView()
-                    .controlSize(.small)
+    }
+
+    private var quickEntryForm: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Describe the item")
+                    .font(.subheadline)
+
+                TextField("Title and qualifiers", text: $quickEntry)
+                    .accessibilityLabel("Quick Entry")
+                    .focused($focusedField, equals: .quickEntry)
+                    .onSubmit(applyQuickEntry)
+
+                Text("Example: Fix login repo:owner/repo status:Todo priority:High @me #bug")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 8)
         }
+        .scrollIndicators(.automatic)
+        .disabled(isWorking)
     }
 
     private var existingItemForm: some View {
@@ -232,12 +375,67 @@ struct AddProjectItemView: View {
                 .listStyle(.inset)
             }
         }
-        .overlay {
+        .disabled(isWorking)
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 10) {
             if isWorking {
                 ProgressView()
                     .controlSize(.small)
+                    .accessibilityLabel("Working")
+            }
+
+            Spacer()
+
+            if presentation == .sheet {
+                Button("Cancel", action: close)
+                    .keyboardShortcut(.cancelAction)
+            }
+
+            switch mode {
+            case .create:
+                Button(itemType == .issue ? "Create Issue" : "Create Draft", action: createItem)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(createActionIsDisabled)
+            case .quickEntry:
+                Button("Apply to Form", action: applyQuickEntry)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(isWorking || quickEntry.trimmed.isEmpty)
+            case .existing:
+                EmptyView()
             }
         }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+    }
+
+    private var createActionIsDisabled: Bool {
+        isWorking || title.trimmed.isEmpty || (itemType == .issue && repository.trimmed.isEmpty)
+    }
+
+    private var preferredWindowHeight: CGFloat {
+        switch mode {
+        case .create:
+            return itemType == .issue && showsMoreOptions ? 480 : 360
+        case .existing:
+            return 400
+        case .quickEntry:
+            return 340
+        }
+    }
+
+    private var statusOptions: [String] {
+        store.selectedProject?.statusOptions.map(\.name) ?? []
+    }
+
+    private var priorityOptions: [String] {
+        guard let field = store.selectedProject?.fields.first(where: {
+            $0.kind == .singleSelect && $0.name.caseInsensitiveCompare("Priority") == .orderedSame
+        }) else { return [] }
+        return field.options.map(\.name)
     }
 
     private var isItemURL: Bool {
@@ -263,7 +461,7 @@ struct AddProjectItemView: View {
                 )
             }
             isWorking = false
-            if succeeded { dismiss() }
+            if succeeded { close() }
         }
     }
 
@@ -285,7 +483,7 @@ struct AddProjectItemView: View {
         Task {
             let succeeded = await store.addExistingItem(url: query.trimmed)
             isWorking = false
-            if succeeded { dismiss() }
+            if succeeded { close() }
         }
     }
 
@@ -295,7 +493,7 @@ struct AddProjectItemView: View {
         Task {
             let succeeded = await store.addExistingItem(item)
             isWorking = false
-            if succeeded { dismiss() }
+            if succeeded { close() }
         }
     }
 
@@ -317,7 +515,7 @@ struct AddProjectItemView: View {
         return login
     }
 
-    private func submitQuickEntry() {
+    private func applyQuickEntry() {
         guard isWorking == false else { return }
         let request = QuickCreateParser.parse(quickEntry)
         guard request.title.isEmpty == false else {
@@ -325,15 +523,52 @@ struct AddProjectItemView: View {
             return
         }
 
+        store.clearOperationError()
         title = request.title
         if let requestedRepository = request.repository {
             repository = resolvedRepository(requestedRepository)
         }
         labels = request.labels.joined(separator: ", ")
         assignees = request.assignees.map { "@\($0)" }.joined(separator: ", ")
-        status = request.status ?? ""
-        priority = request.priority ?? ""
-        createItem()
+        let matchedStatus = matchedOption(request.status, in: statusOptions)
+        let matchedPriority = matchedOption(request.priority, in: priorityOptions)
+        status = matchedStatus ?? ""
+        priority = matchedPriority ?? ""
+        showsMoreOptions = request.labels.isEmpty == false
+            || request.assignees.isEmpty == false
+            || request.status != nil
+            || request.priority != nil
+
+        var unavailableOptions: [String] = []
+        if let requestedStatus = request.status, matchedStatus == nil {
+            unavailableOptions.append("status \(requestedStatus)")
+        }
+        if let requestedPriority = request.priority, matchedPriority == nil {
+            unavailableOptions.append("priority \(requestedPriority)")
+        }
+
+        if unavailableOptions.isEmpty {
+            mode = .create
+            focusedField = .title
+        } else {
+            store.operationErrorMessage = "Unavailable project option: \(unavailableOptions.joined(separator: ", "))."
+        }
+    }
+
+    private func matchedOption(_ requestedValue: String?, in options: [String]) -> String? {
+        guard let requestedValue else { return nil }
+        return options.first {
+            $0.caseInsensitiveCompare(requestedValue) == .orderedSame
+        }
+    }
+
+    private func close() {
+        switch presentation {
+        case .sheet:
+            dismiss()
+        case .window:
+            dismissWindow(id: "quick-add")
+        }
     }
 
     private func resolvedRepository(_ value: String) -> String {

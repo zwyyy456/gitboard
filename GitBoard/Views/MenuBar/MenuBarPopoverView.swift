@@ -7,7 +7,6 @@ struct MenuBarPopoverView: View {
     @State private var isRefreshing = false
     @State private var searchText = ""
     @State private var keyMonitor: Any?
-    @State private var showsAddItem = false
 
     private var canEditSelectedProject: Bool {
         store.selectedProject?.viewerCanUpdate == true
@@ -30,10 +29,6 @@ struct MenuBarPopoverView: View {
             }
         }
         .frame(width: 400)
-        .background(Color.black)
-        .sheet(isPresented: $showsAddItem) {
-            AddProjectItemView(store: store)
-        }
         .task {
             if store.projects.isEmpty {
                 await store.loadProjects()
@@ -49,13 +44,7 @@ struct MenuBarPopoverView: View {
                         navigateTab(direction: 1)
                         return nil
                     } else if event.keyCode == 15 { // R key
-                        if !isRefreshing {
-                            isRefreshing = true
-                            Task {
-                                await store.refresh()
-                                isRefreshing = false
-                            }
-                        }
+                        refresh()
                         return nil
                     }
                 }
@@ -94,74 +83,102 @@ struct MenuBarPopoverView: View {
     }
 
     private var headerView: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             ProjectSelectorView(store: store, compact: true)
                 .frame(maxWidth: 200, alignment: .leading)
 
-            Spacer()
+            Spacer(minLength: 8)
 
             if canEditSelectedProject {
                 HeaderButton(icon: "plus", help: "Create or Add Item") {
-                    showsAddItem = true
+                    openQuickAdd()
                 }
             }
 
-            // Coffee button
-            Button {
-                if let url = URL(string: "https://donate.stripe.com/aFa14ociW0pndDCa0K8bS00") {
-                    NSWorkspace.shared.open(url)
+            HeaderButton(icon: "arrow.up.left.and.arrow.down.right", help: "Open Kanban Board") {
+                openKanbanBoard()
+            }
+
+            RefreshButton(isRefreshing: $isRefreshing, action: refresh)
+
+            Menu {
+                Button(action: openSettings) {
+                    Label("Settings…", systemImage: "gearshape")
+                }
+
+                Button(action: openCoffeePage) {
+                    Label("Buy Me a Coffee", systemImage: "cup.and.saucer.fill")
+                }
+
+                Divider()
+
+                Button(role: .destructive) {
+                    NSApp.terminate(nil)
+                } label: {
+                    Label("Quit GitBoard", systemImage: "power")
                 }
             } label: {
-                Image(systemName: "cup.and.saucer.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.orange)
-                    .frame(width: 24, height: 24)
+                Label("More", systemImage: "ellipsis.circle")
+                    .labelStyle(.iconOnly)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(HeaderButtonStyle())
-            .help("Buy me a coffee")
-
-            // Quit button
-            HeaderButton(icon: "power", help: "Quit GitBoard") {
-                NSApp.terminate(nil)
-            }
-
-            // Settings button
-            HeaderButton(icon: "gearshape", help: "Settings") {
-                dismissMenuBar()
-                openWindow(id: "settings")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    NSApp.activate(ignoringOtherApps: true)
-                    for window in NSApp.windows where window.title == "Settings" {
-                        window.makeKeyAndOrderFront(nil)
-                    }
-                }
-            }
-
-            // Expand button
-            HeaderButton(icon: "arrow.up.left.and.arrow.down.right", help: "Open Kanban Board") {
-                dismissMenuBar()
-                openWindow(id: "kanban-board")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    NSApp.activate(ignoringOtherApps: true)
-                    for window in NSApp.windows where window.title == "GitBoard" {
-                        window.makeKeyAndOrderFront(nil)
-                    }
-                }
-            }
-
-            // Refresh button
-            RefreshButton(isRefreshing: $isRefreshing) {
-                guard !isRefreshing else { return }
-                isRefreshing = true
-                Task {
-                    await store.refresh()
-                    isRefreshing = false
-                }
-            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More")
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 8)
+    }
+
+    private func refresh() {
+        guard isRefreshing == false else { return }
+        isRefreshing = true
+        Task {
+            await store.refresh()
+            isRefreshing = false
+        }
+    }
+
+    private func openCoffeePage() {
+        guard let url = URL(string: "https://donate.stripe.com/aFa14ociW0pndDCa0K8bS00") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func openQuickAdd() {
+        dismissMenuBar()
+        openWindow(id: "quick-add")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NSApp.activate(ignoringOtherApps: true)
+            for window in NSApp.windows where window.title == "Add to Project" {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+
+    private func openSettings() {
+        dismissMenuBar()
+        openWindow(id: "settings")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NSApp.activate(ignoringOtherApps: true)
+            for window in NSApp.windows where window.title == "Settings" {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+
+    private func openKanbanBoard() {
+        dismissMenuBar()
+        openWindow(id: "kanban-board")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NSApp.activate(ignoringOtherApps: true)
+            for window in NSApp.windows where window.title == "GitBoard" {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
     }
 
     private var loadingView: some View {
@@ -317,11 +334,9 @@ struct MenuBarPopoverView: View {
             }
         }
         .scrollIndicators(.never)
-        .padding(2)
-        .background(Color(nsColor: .quaternaryLabelColor).opacity(0.3))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
         .padding(.horizontal, 12)
         .padding(.top, 4)
+        .padding(.bottom, 2)
     }
 
     private var searchBar: some View {
@@ -331,28 +346,26 @@ struct MenuBarPopoverView: View {
                 .foregroundStyle(.tertiary)
 
             TextField(
-                canEditSelectedProject
-                    ? "Search, #number, @me · Type > to add"
-                    : "Search, #number, @me",
+                "Search items, #number, or @assignee",
                 text: $searchText
             )
             .textFieldStyle(.plain)
-            .font(.system(size: 13))
+            .font(.callout)
+            .accessibilityLabel("Search project items")
             .onChange(of: searchText) { oldValue, newValue in
                 if canEditSelectedProject && newValue == ">" {
                     searchText = ""
-                    showsAddItem = true
+                    openQuickAdd()
                 }
             }
 
             if !searchText.isEmpty {
-                Button {
+                Button("Clear search", systemImage: "xmark.circle.fill") {
                     searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
                 }
+                .labelStyle(.iconOnly)
+                .font(.callout)
+                .foregroundStyle(.tertiary)
                 .buttonStyle(.plain)
             }
         }
@@ -415,7 +428,7 @@ struct MenuBarPopoverView: View {
                 }
             }
         }
-        .scrollIndicators(.never)
+        .scrollIndicators(.automatic)
         .frame(height: 360)
     }
 
@@ -464,13 +477,12 @@ struct HeaderButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
+        Button(help, systemImage: icon, action: action)
+            .labelStyle(.iconOnly)
+            .font(.body.weight(.medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 32, height: 32)
+            .contentShape(Rectangle())
         .buttonStyle(HeaderButtonStyle())
         .help(help)
     }
@@ -480,22 +492,26 @@ struct RefreshButton: View {
     @Binding var isRefreshing: Bool
     let action: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var rotation: Double = 0
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(isRefreshing ? .blue : .secondary)
-                .rotationEffect(.degrees(rotation))
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
+        Button("Refresh", systemImage: "arrow.clockwise", action: action)
+            .labelStyle(.iconOnly)
+            .font(.body.weight(.medium))
+            .foregroundStyle(isRefreshing ? .blue : .secondary)
+            .rotationEffect(.degrees(rotation))
+            .frame(width: 32, height: 32)
+            .contentShape(Rectangle())
         .buttonStyle(HeaderButtonStyle())
         .disabled(isRefreshing)
         .help("Refresh")
         .onChange(of: isRefreshing) { _, newValue in
             if newValue {
+                guard reduceMotion == false else {
+                    rotation = 0
+                    return
+                }
                 withAnimation(.linear(duration: 0.6).repeatForever(autoreverses: false)) {
                     rotation = 360
                 }
@@ -523,32 +539,28 @@ struct FilterTab: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.callout.weight(isSelected ? .semibold : .regular))
 
                 Text("\(count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isSelected ? color : .secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .fill(isSelected ? color.opacity(0.2) : Color.secondary.opacity(0.1))
-                    )
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(count == 0 ? Color.secondary : color)
             }
             .foregroundStyle(isSelected ? .primary : .secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? color.opacity(0.12) : (isHovered ? Color.primary.opacity(0.05) : Color.clear))
+                    .fill(isSelected ? Color.accentColor.opacity(0.14) : (isHovered ? Color.primary.opacity(0.05) : Color.clear))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? color.opacity(0.3) : Color.clear, lineWidth: 1)
+                    .stroke(isSelected ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(title), \(count) items")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .onHover { hovering in
             isHovered = hovering
         }
@@ -574,45 +586,52 @@ struct ItemRow: View {
     @State private var showsInspector = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            itemTypeIcon
-                .frame(width: 16)
+        Button {
+            showsInspector = true
+        } label: {
+            HStack(alignment: .center, spacing: 10) {
+                itemTypeIcon
+                    .frame(width: 16)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.title)
+                        .font(.callout.weight(.medium))
+                        .lineLimit(1)
 
-                HStack(spacing: 4) {
-                    if let number = item.number {
-                        Text("#\(number)")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
+                    HStack(spacing: 4) {
+                        if let number = item.number {
+                            Text("#\(number)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if let linkedPR = item.linkedPR {
+                            Text("·")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                            Text("PR #\(linkedPR.number)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
-                    if let linkedPR = item.linkedPR {
-                        Text("·")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.quaternary)
-                        Text("PR #\(linkedPR.number)")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
-                    }
+                    EngineeringSignalsView(item: item, limit: 2)
                 }
 
-                EngineeringSignalsView(item: item, limit: 2)
-            }
+                Spacer()
 
-            Spacer()
-
-            if !item.assignees.isEmpty {
-                AvatarStack(assignees: item.assignees)
+                if !item.assignees.isEmpty {
+                    AvatarStack(assignees: item.assignees)
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(isHovered ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.45) : Color.clear)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(isHovered ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.5) : Color.clear)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+        .accessibilityLabel(item.number.map { "\(item.title), number \($0)" } ?? item.title)
+        .accessibilityHint("Show item details")
         .onHover { hovering in
             isHovered = hovering
         }
@@ -623,9 +642,6 @@ struct ItemRow: View {
             case .ended:
                 NSCursor.pop()
             }
-        }
-        .onTapGesture {
-            showsInspector = true
         }
         .sheet(isPresented: $showsInspector) {
             ItemInspectorView(store: store, itemID: item.id)
@@ -702,7 +718,7 @@ struct ItemRow: View {
         Group {
             switch item.contentType {
             case .issue:
-                Image(systemName: "circle.dotted")
+                Image(systemName: "circle")
             case .pullRequest:
                 Image(systemName: "arrow.triangle.merge")
             case .draftIssue:
@@ -711,7 +727,7 @@ struct ItemRow: View {
                 Image(systemName: "lock")
             }
         }
-        .font(.system(size: 13))
+        .font(.callout)
         .foregroundStyle(stateColor)
     }
 
