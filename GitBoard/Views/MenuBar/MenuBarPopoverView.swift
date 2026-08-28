@@ -5,6 +5,7 @@ struct MenuBarPopoverView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissMenuBar) private var dismissMenuBar
     @State private var isRefreshing = false
+    @State private var isMoreHovered = false
     @State private var searchText = ""
     @State private var keyMonitor: Any?
 
@@ -90,12 +91,16 @@ struct MenuBarPopoverView: View {
             Spacer(minLength: 8)
 
             if canEditSelectedProject {
-                HeaderButton(icon: "plus", help: "Create or Add Item") {
+                HeaderButton(
+                    icon: "plus",
+                    help: "Create or Add Item",
+                    isProminent: true
+                ) {
                     openQuickAdd()
                 }
             }
 
-            HeaderButton(icon: "arrow.up.left.and.arrow.down.right", help: "Open Kanban Board") {
+            HeaderButton(icon: "rectangle.split.3x1", help: "Open Kanban Board") {
                 openKanbanBoard()
             }
 
@@ -118,17 +123,25 @@ struct MenuBarPopoverView: View {
                     Label("Quit GitBoard", systemImage: "power")
                 }
             } label: {
-                Label("More", systemImage: "ellipsis.circle")
+                Label("More", systemImage: "ellipsis")
                     .labelStyle(.iconOnly)
                     .font(.body.weight(.medium))
+                    .imageScale(.large)
                     .foregroundStyle(.secondary)
                     .frame(width: 32, height: 32)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(isMoreHovered ? Color.primary.opacity(0.10) : Color.clear)
+                    )
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
             .help("More")
+            .onHover { hovering in
+                isMoreHovered = hovering
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -449,13 +462,28 @@ struct MenuBarPopoverView: View {
 // MARK: - Header Button Style
 
 struct HeaderButtonStyle: ButtonStyle {
+    let isProminent: Bool
+
     @State private var isHovered = false
 
+    init(isProminent: Bool = false) {
+        self.isProminent = isProminent
+    }
+
     func makeBody(configuration: Configuration) -> some View {
+        let backgroundColor = isProminent ? Color.accentColor : Color.primary
+        let backgroundOpacity = if configuration.isPressed {
+            0.16
+        } else if isHovered {
+            0.10
+        } else {
+            0.0
+        }
+
         configuration.label
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovered ? Color.primary.opacity(0.1) : Color.clear)
+                    .fill(backgroundColor.opacity(backgroundOpacity))
             )
             .onHover { hovering in
                 isHovered = hovering
@@ -474,16 +502,18 @@ struct HeaderButtonStyle: ButtonStyle {
 struct HeaderButton: View {
     let icon: String
     let help: String
+    var isProminent = false
     let action: () -> Void
 
     var body: some View {
         Button(help, systemImage: icon, action: action)
             .labelStyle(.iconOnly)
             .font(.body.weight(.medium))
-            .foregroundStyle(.secondary)
+            .imageScale(.large)
+            .foregroundStyle(isProminent ? Color.accentColor : Color.secondary)
             .frame(width: 32, height: 32)
             .contentShape(Rectangle())
-        .buttonStyle(HeaderButtonStyle())
+        .buttonStyle(HeaderButtonStyle(isProminent: isProminent))
         .help(help)
     }
 }
@@ -499,6 +529,7 @@ struct RefreshButton: View {
         Button("Refresh", systemImage: "arrow.clockwise", action: action)
             .labelStyle(.iconOnly)
             .font(.body.weight(.medium))
+            .imageScale(.large)
             .foregroundStyle(isRefreshing ? .blue : .secondary)
             .rotationEffect(.degrees(rotation))
             .frame(width: 32, height: 32)
@@ -718,7 +749,7 @@ struct ItemRow: View {
         Group {
             switch item.contentType {
             case .issue:
-                Image(systemName: "circle")
+                Image(systemName: "record.circle")
             case .pullRequest:
                 Image(systemName: "arrow.triangle.merge")
             case .draftIssue:
