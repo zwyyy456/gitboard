@@ -201,10 +201,14 @@ struct QuickAddWindow: View {
 
     var body: some View {
         AddProjectItemView(store: model.projectStore, presentation: .window)
-        .task {
-            if model.projectStore.projects.isEmpty {
-                await model.projectStore.loadProjects()
+            .frame(
+                width: AddProjectItemView.presentationSize.width,
+                height: AddProjectItemView.presentationSize.height
+            )
+            .task {
+                if model.projectStore.projects.isEmpty {
+                    await model.projectStore.loadProjects()
+                }
             }
-        }
     }
 }

@@ -43,6 +43,10 @@ struct KanbanBoardView: View {
         .frame(minWidth: 1000, minHeight: 650)
         .sheet(isPresented: $showsAddItem) {
             AddProjectItemView(store: store)
+                .frame(
+                    width: AddProjectItemView.presentationSize.width,
+                    height: AddProjectItemView.presentationSize.height
+                )
         }
         .onChange(of: store.selectedProjectId) { _, _ in
             isSelecting = false
