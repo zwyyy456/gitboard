@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct AddProjectItemView: View {
+    static let presentationSize = CGSize(width: 520, height: 420)
+
     enum Presentation {
         case sheet
         case window
@@ -95,6 +97,7 @@ struct AddProjectItemView: View {
                         .fixedSize(horizontal: true, vertical: false)
                     }
                     .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 20)
                 } else {
                     Picker("Item source", selection: $mode) {
                         ForEach(Mode.allCases) { mode in
@@ -104,6 +107,7 @@ struct AddProjectItemView: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     .fixedSize(horizontal: true, vertical: false)
+                    .padding(.horizontal, 20)
                 }
 
                 Group {
@@ -112,6 +116,7 @@ struct AddProjectItemView: View {
                         createForm
                     case .existing:
                         existingItemForm
+                            .padding(.horizontal, 20)
                     case .quickEntry:
                         quickEntryForm
                     }
@@ -124,9 +129,10 @@ struct AddProjectItemView: View {
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
+                        .padding(.horizontal, 20)
                 }
             }
-            .padding(20)
+            .padding(.vertical, 20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             if presentation == .sheet || mode != .existing {
@@ -134,11 +140,6 @@ struct AddProjectItemView: View {
                 actionBar
             }
         }
-        .frame(
-            width: presentation == .window ? 520 : nil,
-            height: presentation == .window ? preferredWindowHeight : nil
-        )
-        .frame(minWidth: 520, minHeight: 340)
         .task {
             store.clearOperationError()
             if repository.isEmpty {
@@ -288,9 +289,9 @@ struct AddProjectItemView: View {
                     }
                 }
             }
-            .padding(.trailing, 8)
         }
         .scrollIndicators(.automatic)
+        .contentMargins(.horizontal, 20, for: .scrollContent)
         .disabled(isWorking)
     }
 
@@ -311,9 +312,9 @@ struct AddProjectItemView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, 8)
         }
         .scrollIndicators(.automatic)
+        .contentMargins(.horizontal, 20, for: .scrollContent)
         .disabled(isWorking)
     }
 
@@ -414,17 +415,6 @@ struct AddProjectItemView: View {
 
     private var createActionIsDisabled: Bool {
         isWorking || title.trimmed.isEmpty || (itemType == .issue && repository.trimmed.isEmpty)
-    }
-
-    private var preferredWindowHeight: CGFloat {
-        switch mode {
-        case .create:
-            return itemType == .issue && showsMoreOptions ? 480 : 360
-        case .existing:
-            return 400
-        case .quickEntry:
-            return 340
-        }
     }
 
     private var statusOptions: [String] {

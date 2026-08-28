@@ -75,7 +75,10 @@ struct GitBoardApp: App {
         Window("Add to Project", id: "quick-add") {
             QuickAddWindow(model: model)
         }
-        .defaultSize(width: 520, height: 400)
+        .defaultSize(
+            width: AddProjectItemView.presentationSize.width,
+            height: AddProjectItemView.presentationSize.height
+        )
         .windowResizability(.contentSize)
 
         Window("Settings", id: "settings") {
