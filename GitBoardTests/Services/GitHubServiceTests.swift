@@ -119,6 +119,68 @@ struct GitHubServiceTests {
         #expect(calls[2].contains("projectId=PROJECT_1"))
     }
 
+    @Test func itemDetailDecodesIssuePullRequestAndDraftAuthors() async throws {
+        let fixtures: [(response: String, expected: ProjectItemDetail)] = [
+            (
+                #"{"data":{"node":{"__typename":"Issue","id":"ISSUE1","bodyHTML":"<p>Issue body</p>","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-02T00:00:00Z","author":{"login":"octocat","avatarUrl":"https://example.invalid/octocat"}}}}"#,
+                ProjectItemDetail(
+                    id: "ISSUE1",
+                    bodyHTML: "<p>Issue body</p>",
+                    author: ItemAuthor(
+                        login: "octocat",
+                        avatarURL: "https://example.invalid/octocat"
+                    ),
+                    createdAt: "2026-08-01T00:00:00Z",
+                    updatedAt: "2026-08-02T00:00:00Z"
+                )
+            ),
+            (
+                #"{"data":{"node":{"__typename":"PullRequest","id":"PR1","bodyHTML":"<p>PR body</p>","createdAt":null,"updatedAt":"2026-08-03T00:00:00Z","author":null}}}"#,
+                ProjectItemDetail(
+                    id: "PR1",
+                    bodyHTML: "<p>PR body</p>",
+                    author: nil,
+                    createdAt: nil,
+                    updatedAt: "2026-08-03T00:00:00Z"
+                )
+            ),
+            (
+                #"{"data":{"node":{"__typename":"DraftIssue","id":"DRAFT1","bodyHTML":"","createdAt":"2026-08-04T00:00:00Z","updatedAt":null,"creator":{"login":"hubot","avatarUrl":null}}}}"#,
+                ProjectItemDetail(
+                    id: "DRAFT1",
+                    bodyHTML: "",
+                    author: ItemAuthor(login: "hubot", avatarURL: nil),
+                    createdAt: "2026-08-04T00:00:00Z",
+                    updatedAt: nil
+                )
+            )
+        ]
+
+        for fixture in fixtures {
+            let runner = FixtureGitHubCommandRunner(responses: [fixture.response])
+            let service = GitHubService(runner: runner)
+
+            let detail = try await service.fetchItemDetail(contentID: fixture.expected.id)
+
+            #expect(detail == fixture.expected)
+            #expect(await runner.recordedArguments().first?.contains("id=\(fixture.expected.id)") == true)
+        }
+    }
+
+    @Test func itemDetailReportsAnUnavailableNode() async {
+        let runner = FixtureGitHubCommandRunner(responses: [#"{"data":{"node":null}}"#])
+        let service = GitHubService(runner: runner)
+
+        do {
+            _ = try await service.fetchItemDetail(contentID: "MISSING")
+            Issue.record("Expected a missing node to be unavailable.")
+        } catch let error as GitHubError {
+            #expect(error == .itemUnavailable)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
 }
 
 struct QuickCreateParserTests {
