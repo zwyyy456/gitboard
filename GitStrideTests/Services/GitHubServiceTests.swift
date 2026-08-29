@@ -318,6 +318,82 @@ struct ProjectStoreTests {
         #expect(store.operationErrorMessage == nil)
     }
 
+    @Test func itemDetailLoadIsSharedWhileTheRequestIsInFlight() async {
+        let response = Self.itemDetailResponse(body: "Shared")
+        let runner = SuspendingGitHubCommandRunner(steps: [
+            .suspended("item-detail", response)
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        let item = Self.detailItem(updatedAt: "2026-08-01T00:00:00Z")
+
+        let firstLoad = Task { await store.loadItemDetail(for: item) }
+        await runner.waitUntilSuspended("item-detail")
+        let secondLoad = Task { await store.loadItemDetail(for: item) }
+        await Task.yield()
+
+        #expect(store.itemDetailState(for: item) == .loading)
+        await runner.release("item-detail")
+        await firstLoad.value
+        await secondLoad.value
+
+        #expect(await runner.recordedCallCount() == 1)
+        #expect(store.itemDetailState(for: item) == .loaded(
+            ProjectItemDetail(
+                id: "CONTENT1",
+                bodyHTML: "Shared",
+                author: nil,
+                createdAt: nil,
+                updatedAt: "2026-08-01T00:00:00Z"
+            )
+        ))
+    }
+
+    @Test func forcedItemDetailRefreshDiscardsTheOlderResponse() async {
+        let runner = SuspendingGitHubCommandRunner(steps: [
+            .suspended("old-detail", Self.itemDetailResponse(body: "Old")),
+            .response(Self.itemDetailResponse(body: "New"))
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        let item = Self.detailItem(updatedAt: "2026-08-01T00:00:00Z")
+
+        let oldLoad = Task { await store.loadItemDetail(for: item) }
+        await runner.waitUntilSuspended("old-detail")
+        await store.loadItemDetail(for: item, forceRefresh: true)
+        await runner.release("old-detail")
+        await oldLoad.value
+
+        guard case .loaded(let detail) = store.itemDetailState(for: item) else {
+            Issue.record("Expected the forced refresh result to remain loaded.")
+            return
+        }
+        #expect(detail.bodyHTML == "New")
+        #expect(await runner.recordedCallCount() == 2)
+    }
+
+    @Test func itemDetailCacheUsesTheItemUpdatedAtVersion() async {
+        let runner = FixtureGitHubCommandRunner(responses: [
+            Self.itemDetailResponse(body: "First"),
+            Self.itemDetailResponse(body: "Updated")
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        let firstVersion = Self.detailItem(updatedAt: "2026-08-01T00:00:00Z")
+        let secondVersion = Self.detailItem(updatedAt: "2026-08-02T00:00:00Z")
+
+        await store.loadItemDetail(for: firstVersion)
+        await store.loadItemDetail(for: firstVersion)
+        await store.loadItemDetail(for: secondVersion)
+
+        #expect(await runner.recordedArguments().count == 2)
+        guard case .loaded(let detail) = store.itemDetailState(for: secondVersion) else {
+            Issue.record("Expected the changed updatedAt value to reload details.")
+            return
+        }
+        #expect(detail.bodyHTML == "Updated")
+    }
+
     private func makeStore(
         runner: any GitHubCommandRunning
     ) -> (ProjectStore, @MainActor () -> Void) {
@@ -361,6 +437,27 @@ struct ProjectStoreTests {
         firstProjectFieldsResponse,
         emptyItemsResponse
     ]
+
+    private static func detailItem(updatedAt: String) -> ProjectItem {
+        ProjectItem(
+            id: "ITEM1",
+            contentId: "CONTENT1",
+            contentType: .issue,
+            title: "Detail item",
+            number: 1,
+            url: "https://github.com/acme/app/issues/1",
+            issueState: .open,
+            prState: nil,
+            updatedAt: updatedAt,
+            status: nil,
+            statusOptionId: nil,
+            assignees: []
+        )
+    }
+
+    private static func itemDetailResponse(body: String) -> String {
+        #"{"data":{"node":{"__typename":"Issue","id":"CONTENT1","bodyHTML":"\#(body)","createdAt":null,"updatedAt":"2026-08-01T00:00:00Z","author":null}}}"#
+    }
 }
 
 struct MyWorkFilterTests {
@@ -588,6 +685,7 @@ private enum SuspendingRunnerStep: Sendable {
 
 private actor SuspendingGitHubCommandRunner: GitHubCommandRunning {
     private var steps: [SuspendingRunnerStep]
+    private var callCount = 0
     private var suspendedIDs: Set<String> = []
     private var resultWaiters: [String: CheckedContinuation<GitHubCommandResult, Never>] = [:]
     private var suspensionWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
@@ -598,6 +696,7 @@ private actor SuspendingGitHubCommandRunner: GitHubCommandRunning {
 
     func run(arguments: [String]) async throws -> GitHubCommandResult {
         guard steps.isEmpty == false else { throw RunnerError.missingResponse }
+        callCount += 1
 
         switch steps.removeFirst() {
         case .response(let response):
@@ -623,6 +722,10 @@ private actor SuspendingGitHubCommandRunner: GitHubCommandRunning {
         guard let continuation = resultWaiters.removeValue(forKey: id),
               let response = suspendedResponses.removeValue(forKey: id) else { return }
         continuation.resume(returning: result(response))
+    }
+
+    func recordedCallCount() -> Int {
+        callCount
     }
 
     private var suspendedResponses: [String: String] = [:]

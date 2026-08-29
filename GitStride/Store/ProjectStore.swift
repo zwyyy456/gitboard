@@ -18,6 +18,11 @@ enum SelectedProjectContentState: Equatable {
     case failed(Project, String)
 }
 
+private struct ItemDetailEntry {
+    let sourceUpdatedAt: String?
+    let state: ItemDetailState
+}
+
 @MainActor
 @Observable
 final class ProjectStore {
@@ -57,6 +62,9 @@ final class ProjectStore {
     private var cachedProjectIDs: Set<String> = []
     private var loadingProjectID: String?
     private var projectLoadTask: Task<Project, Error>?
+    private var itemDetailEntries: [String: ItemDetailEntry] = [:]
+    private var itemDetailTasks: [String: Task<ProjectItemDetail, Error>] = [:]
+    private var itemDetailGenerations: [String: Int] = [:]
 
     private let gitHubService: GitHubService
     private let projectCache: ProjectCache
@@ -115,6 +123,57 @@ final class ProjectStore {
     func canEditProject(id: String) -> Bool {
         guard let project = project(id: id), project.viewerCanUpdate else { return false }
         return projectContentPhases[id] == .loaded
+    }
+
+    func itemDetailState(for item: ProjectItem) -> ItemDetailState {
+        guard let contentID = item.contentId else {
+            return .failed("Details are unavailable for this item.")
+        }
+        guard let entry = itemDetailEntries[contentID],
+              entry.sourceUpdatedAt == item.updatedAt else { return .idle }
+        return entry.state
+    }
+
+    func loadItemDetail(for item: ProjectItem, forceRefresh: Bool = false) async {
+        guard let contentID = item.contentId else { return }
+
+        if forceRefresh == false,
+           let entry = itemDetailEntries[contentID],
+           entry.sourceUpdatedAt == item.updatedAt {
+            switch entry.state {
+            case .loaded:
+                return
+            case .loading:
+                if let task = itemDetailTasks[contentID] {
+                    await finishItemDetailLoad(
+                        task,
+                        contentID: contentID,
+                        sourceUpdatedAt: item.updatedAt,
+                        generation: itemDetailGenerations[contentID, default: 0]
+                    )
+                }
+                return
+            case .idle, .failed:
+                break
+            }
+        }
+
+        itemDetailTasks[contentID]?.cancel()
+        let generation = itemDetailGenerations[contentID, default: 0] + 1
+        itemDetailGenerations[contentID] = generation
+        itemDetailEntries[contentID] = ItemDetailEntry(
+            sourceUpdatedAt: item.updatedAt,
+            state: .loading
+        )
+
+        let task = Task { try await gitHubService.fetchItemDetail(contentID: contentID) }
+        itemDetailTasks[contentID] = task
+        await finishItemDetailLoad(
+            task,
+            contentID: contentID,
+            sourceUpdatedAt: item.updatedAt,
+            generation: generation
+        )
     }
 
     var filteredItems: [ProjectItem] {
@@ -543,6 +602,7 @@ final class ProjectStore {
             if let projectIndex = projects.firstIndex(where: { $0.id == project.id }) {
                 projects[projectIndex].items.removeAll { $0.id == item.id }
             }
+            removeItemDetail(for: item)
             lastUpdated = Date()
             await persistCache()
         } catch {
@@ -559,6 +619,7 @@ final class ProjectStore {
             if let projectIndex = projects.firstIndex(where: { $0.id == project.id }) {
                 projects[projectIndex].items.removeAll { $0.id == item.id }
             }
+            removeItemDetail(for: item)
             lastUpdated = Date()
             await persistCache()
             return true
@@ -917,5 +978,41 @@ final class ProjectStore {
             return nil
         }
         return project
+    }
+
+    private func finishItemDetailLoad(
+        _ task: Task<ProjectItemDetail, Error>,
+        contentID: String,
+        sourceUpdatedAt: String?,
+        generation: Int
+    ) async {
+        do {
+            let detail = try await task.value
+            guard itemDetailGenerations[contentID] == generation else { return }
+            itemDetailTasks[contentID] = nil
+            itemDetailEntries[contentID] = ItemDetailEntry(
+                sourceUpdatedAt: sourceUpdatedAt,
+                state: .loaded(detail)
+            )
+        } catch is CancellationError {
+            guard itemDetailGenerations[contentID] == generation else { return }
+            itemDetailTasks[contentID] = nil
+            itemDetailEntries[contentID] = nil
+        } catch {
+            guard itemDetailGenerations[contentID] == generation else { return }
+            itemDetailTasks[contentID] = nil
+            itemDetailEntries[contentID] = ItemDetailEntry(
+                sourceUpdatedAt: sourceUpdatedAt,
+                state: .failed(error.localizedDescription)
+            )
+        }
+    }
+
+    private func removeItemDetail(for item: ProjectItem) {
+        guard let contentID = item.contentId else { return }
+        itemDetailTasks[contentID]?.cancel()
+        itemDetailTasks[contentID] = nil
+        itemDetailEntries[contentID] = nil
+        itemDetailGenerations[contentID, default: 0] += 1
     }
 }
