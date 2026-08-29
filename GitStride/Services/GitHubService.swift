@@ -320,6 +320,42 @@ actor GitHubService {
         )
     }
 
+    func addSubIssue(
+        parentIssueID: String,
+        subIssueID: String,
+        replacingParent: Bool
+    ) async throws {
+        let _: EmptyPayload = try await request(
+            replacingParent ? GraphQLQueries.replaceSubIssueParent : GraphQLQueries.addSubIssue,
+            variables: ["issueId": parentIssueID, "subIssueId": subIssueID],
+            as: EmptyPayload.self
+        )
+    }
+
+    func removeSubIssue(parentIssueID: String, subIssueID: String) async throws {
+        let _: EmptyPayload = try await request(
+            GraphQLQueries.removeSubIssue,
+            variables: ["issueId": parentIssueID, "subIssueId": subIssueID],
+            as: EmptyPayload.self
+        )
+    }
+
+    func addBlockedBy(issueID: String, blockingIssueID: String) async throws {
+        let _: EmptyPayload = try await request(
+            GraphQLQueries.addBlockedBy,
+            variables: ["issueId": issueID, "blockingIssueId": blockingIssueID],
+            as: EmptyPayload.self
+        )
+    }
+
+    func removeBlockedBy(issueID: String, blockingIssueID: String) async throws {
+        let _: EmptyPayload = try await request(
+            GraphQLQueries.removeBlockedBy,
+            variables: ["issueId": issueID, "blockingIssueId": blockingIssueID],
+            as: EmptyPayload.self
+        )
+    }
+
     func updateItemStatus(
         projectId: String,
         itemId: String,
