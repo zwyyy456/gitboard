@@ -35,6 +35,29 @@ struct IssueReference: Identifiable, Hashable, Sendable {
     let state: IssueState
 }
 
+enum IssueRelationKind: String, CaseIterable, Identifiable, Sendable {
+    case parent
+    case subIssue
+    case blockedBy
+    case blocking
+
+    var id: Self { self }
+
+    func endpoints(issueID: String, relatedIssueID: String) -> IssueRelationEndpoints {
+        switch self {
+        case .parent, .blocking:
+            IssueRelationEndpoints(issueID: relatedIssueID, relatedIssueID: issueID)
+        case .subIssue, .blockedBy:
+            IssueRelationEndpoints(issueID: issueID, relatedIssueID: relatedIssueID)
+        }
+    }
+}
+
+struct IssueRelationEndpoints: Equatable, Sendable {
+    let issueID: String
+    let relatedIssueID: String
+}
+
 enum MilestoneState: String, Hashable, Sendable {
     case open = "OPEN"
     case closed = "CLOSED"
