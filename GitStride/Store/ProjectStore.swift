@@ -50,7 +50,7 @@ final class ProjectStore {
 
     var isLoading = false
     var error: Error?
-    var operationErrorMessage: String?
+    private(set) var operationErrorMessage: String?
     var lastUpdated: Date?
     var currentUserLogin: String?
 

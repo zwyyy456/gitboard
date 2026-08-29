@@ -27,6 +27,7 @@ struct AddProjectItemView: View {
     @State private var results: [GitHubItemCandidate] = []
     @State private var isWorking = false
     @State private var showsMoreOptions = false
+    @State private var validationMessage: String?
     @FocusState private var focusedField: Field?
 
     init(store: ProjectStore, presentation: Presentation = .sheet) {
@@ -123,7 +124,7 @@ struct AddProjectItemView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-                if let message = store.operationErrorMessage {
+                if let message = validationMessage ?? store.operationErrorMessage {
                     Label(message, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.red)
@@ -141,6 +142,7 @@ struct AddProjectItemView: View {
             }
         }
         .task {
+            validationMessage = nil
             store.clearOperationError()
             if repository.isEmpty {
                 repository = store.repositorySuggestions.first ?? ""
@@ -154,6 +156,7 @@ struct AddProjectItemView: View {
             priority = ""
         }
         .onChange(of: mode) { _, newMode in
+            validationMessage = nil
             store.clearOperationError()
             switch newMode {
             case .create:
@@ -507,9 +510,10 @@ struct AddProjectItemView: View {
 
     private func applyQuickEntry() {
         guard isWorking == false else { return }
+        validationMessage = nil
         let request = QuickCreateParser.parse(quickEntry)
         guard request.title.isEmpty == false else {
-            store.operationErrorMessage = "Quick Entry needs a title."
+            validationMessage = "Quick Entry needs a title."
             return
         }
 
@@ -541,7 +545,7 @@ struct AddProjectItemView: View {
             mode = .create
             focusedField = .title
         } else {
-            store.operationErrorMessage = "Unavailable project option: \(unavailableOptions.joined(separator: ", "))."
+            validationMessage = "Unavailable project option: \(unavailableOptions.joined(separator: ", "))."
         }
     }
 
