@@ -49,6 +49,13 @@ struct RepositoryMilestone: Identifiable, Hashable, Sendable {
     let progressPercentage: Double
 }
 
+enum RepositoryMilestonesState: Equatable {
+    case idle
+    case loading
+    case loaded([RepositoryMilestone])
+    case failed(String)
+}
+
 enum ItemDetailState: Equatable {
     case idle
     case loading
