@@ -8,6 +8,7 @@ struct MenuBarPopoverView: View {
     @State private var isMoreHovered = false
     @State private var searchText = ""
     @State private var keyMonitor: Any?
+    @State private var inspectorReference: ItemInspectorReference?
 
     private var canEditSelectedProject: Bool {
         store.canEditSelectedProject
@@ -30,6 +31,9 @@ struct MenuBarPopoverView: View {
             }
         }
         .frame(width: 400)
+        .sheet(item: $inspectorReference) { reference in
+            ItemInspectorView(store: store, reference: reference)
+        }
         .task {
             if store.projects.isEmpty {
                 await store.loadProjects()
@@ -482,7 +486,12 @@ struct MenuBarPopoverView: View {
                     emptyFilterView
                 } else {
                     ForEach(items) { item in
-                        ItemRow(item: item, store: store, project: project)
+                        ItemRow(item: item, store: store, project: project) {
+                            inspectorReference = ItemInspectorReference(
+                                projectID: project.id,
+                                itemID: item.id
+                            )
+                        }
                     }
                 }
             }
@@ -658,13 +667,13 @@ struct ItemRow: View {
     let item: ProjectItem
     @Bindable var store: ProjectStore
     let project: Project
+    let showInspector: () -> Void
 
     @State private var isHovered = false
-    @State private var showsInspector = false
 
     var body: some View {
         Button {
-            showsInspector = true
+            showInspector()
         } label: {
             HStack(alignment: .center, spacing: 10) {
                 itemTypeIcon
@@ -720,12 +729,9 @@ struct ItemRow: View {
                 NSCursor.pop()
             }
         }
-        .sheet(isPresented: $showsInspector) {
-            ItemInspectorView(store: store, itemID: item.id)
-        }
         .contextMenu {
             Button {
-                showsInspector = true
+                showInspector()
             } label: {
                 Label("Show Details", systemImage: "sidebar.right")
             }
@@ -738,13 +744,15 @@ struct ItemRow: View {
                 Label("Open in Browser", systemImage: "safari")
             }
 
-            if project.viewerCanUpdate {
+            if store.canEditProject(id: project.id) {
                 Divider()
 
                 Menu {
                     ForEach(project.statusOptions) { status in
                         Button {
-                            Task { await store.moveItem(item, toStatus: status) }
+                            Task {
+                                await store.moveItem(item, toStatus: status, in: project.id)
+                            }
                         } label: {
                             HStack {
                                 Circle()
@@ -769,7 +777,13 @@ struct ItemRow: View {
                     Menu {
                         ForEach(item.assignees) { assignee in
                             Button {
-                                Task { await store.removeAssignee(from: item, user: assignee) }
+                                Task {
+                                    await store.removeAssignee(
+                                        from: item,
+                                        in: project.id,
+                                        user: assignee
+                                    )
+                                }
                             } label: {
                                 Label(assignee.name ?? assignee.login, systemImage: "person.fill.xmark")
                             }
@@ -782,7 +796,7 @@ struct ItemRow: View {
                 Divider()
 
                 Button {
-                    Task { _ = await store.archiveItem(item) }
+                    Task { _ = await store.archiveItem(item, in: project.id) }
                 } label: {
                     Label("Archive from Project", systemImage: "archivebox")
                 }

@@ -155,6 +155,13 @@ struct ProjectItem: Identifiable, Codable, Hashable {
     }
 }
 
+struct ItemInspectorReference: Identifiable, Hashable {
+    let projectID: String
+    let itemID: String
+
+    var id: Self { self }
+}
+
 struct GitHubItemCandidate: Identifiable, Hashable {
     let id: String
     let contentType: ItemContentType

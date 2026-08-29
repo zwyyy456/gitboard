@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ItemInspectorView: View {
     @Bindable var store: ProjectStore
-    let itemID: String
+    let reference: ItemInspectorReference
     @Environment(\.dismiss) private var dismiss
 
     @State private var userQuery = ""
@@ -10,10 +10,9 @@ struct ItemInspectorView: View {
     @State private var labelName = ""
     @State private var isWorking = false
 
-    private var project: Project? { store.selectedProject }
-    private var item: ProjectItem? {
-        project?.items.first { $0.id == itemID }
-    }
+    private var project: Project? { store.project(id: reference.projectID) }
+    private var item: ProjectItem? { store.item(for: reference) }
+    private var canEdit: Bool { store.canEditProject(id: reference.projectID) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -37,7 +36,7 @@ struct ItemInspectorView: View {
                                 .textSelection(.enabled)
                         }
 
-                        if project.viewerCanUpdate {
+                        if canEdit {
                             Divider()
                             Button("Archive from Project", systemImage: "archivebox") {
                                 archive(item)
@@ -126,9 +125,15 @@ struct ItemInspectorView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
 
-                        if project?.viewerCanUpdate == true {
+                        if canEdit {
                             Button {
-                                Task { await store.removeAssignee(from: item, user: assignee) }
+                                Task {
+                                    await store.removeAssignee(
+                                        from: item,
+                                        in: reference.projectID,
+                                        user: assignee
+                                    )
+                                }
                             } label: {
                                 Image(systemName: "xmark")
                             }
@@ -139,7 +144,7 @@ struct ItemInspectorView: View {
                 }
             }
 
-            if project?.viewerCanUpdate == true, item.contentType != .draftIssue {
+            if canEdit, item.contentType != .draftIssue {
                 HStack {
                     TextField("Search GitHub users", text: $userQuery)
                         .textFieldStyle(.roundedBorder)
@@ -157,7 +162,11 @@ struct ItemInspectorView: View {
                         Spacer()
                         Button("Add") {
                             Task {
-                                await store.addAssignee(to: item, user: user)
+                                await store.addAssignee(
+                                    to: item,
+                                    in: reference.projectID,
+                                    user: user
+                                )
                                 userResults.removeAll { $0.id == user.id }
                             }
                         }
@@ -186,9 +195,15 @@ struct ItemInspectorView: View {
                             .frame(width: 9, height: 9)
                         Text(label.name)
                         Spacer()
-                        if project?.viewerCanUpdate == true {
+                        if canEdit {
                             Button {
-                                Task { _ = await store.removeLabel(from: item, name: label.name) }
+                                Task {
+                                    _ = await store.removeLabel(
+                                        from: item,
+                                        in: reference.projectID,
+                                        name: label.name
+                                    )
+                                }
                             } label: {
                                 Image(systemName: "xmark")
                             }
@@ -199,7 +214,7 @@ struct ItemInspectorView: View {
                 }
             }
 
-            if project?.viewerCanUpdate == true {
+            if canEdit {
                 HStack {
                     TextField("Existing repository label", text: $labelName)
                         .textFieldStyle(.roundedBorder)
@@ -220,10 +235,15 @@ struct ItemInspectorView: View {
                 ProjectFieldEditor(
                     field: field,
                     value: item.fieldValues[field.id],
-                    isEditable: project.viewerCanUpdate && isWorking == false
+                    isEditable: canEdit && isWorking == false
                 ) { value in
                     isWorking = true
-                    _ = await store.updateField(on: item, field: field, value: value)
+                    _ = await store.updateField(
+                        on: item,
+                        in: reference.projectID,
+                        field: field,
+                        value: value
+                    )
                     isWorking = false
                 }
             }
@@ -246,7 +266,7 @@ struct ItemInspectorView: View {
         let name = labelName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard name.isEmpty == false else { return }
         Task {
-            if await store.addLabel(to: item, name: name) {
+            if await store.addLabel(to: item, in: reference.projectID, name: name) {
                 labelName = ""
             }
         }
@@ -255,7 +275,7 @@ struct ItemInspectorView: View {
     private func archive(_ item: ProjectItem) {
         isWorking = true
         Task {
-            let succeeded = await store.archiveItem(item)
+            let succeeded = await store.archiveItem(item, in: reference.projectID)
             isWorking = false
             if succeeded { dismiss() }
         }
