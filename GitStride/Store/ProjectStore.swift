@@ -1,6 +1,23 @@
 import Foundation
 import SwiftUI
 
+enum ProjectContentPhase: Equatable {
+    case summary
+    case cached
+    case loading
+    case loaded
+    case refreshing
+    case failed(String)
+}
+
+enum SelectedProjectContentState: Equatable {
+    case none
+    case loading(Project)
+    case content(Project, isRefreshing: Bool, isCached: Bool)
+    case empty(Project, isRefreshing: Bool, isCached: Bool)
+    case failed(Project, String)
+}
+
 @MainActor
 @Observable
 final class ProjectStore {
@@ -9,19 +26,19 @@ final class ProjectStore {
     var projects: [Project] = []
     var selectedOwnerId: String? {
         didSet {
-            UserDefaults.standard.set(selectedOwnerId, forKey: "selectedOwnerId")
+            defaults.set(selectedOwnerId, forKey: "selectedOwnerId")
         }
     }
     var selectedProjectId: String? {
         didSet {
-            UserDefaults.standard.set(selectedProjectId, forKey: "selectedProjectId")
+            defaults.set(selectedProjectId, forKey: "selectedProjectId")
         }
     }
 
     // nil means "All", otherwise filter by status name
     var selectedStatusFilter: String? {
         didSet {
-            UserDefaults.standard.set(selectedStatusFilter, forKey: "selectedStatusFilter")
+            defaults.set(selectedStatusFilter, forKey: "selectedStatusFilter")
         }
     }
 
@@ -30,15 +47,20 @@ final class ProjectStore {
     var operationErrorMessage: String?
     var lastUpdated: Date?
     var currentUserLogin: String?
-    var isShowingCachedData = false
 
     private var catalogGeneration = 0
     private var projectGeneration = 0
     private var didRestoreCache = false
     private var cachedAccountLogin: String?
+    private var projectContentPhases: [String: ProjectContentPhase] = [:]
+    private var detailedProjectIDs: Set<String> = []
+    private var cachedProjectIDs: Set<String> = []
+    private var loadingProjectID: String?
+    private var projectLoadTask: Task<Project, Error>?
 
-    private let gitHubService = GitHubService.shared
-    private let projectCache = ProjectCache()
+    private let gitHubService: GitHubService
+    private let projectCache: ProjectCache
+    private let defaults: UserDefaults
 
     var selectedProject: Project? {
         guard let id = selectedProjectId else { return nil }
@@ -48,6 +70,41 @@ final class ProjectStore {
     var selectedOwner: ProjectOwner? {
         guard let id = selectedOwnerId else { return nil }
         return owners.first { $0.id == id }
+    }
+
+    var selectedProjectContentState: SelectedProjectContentState {
+        guard let project = selectedProject else { return .none }
+
+        switch projectContentPhases[project.id] ?? .summary {
+        case .summary, .loading:
+            return .loading(project)
+        case .cached:
+            return project.items.isEmpty
+                ? .empty(project, isRefreshing: false, isCached: true)
+                : .content(project, isRefreshing: false, isCached: true)
+        case .loaded:
+            return project.items.isEmpty
+                ? .empty(project, isRefreshing: false, isCached: false)
+                : .content(project, isRefreshing: false, isCached: false)
+        case .refreshing:
+            let isCached = cachedProjectIDs.contains(project.id)
+            return project.items.isEmpty
+                ? .empty(project, isRefreshing: true, isCached: isCached)
+                : .content(project, isRefreshing: true, isCached: isCached)
+        case .failed(let message):
+            return .failed(project, message)
+        }
+    }
+
+    var isShowingCachedData: Bool {
+        selectedProjectId.map(cachedProjectIDs.contains) ?? false
+    }
+
+    var canEditSelectedProject: Bool {
+        guard let project = selectedProject,
+              project.viewerCanUpdate,
+              projectContentPhases[project.id] == .loaded else { return false }
+        return true
     }
 
     var filteredItems: [ProjectItem] {
@@ -61,13 +118,21 @@ final class ProjectStore {
         return Array(Set(project.items.compactMap(\.repositoryName))).sorted()
     }
 
-    init() {
-        selectedOwnerId = UserDefaults.standard.string(forKey: "selectedOwnerId")
-        selectedProjectId = UserDefaults.standard.string(forKey: "selectedProjectId")
-        selectedStatusFilter = UserDefaults.standard.string(forKey: "selectedStatusFilter")
+    init(
+        gitHubService: GitHubService = .shared,
+        projectCache: ProjectCache = ProjectCache(),
+        defaults: UserDefaults = .standard
+    ) {
+        self.gitHubService = gitHubService
+        self.projectCache = projectCache
+        self.defaults = defaults
+        selectedOwnerId = defaults.string(forKey: "selectedOwnerId")
+        selectedProjectId = defaults.string(forKey: "selectedProjectId")
+        selectedStatusFilter = defaults.string(forKey: "selectedStatusFilter")
     }
 
     func loadProjects() async {
+        cancelProjectLoad()
         await restoreCacheIfNeeded()
         catalogGeneration += 1
         let generation = catalogGeneration
@@ -96,7 +161,9 @@ final class ProjectStore {
             selectedOwnerId = nil
             selectedProjectId = nil
             selectedStatusFilter = nil
-            isShowingCachedData = false
+            projectContentPhases = [:]
+            detailedProjectIDs = []
+            cachedProjectIDs = []
         }
         currentUserLogin = account.login
 
@@ -119,42 +186,78 @@ final class ProjectStore {
             return
         } catch {
             guard generation == catalogGeneration else { return }
-            self.error = error
+            if isShowingCachedData {
+                self.error = nil
+                operationErrorMessage = "Showing cached data because GitHub owners could not refresh: \(error.localizedDescription)"
+            } else {
+                self.error = error
+            }
             isLoading = false
         }
     }
 
     func loadProjectDetails(id: String) async {
-        projectGeneration += 1
-        let generation = projectGeneration
-
         guard let project = projects.first(where: { $0.id == id }) else { return }
+        cancelProjectLoad()
+        let generation = projectGeneration
+        let hadDetails = detailedProjectIDs.contains(id)
+        let fallbackPhase: ProjectContentPhase = if cachedProjectIDs.contains(id) {
+            .cached
+        } else if hadDetails {
+            .loaded
+        } else {
+            .summary
+        }
+
+        projectContentPhases[id] = hadDetails ? .refreshing : .loading
+        loadingProjectID = id
+        operationErrorMessage = nil
+        let task = Task { try await gitHubService.fetchProjectWithItems(project: project) }
+        projectLoadTask = task
+
         do {
-            let detailedProject = try await gitHubService.fetchProjectWithItems(project: project)
+            let detailedProject = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
             guard generation == projectGeneration, selectedProjectId == id else { return }
 
             if let index = projects.firstIndex(where: { $0.id == id }) {
                 projects[index] = detailedProject
             }
 
+            projectLoadTask = nil
+            loadingProjectID = nil
+            detailedProjectIDs.insert(id)
+            cachedProjectIDs.remove(id)
+            projectContentPhases[id] = .loaded
             lastUpdated = Date()
-            isShowingCachedData = false
             operationErrorMessage = nil
             await persistCache()
         } catch is CancellationError {
+            guard generation == projectGeneration else { return }
+            projectLoadTask = nil
+            loadingProjectID = nil
+            projectContentPhases[id] = fallbackPhase
             return
         } catch {
             guard generation == projectGeneration, selectedProjectId == id else { return }
-            if isShowingCachedData {
-                operationErrorMessage = "Showing cached data because GitHub refresh failed: \(error.localizedDescription)"
+            projectLoadTask = nil
+            loadingProjectID = nil
+            if hadDetails {
+                projectContentPhases[id] = fallbackPhase
+                let prefix = cachedProjectIDs.contains(id) ? "Showing cached data" : "Keeping the current project"
+                operationErrorMessage = "\(prefix) because GitHub refresh failed: \(error.localizedDescription)"
             } else {
-                self.error = error
+                projectContentPhases[id] = .failed(error.localizedDescription)
             }
         }
     }
 
     func selectOwner(_ owner: ProjectOwner) async {
         guard owner.id != selectedOwnerId else { return }
+        cancelProjectLoad()
         catalogGeneration += 1
         let generation = catalogGeneration
         selectedOwnerId = owner.id
@@ -167,9 +270,6 @@ final class ProjectStore {
     }
 
     func refresh() async {
-        isLoading = true
-        defer { isLoading = false }
-
         guard let selectedId = selectedProjectId else {
             await loadProjects()
             return
@@ -179,10 +279,12 @@ final class ProjectStore {
     }
 
     func selectProject(_ project: Project) async {
-        guard project.id != selectedProjectId || project.items.isEmpty else { return }
+        let phase = projectContentPhases[project.id] ?? .summary
+        guard project.id != selectedProjectId || phase != .loaded else { return }
         selectedProjectId = project.id
         selectedStatusFilter = nil
-        error = nil
+        operationErrorMessage = nil
+        guard phase != .loading, phase != .refreshing else { return }
         await loadProjectDetails(id: project.id)
     }
 
@@ -200,9 +302,10 @@ final class ProjectStore {
         do {
             let loadedProjects = try await gitHubService.fetchProjects(owner: owner)
             guard generation == catalogGeneration, selectedOwnerId == owner.id else { return }
-            let cachedProjects = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
+            let detailedProjects = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
             projects = loadedProjects.map { project in
-                guard isShowingCachedData, let cached = cachedProjects[project.id] else {
+                guard detailedProjectIDs.contains(project.id),
+                      let detailed = detailedProjects[project.id] else {
                     return project
                 }
                 return Project(
@@ -211,11 +314,23 @@ final class ProjectStore {
                     title: project.title,
                     number: project.number,
                     url: project.url,
-                    viewerCanUpdate: false,
-                    fields: cached.fields,
-                    statusField: cached.statusField,
-                    items: cached.items
+                    viewerCanUpdate: cachedProjectIDs.contains(project.id)
+                        ? false
+                        : project.viewerCanUpdate,
+                    fields: detailed.fields,
+                    statusField: detailed.statusField,
+                    items: detailed.items
                 )
+            }
+
+            let projectIDs = Set(loadedProjects.map(\.id))
+            detailedProjectIDs.formIntersection(projectIDs)
+            cachedProjectIDs.formIntersection(projectIDs)
+            projectContentPhases = projectContentPhases.filter { projectIDs.contains($0.key) }
+            for project in projects where projectContentPhases[project.id] == nil {
+                projectContentPhases[project.id] = detailedProjectIDs.contains(project.id)
+                    ? (cachedProjectIDs.contains(project.id) ? .cached : .loaded)
+                    : .summary
             }
 
             let selectedProject = loadedProjects.first { $0.id == selectedProjectId }
@@ -256,6 +371,12 @@ final class ProjectStore {
         currentUserLogin = snapshot.accountLogin
         owners = [snapshot.owner]
         projects = snapshot.projects.map(makeReadOnly)
+        let projectIDs = Set(projects.map(\.id))
+        detailedProjectIDs = snapshot.detailedProjectIDs.intersection(projectIDs)
+        cachedProjectIDs = detailedProjectIDs
+        projectContentPhases = Dictionary(uniqueKeysWithValues: projects.map { project in
+            (project.id, detailedProjectIDs.contains(project.id) ? .cached : .summary)
+        })
         selectedOwnerId = snapshot.owner.id
         selectedProjectId = snapshot.projects.contains { $0.id == snapshot.selectedProjectId }
             ? snapshot.selectedProjectId
@@ -268,7 +389,6 @@ final class ProjectStore {
             self.selectedStatusFilter = nil
         }
         lastUpdated = snapshot.savedAt
-        isShowingCachedData = true
     }
 
     private func persistCache() async {
@@ -281,6 +401,7 @@ final class ProjectStore {
                     accountLogin: accountLogin,
                     owner: owner,
                     projects: projects,
+                    detailedProjectIDs: detailedProjectIDs,
                     selectedProjectId: selectedProjectId,
                     selectedStatusFilter: selectedStatusFilter
                 )
@@ -310,6 +431,18 @@ final class ProjectStore {
         return "Showing cached data. \(reason)"
     }
 
+    private func cancelProjectLoad() {
+        if let loadingProjectID {
+            projectContentPhases[loadingProjectID] = cachedProjectIDs.contains(loadingProjectID)
+                ? .cached
+                : (detailedProjectIDs.contains(loadingProjectID) ? .loaded : .summary)
+        }
+        projectLoadTask?.cancel()
+        projectLoadTask = nil
+        loadingProjectID = nil
+        projectGeneration += 1
+    }
+
     private func sessionError(for state: GitHubSessionState) -> GitHubError? {
         switch state {
         case .checking, .ready:
@@ -326,7 +459,7 @@ final class ProjectStore {
     }
 
     func moveItem(_ item: ProjectItem, toStatus status: StatusOption) async {
-        guard let project = selectedProject, project.viewerCanUpdate,
+        guard let project = selectedProject, canEditSelectedProject,
               let fieldId = project.statusField?.id,
               let projectIndex = projects.firstIndex(where: { $0.id == project.id }),
               let itemIndex = projects[projectIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
@@ -389,7 +522,7 @@ final class ProjectStore {
     }
 
     func deleteItem(_ item: ProjectItem) async {
-        guard let project = selectedProject, project.viewerCanUpdate else { return }
+        guard let project = selectedProject, canEditSelectedProject else { return }
 
         do {
             try await gitHubService.deleteItem(projectId: project.id, itemId: item.id)
@@ -468,7 +601,7 @@ final class ProjectStore {
 
     func addAssignee(to item: ProjectItem, user: Assignee) async {
         guard let url = item.url,
-              let project = selectedProject, project.viewerCanUpdate,
+              let project = selectedProject, canEditSelectedProject,
               let projectIndex = projects.firstIndex(where: { $0.id == project.id }),
               let itemIndex = projects[projectIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
 
@@ -527,7 +660,7 @@ final class ProjectStore {
 
     func removeAssignee(from item: ProjectItem, user: Assignee) async {
         guard let url = item.url,
-              let project = selectedProject, project.viewerCanUpdate,
+              let project = selectedProject, canEditSelectedProject,
               let projectIndex = projects.firstIndex(where: { $0.id == project.id }),
               let itemIndex = projects[projectIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
 
@@ -746,7 +879,7 @@ final class ProjectStore {
     }
 
     private func editableSelectedProject() -> Project? {
-        guard let project = selectedProject, project.viewerCanUpdate else {
+        guard let project = selectedProject, canEditSelectedProject else {
             operationErrorMessage = "This project is read-only."
             return nil
         }

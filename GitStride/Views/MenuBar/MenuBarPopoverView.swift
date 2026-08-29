@@ -10,7 +10,7 @@ struct MenuBarPopoverView: View {
     @State private var keyMonitor: Any?
 
     private var canEditSelectedProject: Bool {
-        store.selectedProject?.viewerCanUpdate == true
+        store.canEditSelectedProject
     }
 
     var body: some View {
@@ -26,7 +26,7 @@ struct MenuBarPopoverView: View {
             } else if store.projects.isEmpty {
                 emptyProjectsView
             } else {
-                projectContent
+                selectedProjectContent
             }
         }
         .frame(width: 400)
@@ -310,12 +310,53 @@ struct MenuBarPopoverView: View {
     }
 
     @ViewBuilder
-    private var projectContent: some View {
-        if let project = store.selectedProject {
+    private var selectedProjectContent: some View {
+        switch store.selectedProjectContentState {
+        case .none:
+            emptyProjectsView
+        case .loading:
+            projectLoadingView
+        case .content(let project, _, _), .empty(let project, _, _):
             statusFilterTabs(project: project)
             searchBar
-            itemsList
+            itemsList(project: project)
+        case .failed(let project, let message):
+            projectErrorView(project, message: message)
         }
+    }
+
+    private var projectLoadingView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Loading project items...")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+    }
+
+    private func projectErrorView(_ project: Project, message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 28))
+                .foregroundStyle(.orange)
+            Text("Couldn’t load \(project.title)")
+                .font(.headline)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            Button("Try Again") {
+                Task { await store.loadProjectDetails(id: project.id) }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
     }
 
     private func statusFilterTabs(project: Project) -> some View {
@@ -390,8 +431,12 @@ struct MenuBarPopoverView: View {
         .padding(.vertical, 8)
     }
 
-    private var searchedItems: [ProjectItem] {
-        let items = store.filteredItems
+    private func searchedItems(in project: Project) -> [ProjectItem] {
+        let items = if let filter = store.selectedStatusFilter {
+            project.items.filter { $0.status == filter }
+        } else {
+            project.items
+        }
 
         guard !searchText.isEmpty else { return items }
 
@@ -429,14 +474,15 @@ struct MenuBarPopoverView: View {
         }
     }
 
-    private var itemsList: some View {
-        ScrollView {
+    private func itemsList(project: Project) -> some View {
+        let items = searchedItems(in: project)
+        return ScrollView {
             LazyVStack(spacing: 0) {
-                if searchedItems.isEmpty {
+                if items.isEmpty {
                     emptyFilterView
                 } else {
-                    ForEach(searchedItems) { item in
-                        ItemRow(item: item, store: store, project: store.selectedProject!)
+                    ForEach(items) { item in
+                        ItemRow(item: item, store: store, project: project)
                     }
                 }
             }
