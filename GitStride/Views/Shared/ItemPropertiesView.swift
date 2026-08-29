@@ -500,9 +500,12 @@ struct ItemPropertiesView: View {
 
     @ViewBuilder
     private func signalsSection(_ item: ProjectItem) -> some View {
-        if item.engineeringSignals != nil || item.linkedPR != nil {
+        if (item.contentType == .pullRequest && item.engineeringSignals != nil)
+            || item.linkedPR != nil {
             propertySection("Engineering") {
-                EngineeringSignalsView(item: item, limit: 5)
+                if item.contentType == .pullRequest {
+                    EngineeringSignalsView(item: item, limit: 5)
+                }
 
                 if let linkedPR = item.linkedPR, let url = URL(string: linkedPR.url) {
                     Link(destination: url) {
