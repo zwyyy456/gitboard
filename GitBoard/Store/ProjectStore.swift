@@ -301,7 +301,9 @@ final class ProjectStore {
         projectContentPhases[id] = hadDetails ? .refreshing : .loading
         loadingProjectID = id
         operationErrorMessage = nil
-        let task = Task { try await gitHubService.fetchProjectWithItems(project: project) }
+        let task = Task {
+            try await gitHubService.fetchProjectWithItems(id: project.id, owner: project.owner)
+        }
         projectLoadTask = task
 
         do {
@@ -383,7 +385,8 @@ final class ProjectStore {
             for reference in references {
                 try Task.checkCancellation()
                 loaded[reference.id] = try await gitHubService.fetchProjectWithItems(
-                    project: reference.projectSummary
+                    id: reference.id,
+                    owner: reference.owner
                 )
             }
             guard generation == followedProjectsGeneration else { return }
@@ -564,7 +567,10 @@ final class ProjectStore {
     private func refreshProjectSnapshot(id: String) async {
         guard let project = project(id: id) else { return }
         do {
-            let detailedProject = try await gitHubService.fetchProjectWithItems(project: project)
+            let detailedProject = try await gitHubService.fetchProjectWithItems(
+                id: project.id,
+                owner: project.owner
+            )
             replaceProject(detailedProject)
             lastUpdated = Date()
             await persistCache()

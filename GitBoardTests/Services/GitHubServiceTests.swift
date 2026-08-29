@@ -48,7 +48,7 @@ struct GitHubServiceTests {
             viewerCanUpdate: true
         )
 
-        let project = try await service.fetchProjectWithItems(project: summary)
+        let project = try await service.fetchProjectWithItems(id: summary.id, owner: summary.owner)
         let calls = await runner.recordedArguments()
 
         #expect(project.items.count == 3)

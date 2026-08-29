@@ -11,17 +11,6 @@ struct FollowedProject: Identifiable, Codable, Hashable {
         displayTitle = project.title
     }
 
-    var projectSummary: Project {
-        Project(
-            id: id,
-            owner: owner,
-            title: displayTitle ?? "Project",
-            number: 0,
-            url: "",
-            viewerCanUpdate: true
-        )
-    }
-
     private enum CodingKeys: String, CodingKey {
         case id, ownerId, ownerLogin, ownerKind
     }

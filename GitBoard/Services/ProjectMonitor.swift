@@ -28,7 +28,8 @@ actor ProjectMonitor {
                         try Task.checkCancellation()
                         snapshots.append(
                             try await gitHubService.fetchProjectWithItems(
-                                project: project.projectSummary
+                                id: project.id,
+                                owner: project.owner
                             )
                         )
                     }

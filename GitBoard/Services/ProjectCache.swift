@@ -32,12 +32,22 @@ struct ProjectCacheSnapshot: Codable {
     }
 }
 
-enum ProjectCacheError: Error {
+enum ProjectCacheError: LocalizedError {
+    case applicationSupportUnavailable
     case unsupportedVersion
+
+    var errorDescription: String? {
+        switch self {
+        case .applicationSupportUnavailable:
+            "The Application Support directory is unavailable."
+        case .unsupportedVersion:
+            "The project cache was created by an unsupported version of GitBoard."
+        }
+    }
 }
 
 actor ProjectCache {
-    private let fileURL: URL
+    private let fileURL: URL?
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
@@ -50,6 +60,7 @@ actor ProjectCache {
     }
 
     func load() throws -> ProjectCacheSnapshot? {
+        guard let fileURL else { throw ProjectCacheError.applicationSupportUnavailable }
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         let data = try Data(contentsOf: fileURL)
         let snapshot = try decoder.decode(ProjectCacheSnapshot.self, from: data)
@@ -60,6 +71,7 @@ actor ProjectCache {
     }
 
     func save(_ snapshot: ProjectCacheSnapshot) throws {
+        guard let fileURL else { throw ProjectCacheError.applicationSupportUnavailable }
         let directory = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(
             at: directory,
@@ -68,12 +80,11 @@ actor ProjectCache {
         try encoder.encode(snapshot).write(to: fileURL, options: .atomic)
     }
 
-    private static var defaultFileURL: URL {
-        let applicationSupport = FileManager.default.urls(
+    private static var defaultFileURL: URL? {
+        FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
-        return applicationSupport
+        ).first?
             .appendingPathComponent("GitBoard", isDirectory: true)
             .appendingPathComponent("project-cache-v2.json")
     }
