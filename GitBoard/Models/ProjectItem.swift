@@ -155,6 +155,34 @@ struct ProjectItem: Identifiable, Codable, Hashable {
     }
 }
 
+extension Collection where Element == ProjectItem {
+    func matching(_ searchText: String, currentUserLogin: String?) -> [ProjectItem] {
+        guard searchText.isEmpty == false else { return Array(self) }
+
+        let query = searchText.lowercased().trimmingCharacters(in: .whitespaces)
+        if query == "@me" {
+            guard let login = currentUserLogin?.lowercased() else { return Array(self) }
+            return filter { item in
+                item.assignees.contains { $0.login.lowercased() == login }
+            }
+        }
+
+        let searchQuery = query.hasPrefix("@") ? String(query.dropFirst()) : query
+        let numberQuery = searchQuery.hasPrefix("#")
+            ? String(searchQuery.dropFirst())
+            : searchQuery
+
+        return filter { item in
+            item.title.lowercased().contains(searchQuery)
+                || item.number.map { String($0).contains(numberQuery) } == true
+                || item.assignees.contains { assignee in
+                    assignee.login.lowercased().contains(searchQuery)
+                        || assignee.name?.lowercased().contains(searchQuery) == true
+                }
+        }
+    }
+}
+
 struct ItemInspectorReference: Identifiable, Hashable {
     let projectID: String
     let itemID: String

@@ -442,40 +442,7 @@ struct MenuBarPopoverView: View {
             project.items
         }
 
-        guard !searchText.isEmpty else { return items }
-
-        let query = searchText.lowercased().trimmingCharacters(in: .whitespaces)
-
-        if query == "@me" {
-            guard let myLogin = store.currentUserLogin?.lowercased() else { return items }
-            return items.filter { item in
-                item.assignees.contains { $0.login.lowercased() == myLogin }
-            }
-        }
-
-        let isAssigneeSearch = query.hasPrefix("@")
-        let searchQuery = isAssigneeSearch ? String(query.dropFirst()) : query
-
-        return items.filter { item in
-            if item.title.lowercased().contains(searchQuery) {
-                return true
-            }
-
-            let numberQuery = searchQuery.hasPrefix("#") ? String(searchQuery.dropFirst()) : searchQuery
-            if let number = item.number, String(number).contains(numberQuery) {
-                return true
-            }
-
-            let matchesAssignee = item.assignees.contains { assignee in
-                assignee.login.lowercased().contains(searchQuery) ||
-                (assignee.name?.lowercased().contains(searchQuery) ?? false)
-            }
-            if matchesAssignee {
-                return true
-            }
-
-            return false
-        }
+        return items.matching(searchText, currentUserLogin: store.currentUserLogin)
     }
 
     private func itemsList(project: Project) -> some View {
