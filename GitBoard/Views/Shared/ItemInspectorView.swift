@@ -26,7 +26,12 @@ struct ItemInspectorView: View {
             }
         }
         .frame(minWidth: 780, idealWidth: 860, minHeight: 620, idealHeight: 720)
-        .task { store.clearOperationError() }
+        .task(id: item?.contentId) {
+            store.clearOperationError()
+            if let item {
+                await store.loadItemDetail(for: item)
+            }
+        }
         .onDisappear { store.clearOperationError() }
     }
 

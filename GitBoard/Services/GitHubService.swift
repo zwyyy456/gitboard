@@ -217,12 +217,62 @@ actor GitHubService {
         }
 
         let author = node.typename == "DraftIssue" ? node.creator : node.author
+        let issueMetadata: IssueMetadata?
+        if node.typename == "Issue" {
+            guard let repository = node.repository?.nameWithOwner else {
+                throw GitHubError.decodingError("GitHub returned an issue without a repository.")
+            }
+            issueMetadata = IssueMetadata(
+                repository: repository,
+                milestone: node.milestone.flatMap(makeMilestone),
+                parent: node.parent.flatMap(makeIssueReference),
+                subIssues: node.subIssues?.nodes.compactMap(makeIssueReference) ?? [],
+                subIssueProgress: node.subIssuesSummary.flatMap {
+                    $0.total > 0
+                        ? SubIssueProgress(completed: $0.completed, total: $0.total)
+                        : nil
+                },
+                blockedBy: node.blockedBy?.nodes.compactMap(makeIssueReference) ?? [],
+                blocking: node.blocking?.nodes.compactMap(makeIssueReference) ?? [],
+                viewerCanUpdate: node.viewerCanUpdate ?? false,
+                viewerCanSetMilestone: node.viewerCanSetMilestone ?? false
+            )
+        } else {
+            issueMetadata = nil
+        }
+
         return ProjectItemDetail(
             id: id,
             bodyHTML: node.bodyHTML ?? "",
             author: author.map { ItemAuthor(login: $0.login, avatarURL: $0.avatarUrl) },
             createdAt: node.createdAt,
-            updatedAt: node.updatedAt
+            updatedAt: node.updatedAt,
+            issueMetadata: issueMetadata
+        )
+    }
+
+    private func makeIssueReference(_ node: ItemDetailPayload.IssueNode) -> IssueReference? {
+        guard let state = IssueState(rawValue: node.state),
+              let url = URL(string: node.url) else { return nil }
+        return IssueReference(
+            id: node.id,
+            repository: node.repository.nameWithOwner,
+            number: node.number,
+            title: node.title,
+            url: url,
+            state: state
+        )
+    }
+
+    private func makeMilestone(_ node: ItemDetailPayload.MilestoneNode) -> RepositoryMilestone? {
+        guard let state = MilestoneState(rawValue: node.state) else { return nil }
+        return RepositoryMilestone(
+            id: node.id,
+            number: node.number,
+            title: node.title,
+            dueOn: node.dueOn,
+            state: state,
+            progressPercentage: node.progressPercentage
         )
     }
 
@@ -915,6 +965,15 @@ private struct ItemDetailPayload: Decodable {
         let updatedAt: String?
         let author: Actor?
         let creator: Actor?
+        let viewerCanUpdate: Bool?
+        let viewerCanSetMilestone: Bool?
+        let repository: RepositoryNode?
+        let milestone: MilestoneNode?
+        let parent: IssueNode?
+        let subIssues: IssueConnection?
+        let subIssuesSummary: SubIssuesSummary?
+        let blockedBy: IssueConnection?
+        let blocking: IssueConnection?
 
         enum CodingKeys: String, CodingKey {
             case typename = "__typename"
@@ -924,12 +983,52 @@ private struct ItemDetailPayload: Decodable {
             case updatedAt
             case author
             case creator
+            case viewerCanUpdate
+            case viewerCanSetMilestone
+            case repository
+            case milestone
+            case parent
+            case subIssues
+            case subIssuesSummary
+            case blockedBy
+            case blocking
         }
     }
 
     struct Actor: Decodable {
         let login: String
         let avatarUrl: String?
+    }
+
+    struct RepositoryNode: Decodable {
+        let nameWithOwner: String
+    }
+
+    struct MilestoneNode: Decodable {
+        let id: String
+        let number: Int
+        let title: String
+        let dueOn: String?
+        let state: String
+        let progressPercentage: Double
+    }
+
+    struct IssueNode: Decodable {
+        let id: String
+        let number: Int
+        let title: String
+        let url: String
+        let state: String
+        let repository: RepositoryNode
+    }
+
+    struct IssueConnection: Decodable {
+        let nodes: [IssueNode]
+    }
+
+    struct SubIssuesSummary: Decodable {
+        let completed: Int
+        let total: Int
     }
 }
 

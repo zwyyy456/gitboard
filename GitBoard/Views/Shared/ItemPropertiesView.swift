@@ -19,6 +19,12 @@ struct ItemPropertiesView: View {
             if let project, let item {
                 VStack(alignment: .leading, spacing: 20) {
                     fieldSection(project: project, item: item)
+
+                    if item.contentType == .issue {
+                        issueSection(item)
+                        relationshipsSection(item)
+                    }
+
                     assigneeSection(item)
 
                     if item.contentType == .issue {
@@ -73,6 +79,136 @@ struct ItemPropertiesView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func issueSection(_ item: ProjectItem) -> some View {
+        propertySection("Issue") {
+            switch store.itemDetailState(for: item) {
+            case .idle, .loading:
+                ProgressView()
+                    .controlSize(.small)
+
+            case .loaded(let detail):
+                if let metadata = detail.issueMetadata {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Milestone")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if let milestone = metadata.milestone {
+                            Text(milestone.title)
+
+                            HStack(spacing: 6) {
+                                if let dueDate = milestone.dueOn.flatMap(formattedDate) {
+                                    Text("Due \(dueDate)")
+                                }
+                                Text("\(milestone.progressPercentage.formatted(.number.precision(.fractionLength(0))))% complete")
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                            ProgressView(value: milestone.progressPercentage, total: 100)
+                                .accessibilityLabel("Milestone progress")
+                                .accessibilityValue("\(Int(milestone.progressPercentage.rounded())) percent")
+                        } else {
+                            secondaryText("No milestone")
+                        }
+                    }
+                }
+
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func relationshipsSection(_ item: ProjectItem) -> some View {
+        if case .loaded(let detail) = store.itemDetailState(for: item),
+           let metadata = detail.issueMetadata {
+            propertySection("Relationships") {
+                if let parent = metadata.parent {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Parent issue")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        issueLink(parent)
+                    }
+                }
+
+                if metadata.subIssues.isEmpty == false {
+                    DisclosureGroup(subIssueTitle(metadata)) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(metadata.subIssues) { issueLink($0) }
+                        }
+                        .padding(.top, 6)
+                    }
+                }
+
+                if metadata.blockedBy.isEmpty == false {
+                    relationshipGroup("Blocked by", issues: metadata.blockedBy)
+                }
+
+                if metadata.blocking.isEmpty == false {
+                    relationshipGroup("Blocking", issues: metadata.blocking)
+                }
+
+                if metadata.parent == nil,
+                   metadata.subIssues.isEmpty,
+                   metadata.blockedBy.isEmpty,
+                   metadata.blocking.isEmpty {
+                    secondaryText("No relationships")
+                }
+            }
+        }
+    }
+
+    private func relationshipGroup(_ title: String, issues: [IssueReference]) -> some View {
+        DisclosureGroup("\(title) \(issues.count)") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(issues) { issueLink($0) }
+            }
+            .padding(.top, 6)
+        }
+    }
+
+    private func issueLink(_ issue: IssueReference) -> some View {
+        Link(destination: issue.url) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: issue.state == .closed ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(issue.state == .closed ? .purple : .green)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(issue.repository)#\(issue.number)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Text(issue.title)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(issue.repository) issue \(issue.number), \(issue.title), \(issue.state == .closed ? "closed" : "open")")
+    }
+
+    private func subIssueTitle(_ metadata: IssueMetadata) -> String {
+        guard let progress = metadata.subIssueProgress else {
+            return "Sub-issues \(metadata.subIssues.count)"
+        }
+        return "Sub-issues \(progress.completed)/\(progress.total)"
+    }
+
+    private func formattedDate(_ value: String) -> String? {
+        guard let date = try? Date(value, strategy: .iso8601) else { return nil }
+        return date.formatted(date: .abbreviated, time: .omitted)
     }
 
     private func assigneeSection(_ item: ProjectItem) -> some View {
