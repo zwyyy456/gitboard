@@ -12,6 +12,7 @@ A native macOS menu bar app for GitHub Projects. View your kanban board, filter 
 - **Quick create** — type `>` to create issues inline
 - **Full kanban window** — drag and drop between columns
 - **Status notifications** — know when issues move
+- **Native issue planning** — view and edit milestones, parent/sub-issues, and dependencies
 - **GitHub CLI auth** — no API tokens needed
 
 ![GitBoard Kanban](https://yogesh.co/gitboard-kanban.webp)
@@ -41,6 +42,18 @@ Type `>` followed by your issue title to quickly create a new issue. Press Enter
 
 ### Kanban View
 Click "Open Board" or use the keyboard shortcut to open the full kanban window. Drag and drop issues between columns to change their status.
+
+### Planning Model
+
+GitBoard keeps GitHub's native concepts separate:
+
+- **Project** collects and presents work. Most projects can stay focused on one repository, while a project may still contain issues from several repositories.
+- **Status** is the Project workflow state used by the board, such as Todo, In Progress, and Done. Avoid a second `Phase` field when it represents the same workflow.
+- **Milestone** is a repository-scoped delivery target. GitBoard loads milestones from the issue's repository and stores the selected milestone on the issue itself.
+- **Parent/sub-issues and dependencies** express cross-repository delivery structure. Use a parent issue as the cross-repository delivery target, then attach sub-issues and blocking relationships from any repository.
+- **Release** can remain an optional Project custom field when a lightweight grouping across repositories is useful. It is not synchronized with repository milestones.
+
+Project field configuration remains managed on GitHub. If an existing `Phase` field duplicates `Status`, remove or repurpose it in the GitHub Project settings rather than maintaining two workflow fields.
 
 ### Keyboard Shortcuts
 
