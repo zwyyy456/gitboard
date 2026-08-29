@@ -40,6 +40,7 @@
 		A0000036 /* GlobalHotKeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000036 /* GlobalHotKeyController.swift */; };
 		A0000037 /* EngineeringSignalsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000037 /* EngineeringSignalsView.swift */; };
 		A0000038 /* CommandPaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000038 /* CommandPaletteView.swift */; };
+		A0000039 /* ProjectItemDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000039 /* ProjectItemDetail.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -89,6 +90,7 @@
 		A1000036 /* GlobalHotKeyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotKeyController.swift; sourceTree = "<group>"; };
 		A1000037 /* EngineeringSignalsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineeringSignalsView.swift; sourceTree = "<group>"; };
 		A1000038 /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
+		A1000039 /* ProjectItemDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectItemDetail.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -149,6 +151,7 @@
 				A1000028 /* MyWork.swift */,
 				A1000002 /* Project.swift */,
 				A1000003 /* ProjectItem.swift */,
+				A1000039 /* ProjectItemDetail.swift */,
 				A1000004 /* StatusOption.swift */,
 			);
 			path = Models;
@@ -373,6 +376,7 @@
 				A0000035 /* QuickCreate.swift in Sources */,
 				A0000002 /* Project.swift in Sources */,
 				A0000003 /* ProjectItem.swift in Sources */,
+				A0000039 /* ProjectItemDetail.swift in Sources */,
 				A0000004 /* StatusOption.swift in Sources */,
 				A0000005 /* GitHubService.swift in Sources */,
 				A0000022 /* GitHubCommandRunner.swift in Sources */,
