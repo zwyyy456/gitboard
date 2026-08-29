@@ -252,6 +252,35 @@ enum GraphQLQueries {
         }
         """
 
+    static let itemDetail = """
+        query($id: ID!) {
+            node(id: $id) {
+                __typename
+                ... on Issue {
+                    id
+                    bodyHTML
+                    createdAt
+                    updatedAt
+                    author { login avatarUrl }
+                }
+                ... on PullRequest {
+                    id
+                    bodyHTML
+                    createdAt
+                    updatedAt
+                    author { login avatarUrl }
+                }
+                ... on DraftIssue {
+                    id
+                    bodyHTML
+                    createdAt
+                    updatedAt
+                    creator { login avatarUrl }
+                }
+            }
+        }
+        """
+
     static let updateItemStatus = """
         mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
             updateProjectV2ItemFieldValue(

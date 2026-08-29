@@ -8,6 +8,7 @@ enum GitHubError: Error, LocalizedError, Equatable {
     case rateLimited(String?)
     case invalidRepository
     case invalidItemURL
+    case itemUnavailable
     case issueCreatedButNotAdded(String?)
     case graphQLError(String)
     case decodingError(String)
@@ -32,6 +33,8 @@ enum GitHubError: Error, LocalizedError, Equatable {
             return "Enter a repository as owner/name."
         case .invalidItemURL:
             return "Enter a GitHub issue or pull request URL."
+        case .itemUnavailable:
+            return "This item is unavailable or no longer accessible."
         case .issueCreatedButNotAdded(let url):
             if let url {
                 return "The issue was created at \(url), but GitHub could not add it to this project. You can paste the URL into Add Existing to retry."
@@ -196,6 +199,30 @@ actor GitHubService {
             fields: fields,
             statusField: statusField,
             items: itemNodes.map(makeProjectItem)
+        )
+    }
+
+    func fetchItemDetail(contentID: String) async throws -> ProjectItemDetail {
+        let payload: ItemDetailPayload = try await request(
+            GraphQLQueries.itemDetail,
+            variables: ["id": contentID],
+            as: ItemDetailPayload.self
+        )
+        guard let node = payload.node,
+              node.typename == "Issue"
+                || node.typename == "PullRequest"
+                || node.typename == "DraftIssue",
+              let id = node.id else {
+            throw GitHubError.itemUnavailable
+        }
+
+        let author = node.typename == "DraftIssue" ? node.creator : node.author
+        return ProjectItemDetail(
+            id: id,
+            bodyHTML: node.bodyHTML ?? "",
+            author: author.map { ItemAuthor(login: $0.login, avatarURL: $0.avatarUrl) },
+            createdAt: node.createdAt,
+            updatedAt: node.updatedAt
         )
     }
 
@@ -874,6 +901,35 @@ private struct ProjectItemsPayload: Decodable {
     struct ItemsConnection: Decodable {
         let nodes: [ItemNode]
         let pageInfo: PageInfo
+    }
+}
+
+private struct ItemDetailPayload: Decodable {
+    let node: Node?
+
+    struct Node: Decodable {
+        let typename: String
+        let id: String?
+        let bodyHTML: String?
+        let createdAt: String?
+        let updatedAt: String?
+        let author: Actor?
+        let creator: Actor?
+
+        enum CodingKeys: String, CodingKey {
+            case typename = "__typename"
+            case id
+            case bodyHTML
+            case createdAt
+            case updatedAt
+            case author
+            case creator
+        }
+    }
+
+    struct Actor: Decodable {
+        let login: String
+        let avatarUrl: String?
     }
 }
 
