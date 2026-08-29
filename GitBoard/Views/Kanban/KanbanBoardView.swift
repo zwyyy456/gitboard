@@ -13,6 +13,7 @@ struct KanbanBoardView: View {
     @State private var selectedItemIDs: Set<String> = []
     @State private var isBulkWorking = false
     @State private var keyMonitor: Any?
+    @State private var inspectorReference: ItemInspectorReference?
 
     private var canEditSelectedProject: Bool {
         store.canEditSelectedProject
@@ -45,6 +46,9 @@ struct KanbanBoardView: View {
                     width: AddProjectItemView.presentationSize.width,
                     height: AddProjectItemView.presentationSize.height
                 )
+        }
+        .sheet(item: $inspectorReference) { reference in
+            ItemInspectorView(store: store, reference: reference)
         }
         .onChange(of: store.selectedProjectId) { _, _ in
             isSelecting = false
@@ -348,12 +352,14 @@ struct KanbanBoardView: View {
                     ForEach(project.statusOptions) { status in
                         let statusItems = filteredItems(for: project.items(forStatus: status.name))
                         KanbanColumn(
+                            projectID: project.id,
                             status: status,
                             items: statusItems,
                             allStatuses: project.statusOptions,
                             store: store,
                             isSelecting: isSelecting,
-                            selectedItemIDs: $selectedItemIDs
+                            selectedItemIDs: $selectedItemIDs,
+                            showInspector: { inspectorReference = $0 }
                         )
                         .frame(height: geometry.size.height - 32)
                     }
@@ -361,12 +367,14 @@ struct KanbanBoardView: View {
                     let noStatusFiltered = filteredItems(for: project.noStatusItems)
                     if !project.noStatusItems.isEmpty || !noStatusFiltered.isEmpty {
                         KanbanColumn(
+                            projectID: project.id,
                             status: nil,
                             items: noStatusFiltered,
                             allStatuses: project.statusOptions,
                             store: store,
                             isSelecting: isSelecting,
-                            selectedItemIDs: $selectedItemIDs
+                            selectedItemIDs: $selectedItemIDs,
+                            showInspector: { inspectorReference = $0 }
                         )
                         .frame(height: geometry.size.height - 32)
                     }
@@ -383,10 +391,10 @@ struct KanbanBoardView: View {
 
     private func moveSelection(to status: StatusOption) {
         let items = selectedItems
-        guard items.isEmpty == false else { return }
+        guard items.isEmpty == false, let projectID = store.selectedProjectId else { return }
         isBulkWorking = true
         Task {
-            await store.moveItems(items, to: status)
+            await store.moveItems(items, to: status, in: projectID)
             selectedItemIDs.removeAll()
             isBulkWorking = false
         }
@@ -394,10 +402,10 @@ struct KanbanBoardView: View {
 
     private func archiveSelection() {
         let items = selectedItems
-        guard items.isEmpty == false else { return }
+        guard items.isEmpty == false, let projectID = store.selectedProjectId else { return }
         isBulkWorking = true
         Task {
-            await store.archiveItems(items)
+            await store.archiveItems(items, in: projectID)
             selectedItemIDs.removeAll()
             isBulkWorking = false
         }
@@ -407,12 +415,14 @@ struct KanbanBoardView: View {
 // MARK: - Kanban Column
 
 struct KanbanColumn: View {
+    let projectID: String
     let status: StatusOption?
     let items: [ProjectItem]
     let allStatuses: [StatusOption]
     @Bindable var store: ProjectStore
     let isSelecting: Bool
     @Binding var selectedItemIDs: Set<String>
+    let showInspector: (ItemInspectorReference) -> Void
 
     @State private var isTargeted = false
 
@@ -454,6 +464,7 @@ struct KanbanColumn: View {
                     ForEach(items) { item in
                         if isSelecting {
                             KanbanCard(
+                                projectID: projectID,
                                 item: item,
                                 allStatuses: allStatuses,
                                 store: store,
@@ -461,15 +472,25 @@ struct KanbanColumn: View {
                                 isSelected: selectedItemIDs.contains(item.id)
                             ) {
                                 toggleSelection(item.id)
+                            } showInspector: {
+                                showInspector(
+                                    ItemInspectorReference(projectID: projectID, itemID: item.id)
+                                )
                             }
                         } else {
                             KanbanCard(
+                                projectID: projectID,
                                 item: item,
                                 allStatuses: allStatuses,
                                 store: store,
                                 isSelecting: false,
                                 isSelected: false,
-                                onSelect: {}
+                                onSelect: {},
+                                showInspector: {
+                                    showInspector(
+                                        ItemInspectorReference(projectID: projectID, itemID: item.id)
+                                    )
+                                }
                             )
                             .draggable(item.id) {
                                 KanbanCardPreview(item: item)
@@ -491,15 +512,15 @@ struct KanbanColumn: View {
             guard let itemId = droppedItems.first,
                   let targetStatus = status,
                   isSelecting == false,
-                  store.canEditSelectedProject else { return false }
+                  store.canEditProject(id: projectID) else { return false }
 
             // Find the item being dropped from all project items
-            if let project = store.selectedProject,
+            if let project = store.project(id: projectID),
                let item = project.items.first(where: { $0.id == itemId }) {
                 // Only move if status is different
                 if item.status != targetStatus.name {
                     Task {
-                        await store.moveItem(item, toStatus: targetStatus)
+                        await store.moveItem(item, toStatus: targetStatus, in: projectID)
                     }
                 }
             }
@@ -521,16 +542,17 @@ struct KanbanColumn: View {
 // MARK: - Kanban Card
 
 struct KanbanCard: View {
+    let projectID: String
     let item: ProjectItem
     let allStatuses: [StatusOption]
     @Bindable var store: ProjectStore
     let isSelecting: Bool
     let isSelected: Bool
     let onSelect: () -> Void
+    let showInspector: () -> Void
 
     @State private var isHovered = false
     @State private var showDeleteConfirmation = false
-    @State private var showsInspector = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -621,15 +643,12 @@ struct KanbanCard: View {
             if isSelecting {
                 onSelect()
             } else {
-                showsInspector = true
+                showInspector()
             }
-        }
-        .sheet(isPresented: $showsInspector) {
-            ItemInspectorView(store: store, itemID: item.id)
         }
         .contextMenu {
             Button {
-                showsInspector = true
+                showInspector()
             } label: {
                 Label("Show Details", systemImage: "sidebar.right")
             }
@@ -648,7 +667,9 @@ struct KanbanCard: View {
                 Menu {
                     ForEach(allStatuses) { status in
                         Button {
-                            Task { await store.moveItem(item, toStatus: status) }
+                            Task {
+                                await store.moveItem(item, toStatus: status, in: projectID)
+                            }
                         } label: {
                             HStack {
                                 Circle()
@@ -673,7 +694,13 @@ struct KanbanCard: View {
                     Menu {
                         ForEach(item.assignees) { assignee in
                             Button {
-                                Task { await store.removeAssignee(from: item, user: assignee) }
+                                Task {
+                                    await store.removeAssignee(
+                                        from: item,
+                                        in: projectID,
+                                        user: assignee
+                                    )
+                                }
                             } label: {
                                 Label(assignee.name ?? assignee.login, systemImage: "person.fill.xmark")
                             }
@@ -686,7 +713,7 @@ struct KanbanCard: View {
                 }
 
                 Button {
-                    Task { _ = await store.archiveItem(item) }
+                    Task { _ = await store.archiveItem(item, in: projectID) }
                 } label: {
                     Label("Archive from Project", systemImage: "archivebox")
                 }
@@ -706,7 +733,7 @@ struct KanbanCard: View {
             titleVisibility: .visible
         ) {
             Button("Remove", role: .destructive) {
-                Task { await store.deleteItem(item) }
+                Task { await store.deleteItem(item, from: projectID) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
