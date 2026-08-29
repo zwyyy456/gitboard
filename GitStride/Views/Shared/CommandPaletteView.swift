@@ -40,7 +40,7 @@ struct CommandPaletteView: View {
                 target: .project($0.id)
             )
         }
-        let workItems = model.myWorkStore.snapshots.values.flatMap { project in
+        let workItems = model.myWorkProjects.flatMap { project in
             project.items.map { MyWorkItem(project: project, item: $0) }
         }
         entries += workItems.map {
@@ -62,11 +62,7 @@ struct CommandPaletteView: View {
     }
 
     private var paletteProjects: [Project] {
-        var projects = Dictionary(uniqueKeysWithValues: model.projectStore.projects.map { ($0.id, $0) })
-        for project in model.myWorkStore.snapshots.values {
-            projects[project.id] = project
-        }
-        return projects.values.sorted {
+        model.projectStore.allProjects.sorted {
             $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
         }
     }
@@ -164,7 +160,7 @@ struct CommandPaletteView: View {
         case .refresh:
             Task {
                 await model.projectStore.refresh()
-                await model.myWorkStore.refresh()
+                await model.refreshMyWork()
                 dismiss()
             }
         case .settings:
@@ -177,7 +173,7 @@ struct CommandPaletteView: View {
                 openWorkspace()
             }
         case .item(let id):
-            let workItem = model.myWorkStore.snapshots.values
+            let workItem = model.myWorkProjects
                 .flatMap { project in
                     project.items.map { MyWorkItem(project: project, item: $0) }
                 }

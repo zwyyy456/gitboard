@@ -67,7 +67,7 @@ struct MainWorkspaceView: View {
             }
             await model.activateMyWork(accountLogin: model.projectStore.currentUserLogin)
             if model.myWorkStore.followedProjects.isEmpty == false {
-                await model.myWorkStore.refresh()
+                await model.refreshMyWork()
             }
         }
         .onChange(of: model.projectStore.currentUserLogin) { _, login in
