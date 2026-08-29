@@ -373,6 +373,50 @@ enum GraphQLQueries {
         }
         """
 
+    static let addSubIssue = """
+        mutation($issueId: ID!, $subIssueId: ID!) {
+            addSubIssue(input: { issueId: $issueId, subIssueId: $subIssueId }) {
+                issue { id }
+            }
+        }
+        """
+
+    static let replaceSubIssueParent = """
+        mutation($issueId: ID!, $subIssueId: ID!) {
+            addSubIssue(input: {
+                issueId: $issueId
+                subIssueId: $subIssueId
+                replaceParent: true
+            }) {
+                issue { id }
+            }
+        }
+        """
+
+    static let removeSubIssue = """
+        mutation($issueId: ID!, $subIssueId: ID!) {
+            removeSubIssue(input: { issueId: $issueId, subIssueId: $subIssueId }) {
+                issue { id }
+            }
+        }
+        """
+
+    static let addBlockedBy = """
+        mutation($issueId: ID!, $blockingIssueId: ID!) {
+            addBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) {
+                issue { id }
+            }
+        }
+        """
+
+    static let removeBlockedBy = """
+        mutation($issueId: ID!, $blockingIssueId: ID!) {
+            removeBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) {
+                issue { id }
+            }
+        }
+        """
+
     static let updateItemStatus = """
         mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
             updateProjectV2ItemFieldValue(

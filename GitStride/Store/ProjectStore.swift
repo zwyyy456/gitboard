@@ -242,6 +242,76 @@ final class ProjectStore {
         }
     }
 
+    func addRelation(
+        _ kind: IssueRelationKind,
+        target: GitHubItemCandidate,
+        on item: ProjectItem
+    ) async -> Bool {
+        guard target.contentType == .issue,
+              let issueID = item.contentId,
+              case .loaded(let detail) = itemDetailState(for: item),
+              detail.issueMetadata?.viewerCanUpdate == true else { return false }
+        operationErrorMessage = nil
+        let endpoints = kind.endpoints(issueID: issueID, relatedIssueID: target.id)
+
+        do {
+            switch kind {
+            case .parent, .subIssue:
+                try await gitHubService.addSubIssue(
+                    parentIssueID: endpoints.issueID,
+                    subIssueID: endpoints.relatedIssueID,
+                    replacingParent: kind == .parent
+                )
+            case .blockedBy, .blocking:
+                try await gitHubService.addBlockedBy(
+                    issueID: endpoints.issueID,
+                    blockingIssueID: endpoints.relatedIssueID
+                )
+            }
+            await loadItemDetail(for: item, forceRefresh: true)
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            operationErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func removeRelation(
+        _ kind: IssueRelationKind,
+        relatedIssue: IssueReference,
+        from item: ProjectItem
+    ) async -> Bool {
+        guard let issueID = item.contentId,
+              case .loaded(let detail) = itemDetailState(for: item),
+              detail.issueMetadata?.viewerCanUpdate == true else { return false }
+        operationErrorMessage = nil
+        let endpoints = kind.endpoints(issueID: issueID, relatedIssueID: relatedIssue.id)
+
+        do {
+            switch kind {
+            case .parent, .subIssue:
+                try await gitHubService.removeSubIssue(
+                    parentIssueID: endpoints.issueID,
+                    subIssueID: endpoints.relatedIssueID
+                )
+            case .blockedBy, .blocking:
+                try await gitHubService.removeBlockedBy(
+                    issueID: endpoints.issueID,
+                    blockingIssueID: endpoints.relatedIssueID
+                )
+            }
+            await loadItemDetail(for: item, forceRefresh: true)
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            operationErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     var filteredItems: [ProjectItem] {
         guard let project = selectedProject else { return [] }
         guard let filter = selectedStatusFilter else { return project.items }
