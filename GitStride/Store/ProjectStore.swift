@@ -70,6 +70,7 @@ final class ProjectStore {
     private var itemDetailEntries: [String: ItemDetailEntry] = [:]
     private var itemDetailTasks: [String: Task<ProjectItemDetail, Error>] = [:]
     private var itemDetailGenerations: [String: Int] = [:]
+    private var repositoryMilestones: [String: RepositoryMilestonesState] = [:]
 
     private let gitHubService: GitHubService
     private let projectCache: ProjectCache
@@ -151,6 +152,10 @@ final class ProjectStore {
         return entry.state
     }
 
+    func milestoneState(for repository: String) -> RepositoryMilestonesState {
+        repositoryMilestones[repository] ?? .idle
+    }
+
     func loadItemDetail(for item: ProjectItem, forceRefresh: Bool = false) async {
         guard let contentID = item.contentId else { return }
 
@@ -191,6 +196,50 @@ final class ProjectStore {
             sourceUpdatedAt: item.updatedAt,
             generation: generation
         )
+    }
+
+    func loadMilestones(repository: String, forceRefresh: Bool = false) async {
+        if forceRefresh == false {
+            switch milestoneState(for: repository) {
+            case .loading, .loaded:
+                return
+            case .idle, .failed:
+                break
+            }
+        }
+
+        repositoryMilestones[repository] = .loading
+        do {
+            let milestones = try await gitHubService.fetchRepositoryMilestones(
+                repository: repository
+            )
+            repositoryMilestones[repository] = .loaded(milestones)
+        } catch is CancellationError {
+            repositoryMilestones[repository] = .idle
+        } catch {
+            repositoryMilestones[repository] = .failed(error.localizedDescription)
+        }
+    }
+
+    func setMilestone(_ milestone: RepositoryMilestone?, on item: ProjectItem) async -> Bool {
+        guard let contentID = item.contentId,
+              case .loaded(let detail) = itemDetailState(for: item),
+              detail.issueMetadata?.viewerCanSetMilestone == true else { return false }
+        operationErrorMessage = nil
+
+        do {
+            try await gitHubService.updateIssueMilestone(
+                issueID: contentID,
+                milestoneID: milestone?.id
+            )
+            await loadItemDetail(for: item, forceRefresh: true)
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            operationErrorMessage = error.localizedDescription
+            return false
+        }
     }
 
     var filteredItems: [ProjectItem] {

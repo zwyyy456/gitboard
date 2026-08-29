@@ -96,23 +96,17 @@ struct ItemPropertiesView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
-                        if let milestone = metadata.milestone {
-                            Text(milestone.title)
-
-                            HStack(spacing: 6) {
-                                if let dueDate = milestone.dueOn.flatMap(formattedDate) {
-                                    Text("Due \(dueDate)")
-                                }
-                                Text("\(milestone.progressPercentage.formatted(.number.precision(.fractionLength(0))))% complete")
-                            }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                            ProgressView(value: milestone.progressPercentage, total: 100)
-                                .accessibilityLabel("Milestone progress")
-                                .accessibilityValue("\(Int(milestone.progressPercentage.rounded())) percent")
+                        if metadata.viewerCanSetMilestone {
+                            milestoneEditor(metadata: metadata, item: item)
                         } else {
-                            secondaryText("No milestone")
+                            Text(metadata.milestone?.title ?? "No milestone")
+                        }
+
+                        milestoneProgress(metadata.milestone)
+                    }
+                    .task(id: metadata.repository) {
+                        if metadata.viewerCanSetMilestone {
+                            await store.loadMilestones(repository: metadata.repository)
                         }
                     }
                 }
@@ -123,6 +117,85 @@ struct ItemPropertiesView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func milestoneEditor(metadata: IssueMetadata, item: ProjectItem) -> some View {
+        switch store.milestoneState(for: metadata.repository) {
+        case .idle, .loading:
+            ProgressView()
+                .controlSize(.small)
+
+        case .loaded(let milestones):
+            Menu {
+                Button("No milestone") {
+                    changeMilestone(nil, on: item)
+                }
+                .disabled(metadata.milestone == nil)
+
+                if milestones.isEmpty == false {
+                    Divider()
+                    ForEach(milestones) { milestone in
+                        Button {
+                            changeMilestone(milestone, on: item)
+                        } label: {
+                            if milestone.id == metadata.milestone?.id {
+                                Label(milestone.title, systemImage: "checkmark")
+                            } else {
+                                Text(milestone.title)
+                            }
+                        }
+                        .disabled(milestone.id == metadata.milestone?.id)
+                    }
+                }
+            } label: {
+                HStack {
+                    Text(metadata.milestone?.title ?? "No milestone")
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(.rect)
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(isWorking)
+
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 4) {
+                Text(metadata.milestone?.title ?? "No milestone")
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Retry") {
+                    Task {
+                        await store.loadMilestones(
+                            repository: metadata.repository,
+                            forceRefresh: true
+                        )
+                    }
+                }
+                .buttonStyle(.link)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func milestoneProgress(_ milestone: RepositoryMilestone?) -> some View {
+        if let milestone {
+            HStack(spacing: 6) {
+                if let dueDate = milestone.dueOn.flatMap(formattedDate) {
+                    Text("Due \(dueDate)")
+                }
+                Text("\(milestone.progressPercentage.formatted(.number.precision(.fractionLength(0))))% complete")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            ProgressView(value: milestone.progressPercentage, total: 100)
+                .accessibilityLabel("Milestone progress")
+                .accessibilityValue("\(Int(milestone.progressPercentage.rounded())) percent")
         }
     }
 
@@ -381,6 +454,14 @@ struct ItemPropertiesView: View {
             if await store.addLabel(to: item, in: reference.projectID, name: name) {
                 labelName = ""
             }
+        }
+    }
+
+    private func changeMilestone(_ milestone: RepositoryMilestone?, on item: ProjectItem) {
+        isWorking = true
+        Task {
+            _ = await store.setMilestone(milestone, on: item)
+            isWorking = false
         }
     }
 
