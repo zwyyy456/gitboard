@@ -15,7 +15,7 @@ struct KanbanBoardView: View {
     @State private var keyMonitor: Any?
 
     private var canEditSelectedProject: Bool {
-        store.selectedProject?.viewerCanUpdate == true
+        store.canEditSelectedProject
     }
 
     var body: some View {
@@ -30,14 +30,12 @@ struct KanbanBoardView: View {
             OperationErrorBanner(store: store)
 
             // Board content
-            if store.isLoading && store.selectedProject == nil {
+            if store.isLoading && store.projects.isEmpty {
                 loadingView
             } else if let error = store.error {
                 errorView(error)
-            } else if let project = store.selectedProject {
-                boardContent(project)
             } else {
-                emptyView
+                selectedProjectContent
             }
         }
         .frame(minWidth: 1000, minHeight: 650)
@@ -255,6 +253,56 @@ struct KanbanBoardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    @ViewBuilder
+    private var selectedProjectContent: some View {
+        switch store.selectedProjectContentState {
+        case .none:
+            emptyView
+        case .loading:
+            loadingView
+        case .content(let project, _, _):
+            boardContent(project)
+        case .empty(let project, _, _):
+            emptyProjectView(project)
+        case .failed(let project, let message):
+            projectErrorView(project, message: message)
+        }
+    }
+
+    private func emptyProjectView(_ project: Project) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(.system(size: 36))
+                .foregroundStyle(.tertiary)
+            Text("\(project.title) has no items")
+                .font(.headline)
+            Text("Items added to this GitHub Project will appear here.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func projectErrorView(_ project: Project, message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 40))
+                .foregroundStyle(.orange)
+            Text("Couldn’t load \(project.title)")
+                .font(.headline)
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
+            Button("Try Again") {
+                Task { await store.loadProjectDetails(id: project.id) }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private func filteredItems(for items: [ProjectItem]) -> [ProjectItem] {
         guard !searchText.isEmpty else { return items }
 
@@ -443,7 +491,7 @@ struct KanbanColumn: View {
             guard let itemId = droppedItems.first,
                   let targetStatus = status,
                   isSelecting == false,
-                  store.selectedProject?.viewerCanUpdate == true else { return false }
+                  store.canEditSelectedProject else { return false }
 
             // Find the item being dropped from all project items
             if let project = store.selectedProject,
@@ -594,7 +642,7 @@ struct KanbanCard: View {
                 Label("Open in Browser", systemImage: "safari")
             }
 
-            if store.selectedProject?.viewerCanUpdate == true {
+            if store.canEditSelectedProject {
                 Divider()
 
                 Menu {

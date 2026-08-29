@@ -42,7 +42,7 @@ struct ProjectSelectorView: View {
                 Text(store.selectedProject?.title ?? "Select Project")
                     .lineLimit(1)
             }
-            .disabled(store.projects.isEmpty || store.isLoading)
+            .disabled(store.projects.isEmpty)
             .help("Select project")
             .accessibilityLabel("Select project, current project \(store.selectedProject?.title ?? "none")")
 

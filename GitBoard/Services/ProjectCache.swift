@@ -1,12 +1,13 @@
 import Foundation
 
 struct ProjectCacheSnapshot: Codable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     let version: Int
     let accountLogin: String
     let owner: ProjectOwner
     let projects: [Project]
+    let detailedProjectIDs: Set<String>
     let selectedProjectId: String?
     let selectedStatusFilter: String?
     let savedAt: Date
@@ -15,6 +16,7 @@ struct ProjectCacheSnapshot: Codable {
         accountLogin: String,
         owner: ProjectOwner,
         projects: [Project],
+        detailedProjectIDs: Set<String>,
         selectedProjectId: String?,
         selectedStatusFilter: String?,
         savedAt: Date = Date()
@@ -23,6 +25,7 @@ struct ProjectCacheSnapshot: Codable {
         self.accountLogin = accountLogin
         self.owner = owner
         self.projects = projects
+        self.detailedProjectIDs = detailedProjectIDs
         self.selectedProjectId = selectedProjectId
         self.selectedStatusFilter = selectedStatusFilter
         self.savedAt = savedAt
@@ -72,6 +75,6 @@ actor ProjectCache {
         ).first ?? FileManager.default.temporaryDirectory
         return applicationSupport
             .appendingPathComponent("GitBoard", isDirectory: true)
-            .appendingPathComponent("project-cache-v1.json")
+            .appendingPathComponent("project-cache-v2.json")
     }
 }

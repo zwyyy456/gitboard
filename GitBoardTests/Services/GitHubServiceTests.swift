@@ -181,6 +181,7 @@ struct ProjectCacheTests {
                 accountLogin: "octocat",
                 owner: owner,
                 projects: [project],
+                detailedProjectIDs: ["P1"],
                 selectedProjectId: "P1",
                 selectedStatusFilter: "Todo"
             )
@@ -189,9 +190,115 @@ struct ProjectCacheTests {
 
         #expect(loaded.version == ProjectCacheSnapshot.currentVersion)
         #expect(loaded.accountLogin == "octocat")
+        #expect(loaded.detailedProjectIDs == ["P1"])
         #expect(loaded.projects.first?.items.first?.title == "Cached issue")
         #expect(loaded.projects.first?.items.first?.fieldValues["F1"] == .singleSelect(optionId: "HIGH", name: "High"))
     }
+}
+
+@MainActor
+struct ProjectStoreTests {
+    @Test func loadedEmptyProjectIsNotFetchedAgainWhenReselected() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: Self.emptyProjectResponses)
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+
+        await store.loadProjects()
+        let project = try #require(store.selectedProject)
+
+        switch store.selectedProjectContentState {
+        case .empty(let loadedProject, let isRefreshing, let isCached):
+            #expect(loadedProject.id == project.id)
+            #expect(isRefreshing == false)
+            #expect(isCached == false)
+        default:
+            Issue.record("Expected a loaded, empty Project.")
+        }
+
+        let callCount = await runner.recordedArguments().count
+        await store.selectProject(project)
+
+        #expect(await runner.recordedArguments().count == callCount)
+    }
+
+    @Test func selectingAnotherProjectDiscardsThePreviousInFlightLoad() async throws {
+        let runner = SuspendingGitHubCommandRunner(steps: [
+            .response(Self.sessionResponse),
+            .response(Self.ownersResponse),
+            .response(Self.projectsResponse),
+            .suspended("first-project", Self.firstProjectFieldsResponse),
+            .response(Self.secondProjectFieldsResponse),
+            .response(Self.emptyItemsResponse)
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+
+        let initialLoad = Task { await store.loadProjects() }
+        await runner.waitUntilSuspended("first-project")
+        let secondProject = try #require(store.projects.first { $0.id == "P2" })
+
+        await store.selectProject(secondProject)
+
+        #expect(store.selectedProjectId == "P2")
+        switch store.selectedProjectContentState {
+        case .empty(let project, let isRefreshing, let isCached):
+            #expect(project.id == "P2")
+            #expect(isRefreshing == false)
+            #expect(isCached == false)
+        default:
+            Issue.record("Expected the second Project to remain selected and loaded.")
+        }
+
+        await runner.release("first-project")
+        await initialLoad.value
+
+        #expect(store.selectedProjectId == "P2")
+        #expect(store.operationErrorMessage == nil)
+    }
+
+    private func makeStore(
+        runner: any GitHubCommandRunning
+    ) -> (ProjectStore, @MainActor () -> Void) {
+        let identifier = "GitBoardTests.ProjectStore.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: identifier)!
+        let cacheURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(identifier).json")
+        let store = ProjectStore(
+            gitHubService: GitHubService(runner: runner),
+            projectCache: ProjectCache(fileURL: cacheURL),
+            defaults: defaults
+        )
+        return (store, {
+            defaults.removePersistentDomain(forName: identifier)
+            try? FileManager.default.removeItem(at: cacheURL)
+        })
+    }
+
+    private static let sessionResponse =
+        #"{"data":{"viewer":{"id":"U1","login":"me"}}}"#
+
+    private static let ownersResponse =
+        #"{"data":{"viewer":{"id":"U1","login":"me","name":null,"organizations":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+
+    private static let projectsResponse =
+        #"{"data":{"owner":{"projectsV2":{"nodes":[{"id":"P1","title":"One","number":1,"url":"https://github.com/users/me/projects/1","viewerCanUpdate":true},{"id":"P2","title":"Two","number":2,"url":"https://github.com/users/me/projects/2","viewerCanUpdate":true}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+
+    private static let firstProjectFieldsResponse =
+        #"{"data":{"node":{"title":"One","number":1,"url":"https://github.com/users/me/projects/1","viewerCanUpdate":true,"fields":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+
+    private static let secondProjectFieldsResponse =
+        #"{"data":{"node":{"title":"Two","number":2,"url":"https://github.com/users/me/projects/2","viewerCanUpdate":true,"fields":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+
+    private static let emptyItemsResponse =
+        #"{"data":{"node":{"items":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+
+    private static let emptyProjectResponses = [
+        sessionResponse,
+        ownersResponse,
+        #"{"data":{"owner":{"projectsV2":{"nodes":[{"id":"P1","title":"One","number":1,"url":"https://github.com/users/me/projects/1","viewerCanUpdate":true}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#,
+        firstProjectFieldsResponse,
+        emptyItemsResponse
+    ]
 }
 
 struct MyWorkFilterTests {
@@ -408,6 +515,61 @@ private actor FixtureGitHubCommandRunner: GitHubCommandRunning {
     }
 
     private enum FixtureError: Error {
+        case missingResponse
+    }
+}
+
+private enum SuspendingRunnerStep: Sendable {
+    case response(String)
+    case suspended(String, String)
+}
+
+private actor SuspendingGitHubCommandRunner: GitHubCommandRunning {
+    private var steps: [SuspendingRunnerStep]
+    private var suspendedIDs: Set<String> = []
+    private var resultWaiters: [String: CheckedContinuation<GitHubCommandResult, Never>] = [:]
+    private var suspensionWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+
+    init(steps: [SuspendingRunnerStep]) {
+        self.steps = steps
+    }
+
+    func run(arguments: [String]) async throws -> GitHubCommandResult {
+        guard steps.isEmpty == false else { throw RunnerError.missingResponse }
+
+        switch steps.removeFirst() {
+        case .response(let response):
+            return result(response)
+        case .suspended(let id, let response):
+            suspendedIDs.insert(id)
+            suspensionWaiters.removeValue(forKey: id)?.forEach { $0.resume() }
+            return await withCheckedContinuation { continuation in
+                resultWaiters[id] = continuation
+                suspendedResponses[id] = response
+            }
+        }
+    }
+
+    func waitUntilSuspended(_ id: String) async {
+        guard suspendedIDs.contains(id) == false else { return }
+        await withCheckedContinuation { continuation in
+            suspensionWaiters[id, default: []].append(continuation)
+        }
+    }
+
+    func release(_ id: String) {
+        guard let continuation = resultWaiters.removeValue(forKey: id),
+              let response = suspendedResponses.removeValue(forKey: id) else { return }
+        continuation.resume(returning: result(response))
+    }
+
+    private var suspendedResponses: [String: String] = [:]
+
+    private func result(_ response: String) -> GitHubCommandResult {
+        GitHubCommandResult(standardOutput: Data(response.utf8), standardError: Data())
+    }
+
+    private enum RunnerError: Error {
         case missingResponse
     }
 }
