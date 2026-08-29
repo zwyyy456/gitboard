@@ -226,6 +226,43 @@ struct GitHubServiceTests {
         }
     }
 
+    @Test func repositoryMilestonesFollowPagination() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [
+            #"{"data":{"repository":{"milestones":{"nodes":[{"id":"M1","number":1,"title":"Version 1","dueOn":"2026-09-01T00:00:00Z","state":"OPEN","progressPercentage":25}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"#,
+            #"{"data":{"repository":{"milestones":{"nodes":[{"id":"M2","number":2,"title":"Version 2","dueOn":null,"state":"OPEN","progressPercentage":0}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+        ])
+        let service = GitHubService(runner: runner)
+
+        let milestones = try await service.fetchRepositoryMilestones(repository: "acme/app")
+        let calls = await runner.recordedArguments()
+
+        #expect(milestones.map(\.id) == ["M1", "M2"])
+        #expect(milestones.map(\.title) == ["Version 1", "Version 2"])
+        #expect(calls.count == 2)
+        #expect(calls[0].contains("owner=acme"))
+        #expect(calls[0].contains("name=app"))
+        #expect(calls[1].contains("after=next"))
+    }
+
+    @Test func issueMilestoneMutationUsesNodeIDsAndExplicitClear() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [
+            #"{"data":{"updateIssue":{"issue":{"id":"I1"}}}}"#,
+            #"{"data":{"updateIssue":{"issue":{"id":"I1"}}}}"#
+        ])
+        let service = GitHubService(runner: runner)
+
+        try await service.updateIssueMilestone(issueID: "I1", milestoneID: "M1")
+        try await service.updateIssueMilestone(issueID: "I1", milestoneID: nil)
+        let calls = await runner.recordedArguments()
+
+        #expect(calls.count == 2)
+        #expect(calls[0].contains("issueId=I1"))
+        #expect(calls[0].contains("milestoneId=M1"))
+        #expect(calls[1].contains("issueId=I1"))
+        #expect(calls[1].contains { $0.contains("milestoneId: null") })
+        #expect(calls[1].contains { $0.hasPrefix("milestoneId=") } == false)
+    }
+
 }
 
 struct QuickCreateParserTests {

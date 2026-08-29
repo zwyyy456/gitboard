@@ -276,6 +276,50 @@ actor GitHubService {
         )
     }
 
+    func fetchRepositoryMilestones(repository value: String) async throws -> [RepositoryMilestone] {
+        guard let repository = parseRepository(value) else {
+            throw GitHubError.invalidRepository
+        }
+        let components = repository.split(separator: "/").map(String.init)
+        var after: String?
+        var milestones: [RepositoryMilestone] = []
+
+        repeat {
+            try Task.checkCancellation()
+            var variables = cursorVariables(after)
+            variables["owner"] = components[0]
+            variables["name"] = components[1]
+            let payload: RepositoryMilestonesPayload = try await request(
+                GraphQLQueries.repositoryMilestones,
+                variables: variables,
+                as: RepositoryMilestonesPayload.self
+            )
+            guard let connection = payload.repository?.milestones else {
+                throw GitHubError.graphQLError("Repository not found or no longer accessible.")
+            }
+            milestones.append(contentsOf: connection.nodes.compactMap(makeMilestone))
+            after = try nextCursor(from: connection.pageInfo)
+        } while after != nil
+
+        return milestones
+    }
+
+    func updateIssueMilestone(issueID: String, milestoneID: String?) async throws {
+        let query: String
+        var variables = ["issueId": issueID]
+        if let milestoneID {
+            query = GraphQLQueries.setIssueMilestone
+            variables["milestoneId"] = milestoneID
+        } else {
+            query = GraphQLQueries.clearIssueMilestone
+        }
+        let _: EmptyPayload = try await request(
+            query,
+            variables: variables,
+            as: EmptyPayload.self
+        )
+    }
+
     func updateItemStatus(
         projectId: String,
         itemId: String,
@@ -1029,6 +1073,19 @@ private struct ItemDetailPayload: Decodable {
     struct SubIssuesSummary: Decodable {
         let completed: Int
         let total: Int
+    }
+}
+
+private struct RepositoryMilestonesPayload: Decodable {
+    let repository: Repository?
+
+    struct Repository: Decodable {
+        let milestones: MilestonesConnection
+    }
+
+    struct MilestonesConnection: Decodable {
+        let nodes: [ItemDetailPayload.MilestoneNode]
+        let pageInfo: PageInfo
     }
 }
 

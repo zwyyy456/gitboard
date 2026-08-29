@@ -331,6 +331,48 @@ enum GraphQLQueries {
         }
         """
 
+    static let repositoryMilestones = """
+        query($owner: String!, $name: String!, $after: String) {
+            repository(owner: $owner, name: $name) {
+                milestones(
+                    first: 100
+                    after: $after
+                    states: OPEN
+                    orderBy: { field: DUE_DATE, direction: ASC }
+                ) {
+                    nodes {
+                        id
+                        number
+                        title
+                        dueOn
+                        state
+                        progressPercentage
+                    }
+                    pageInfo {
+                        hasNextPage
+                        endCursor
+                    }
+                }
+            }
+        }
+        """
+
+    static let setIssueMilestone = """
+        mutation($issueId: ID!, $milestoneId: ID!) {
+            updateIssue(input: { id: $issueId, milestoneId: $milestoneId }) {
+                issue { id }
+            }
+        }
+        """
+
+    static let clearIssueMilestone = """
+        mutation($issueId: ID!) {
+            updateIssue(input: { id: $issueId, milestoneId: null }) {
+                issue { id }
+            }
+        }
+        """
+
     static let updateItemStatus = """
         mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
             updateProjectV2ItemFieldValue(
