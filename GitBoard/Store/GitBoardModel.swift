@@ -21,8 +21,17 @@ final class GitBoardModel {
     private var didStart = false
 
     var mutedProjectCount: Int { mutedProjectIDs.count }
+    var myWorkProjects: [Project] {
+        myWorkStore.followedProjects.compactMap { projectStore.followedProject(id: $0.id) }
+    }
+    var myWorkErrorMessage: String? {
+        projectStore.followedProjectsErrorMessage ?? projectStore.operationErrorMessage
+    }
     var attentionCount: Int {
-        myWorkStore.attentionCount(currentUserLogin: projectStore.currentUserLogin)
+        myWorkStore.attentionCount(
+            in: myWorkProjects,
+            currentUserLogin: projectStore.currentUserLogin
+        )
     }
 
     init() {
@@ -49,7 +58,9 @@ final class GitBoardModel {
         }
         myWorkStore.activate(accountLogin: projectStore.currentUserLogin)
         if myWorkStore.followedProjects.isEmpty == false {
-            await myWorkStore.refresh()
+            await refreshMyWork()
+        } else {
+            projectStore.setFollowedProjects([])
         }
         if monitoringEnabled {
             guard await notificationService.checkPermission() else {
@@ -109,21 +120,44 @@ final class GitBoardModel {
     }
 
     func toggleFollowing(_ project: Project) async {
-        await myWorkStore.toggleFollowing(project)
+        myWorkStore.toggleFollowing(project)
+        if myWorkStore.isFollowing(project.id) {
+            await refreshMyWork()
+        } else {
+            projectStore.setFollowedProjects(myWorkStore.followedProjects)
+        }
         if monitoringEnabled { await restartMonitoring() }
     }
 
     func stopFollowing(_ reference: FollowedProject) async {
         myWorkStore.stopFollowing(reference)
+        projectStore.setFollowedProjects(myWorkStore.followedProjects)
         if monitoringEnabled { await restartMonitoring() }
     }
 
     func activateMyWork(accountLogin: String?) async {
         let oldProjects = myWorkStore.followedProjects.map(\.id)
         myWorkStore.activate(accountLogin: accountLogin)
+        if myWorkStore.followedProjects.isEmpty {
+            projectStore.setFollowedProjects([])
+        } else if oldProjects != myWorkStore.followedProjects.map(\.id) {
+            await refreshMyWork()
+        }
         if monitoringEnabled, oldProjects != myWorkStore.followedProjects.map(\.id) {
             await restartMonitoring()
         }
+    }
+
+    func refreshMyWork() async {
+        await projectStore.refreshFollowedProjects(myWorkStore.followedProjects)
+    }
+
+    func myWorkItems(for filter: MyWorkFilter) -> [MyWorkItem] {
+        myWorkStore.items(
+            for: filter,
+            in: myWorkProjects,
+            currentUserLogin: projectStore.currentUserLogin
+        )
     }
 
     func openProject(_ project: Project) async {
@@ -135,13 +169,16 @@ final class GitBoardModel {
         field: ProjectField,
         value: ProjectFieldValue?
     ) async {
-        guard await myWorkStore.updateField(on: item, field: field, value: value) else { return }
-        await refreshSelectedProjectIfNeeded(item.project.id)
+        _ = await projectStore.updateField(
+            on: item.item,
+            in: item.project.id,
+            field: field,
+            value: value
+        )
     }
 
     func archiveMyWorkItem(_ item: MyWorkItem) async {
-        guard await myWorkStore.archive(item) else { return }
-        await refreshSelectedProjectIfNeeded(item.project.id)
+        _ = await projectStore.archiveItem(item.item, in: item.project.id)
     }
 
     func handleNotificationAction(_ action: ProjectNotificationAction) async -> URL? {
@@ -155,14 +192,12 @@ final class GitBoardModel {
                 monitoringStatus = "This Project has no recognizable Done status."
                 return nil
             }
-            if await myWorkStore.moveItemToDone(
+            _ = await projectStore.moveItemToStatus(
                 projectID: action.projectID,
                 itemID: action.itemID,
                 fieldID: fieldID,
                 optionID: optionID
-            ) {
-                await refreshSelectedProjectIfNeeded(action.projectID)
-            }
+            )
         case .snooze:
             snoozedItems[key] = Date().addingTimeInterval(60 * 60)
             saveSnoozedItems()
@@ -217,7 +252,7 @@ final class GitBoardModel {
         do {
             switch event {
             case .snapshots(let projects):
-                myWorkStore.applyMonitoredSnapshots(projects)
+                projectStore.applyMonitoredSnapshots(projects)
             case .change(let change):
                 guard shouldNotify(change) else { return }
                 try await notificationService.send(change)
@@ -245,12 +280,6 @@ final class GitBoardModel {
             saveSnoozedItems()
         }
         return true
-    }
-
-    private func refreshSelectedProjectIfNeeded(_ projectID: String) async {
-        if projectStore.selectedProjectId == projectID {
-            await projectStore.loadProjectDetails(id: projectID)
-        }
     }
 
     private func saveSnoozedItems() {

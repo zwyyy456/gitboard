@@ -6,10 +6,7 @@ struct MyWorkView: View {
     let didOpenProject: () -> Void
 
     private var items: [MyWorkItem] {
-        model.myWorkStore.items(
-            for: filter,
-            currentUserLogin: model.projectStore.currentUserLogin
-        )
+        model.myWorkItems(for: filter)
     }
 
     var body: some View {
@@ -17,7 +14,7 @@ struct MyWorkView: View {
             toolbar
             Divider()
 
-            if let errorMessage = model.myWorkStore.errorMessage {
+            if let errorMessage = model.myWorkErrorMessage {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -35,7 +32,7 @@ struct MyWorkView: View {
                     systemImage: "star",
                     description: Text("Open a Project Board and click the star to include it in My Work.")
                 )
-            } else if model.myWorkStore.isLoading && model.myWorkStore.snapshots.isEmpty {
+            } else if model.projectStore.isLoadingFollowedProjects && model.myWorkProjects.isEmpty {
                 ProgressView("Loading followed projects…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if items.isEmpty {
@@ -71,7 +68,7 @@ struct MyWorkView: View {
 
             Menu {
                 ForEach(model.myWorkStore.followedProjects) { reference in
-                    let title = model.myWorkStore.snapshots[reference.id]?.title
+                    let title = model.projectStore.followedProject(id: reference.id)?.title
                         ?? reference.displayTitle
                         ?? reference.owner.login
                     Button("Stop Following \(title)", role: .destructive) {
@@ -84,12 +81,12 @@ struct MyWorkView: View {
             .disabled(model.myWorkStore.followedProjects.isEmpty)
 
             Button {
-                Task { await model.myWorkStore.refresh() }
+                Task { await model.refreshMyWork() }
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.borderless)
-            .disabled(model.myWorkStore.isLoading)
+            .disabled(model.projectStore.isLoadingFollowedProjects)
             .help("Refresh My Work")
         }
         .padding(.horizontal, 20)

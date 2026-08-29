@@ -28,7 +28,8 @@ private struct ItemDetailEntry {
 final class ProjectStore {
     var sessionState: GitHubSessionState = .checking
     var owners: [ProjectOwner] = []
-    var projects: [Project] = []
+    private(set) var isLoadingFollowedProjects = false
+    private(set) var followedProjectsErrorMessage: String?
     var selectedOwnerId: String? {
         didSet {
             defaults.set(selectedOwnerId, forKey: "selectedOwnerId")
@@ -55,6 +56,10 @@ final class ProjectStore {
 
     private var catalogGeneration = 0
     private var projectGeneration = 0
+    private var followedProjectsGeneration = 0
+    private var projectSnapshots: [String: Project] = [:]
+    private var catalogProjectIDs: [String] = []
+    private var followedProjectIDs: Set<String> = []
     private var didRestoreCache = false
     private var cachedAccountLogin: String?
     private var projectContentPhases: [String: ProjectContentPhase] = [:]
@@ -72,7 +77,11 @@ final class ProjectStore {
 
     var selectedProject: Project? {
         guard let id = selectedProjectId else { return nil }
-        return projects.first { $0.id == id }
+        return project(id: id)
+    }
+
+    var projects: [Project] {
+        catalogProjectIDs.compactMap { projectSnapshots[$0] }
     }
 
     var selectedOwner: ProjectOwner? {
@@ -113,7 +122,15 @@ final class ProjectStore {
     }
 
     func project(id: String) -> Project? {
-        projects.first { $0.id == id }
+        projectSnapshots[id]
+    }
+
+    var allProjects: [Project] {
+        Array(projectSnapshots.values)
+    }
+
+    func followedProject(id: String) -> Project? {
+        followedProjectIDs.contains(id) ? projectSnapshots[id] : nil
     }
 
     func item(for reference: ItemInspectorReference) -> ProjectItem? {
@@ -226,7 +243,10 @@ final class ProjectStore {
 
         if let cachedAccountLogin, cachedAccountLogin != account.login {
             owners = []
-            projects = []
+            projectSnapshots = [:]
+            catalogProjectIDs = []
+            followedProjectIDs = []
+            followedProjectsGeneration += 1
             selectedOwnerId = nil
             selectedProjectId = nil
             selectedStatusFilter = nil
@@ -243,7 +263,7 @@ final class ProjectStore {
 
             let owner = loadedOwners.first { $0.id == selectedOwnerId } ?? loadedOwners.first
             guard let owner else {
-                projects = []
+                replaceCatalog(with: [])
                 selectedOwnerId = nil
                 selectedProjectId = nil
                 isLoading = false
@@ -266,7 +286,7 @@ final class ProjectStore {
     }
 
     func loadProjectDetails(id: String) async {
-        guard let project = projects.first(where: { $0.id == id }) else { return }
+        guard let project = project(id: id) else { return }
         cancelProjectLoad()
         let generation = projectGeneration
         let hadDetails = detailedProjectIDs.contains(id)
@@ -292,9 +312,7 @@ final class ProjectStore {
             }
             guard generation == projectGeneration, selectedProjectId == id else { return }
 
-            if let index = projects.firstIndex(where: { $0.id == id }) {
-                projects[index] = detailedProject
-            }
+            replaceProject(detailedProject)
 
             projectLoadTask = nil
             loadingProjectID = nil
@@ -347,6 +365,63 @@ final class ProjectStore {
         await loadProjectDetails(id: selectedId)
     }
 
+    func refreshFollowedProjects(_ references: [FollowedProject]) async {
+        setFollowedProjects(references)
+        let generation = followedProjectsGeneration
+
+        guard references.isEmpty == false else { return }
+
+        isLoadingFollowedProjects = true
+        defer {
+            if generation == followedProjectsGeneration {
+                isLoadingFollowedProjects = false
+            }
+        }
+
+        do {
+            var loaded: [String: Project] = [:]
+            for reference in references {
+                try Task.checkCancellation()
+                loaded[reference.id] = try await gitHubService.fetchProjectWithItems(
+                    project: reference.projectSummary
+                )
+            }
+            guard generation == followedProjectsGeneration else { return }
+            for project in loaded.values {
+                replaceProject(project)
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            guard generation == followedProjectsGeneration else { return }
+            followedProjectsErrorMessage = error.localizedDescription
+        }
+    }
+
+    func setFollowedProjects(_ references: [FollowedProject]) {
+        followedProjectsGeneration += 1
+        let previousIDs = followedProjectIDs
+        followedProjectIDs = Set(references.map(\.id))
+        for id in previousIDs.subtracting(followedProjectIDs)
+            where catalogProjectIDs.contains(id) == false {
+            projectSnapshots[id] = nil
+        }
+        let retainedProjectIDs = Set(projects.map(\.id)).union(followedProjectIDs)
+        detailedProjectIDs.formIntersection(retainedProjectIDs)
+        cachedProjectIDs.formIntersection(retainedProjectIDs)
+        projectContentPhases = projectContentPhases.filter {
+            retainedProjectIDs.contains($0.key)
+        }
+        followedProjectsErrorMessage = nil
+        isLoadingFollowedProjects = false
+    }
+
+    func applyMonitoredSnapshots(_ snapshots: [Project]) {
+        for project in snapshots where followedProjectIDs.contains(project.id) {
+            replaceProject(project)
+        }
+    }
+
     func selectProject(_ project: Project) async {
         let phase = projectContentPhases[project.id] ?? .summary
         guard project.id != selectedProjectId || phase != .loaded else { return }
@@ -362,7 +437,7 @@ final class ProjectStore {
             let owner = owners.first { $0.id == reference.owner.id } ?? reference.owner
             await selectOwner(owner)
         }
-        if let project = projects.first(where: { $0.id == reference.id }) {
+        if let project = project(id: reference.id) {
             await selectProject(project)
         }
     }
@@ -371,8 +446,8 @@ final class ProjectStore {
         do {
             let loadedProjects = try await gitHubService.fetchProjects(owner: owner)
             guard generation == catalogGeneration, selectedOwnerId == owner.id else { return }
-            let detailedProjects = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
-            projects = loadedProjects.map { project in
+            let detailedProjects = Dictionary(uniqueKeysWithValues: allProjects.map { ($0.id, $0) })
+            let mergedProjects = loadedProjects.map { project in
                 guard detailedProjectIDs.contains(project.id),
                       let detailed = detailedProjects[project.id] else {
                     return project
@@ -391,11 +466,15 @@ final class ProjectStore {
                     items: detailed.items
                 )
             }
+            replaceCatalog(with: mergedProjects)
 
             let projectIDs = Set(loadedProjects.map(\.id))
-            detailedProjectIDs.formIntersection(projectIDs)
-            cachedProjectIDs.formIntersection(projectIDs)
-            projectContentPhases = projectContentPhases.filter { projectIDs.contains($0.key) }
+            let retainedProjectIDs = projectIDs.union(followedProjectIDs)
+            detailedProjectIDs.formIntersection(retainedProjectIDs)
+            cachedProjectIDs.formIntersection(retainedProjectIDs)
+            projectContentPhases = projectContentPhases.filter {
+                retainedProjectIDs.contains($0.key)
+            }
             for project in projects where projectContentPhases[project.id] == nil {
                 projectContentPhases[project.id] = detailedProjectIDs.contains(project.id)
                     ? (cachedProjectIDs.contains(project.id) ? .cached : .loaded)
@@ -421,7 +500,7 @@ final class ProjectStore {
                 self.error = nil
                 operationErrorMessage = "Showing cached data because the project list could not refresh: \(error.localizedDescription)"
             } else {
-                projects = []
+                replaceCatalog(with: [])
                 selectedProjectId = nil
                 self.error = error
             }
@@ -439,7 +518,8 @@ final class ProjectStore {
         cachedAccountLogin = snapshot.accountLogin
         currentUserLogin = snapshot.accountLogin
         owners = [snapshot.owner]
-        projects = snapshot.projects.map(makeReadOnly)
+        let cachedProjects = snapshot.projects.map(makeReadOnly)
+        replaceCatalog(with: cachedProjects)
         let projectIDs = Set(projects.map(\.id))
         detailedProjectIDs = snapshot.detailedProjectIDs.intersection(projectIDs)
         cachedProjectIDs = detailedProjectIDs
@@ -478,6 +558,39 @@ final class ProjectStore {
             cachedAccountLogin = accountLogin
         } catch {
             operationErrorMessage = "Project loaded, but the local cache could not be updated: \(error.localizedDescription)"
+        }
+    }
+
+    private func refreshProjectSnapshot(id: String) async {
+        guard let project = project(id: id) else { return }
+        do {
+            let detailedProject = try await gitHubService.fetchProjectWithItems(project: project)
+            replaceProject(detailedProject)
+            lastUpdated = Date()
+            await persistCache()
+        } catch is CancellationError {
+            return
+        } catch {
+            operationErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func replaceProject(_ project: Project) {
+        projectSnapshots[project.id] = project
+        detailedProjectIDs.insert(project.id)
+        cachedProjectIDs.remove(project.id)
+        projectContentPhases[project.id] = .loaded
+    }
+
+    private func replaceCatalog(with projects: [Project]) {
+        let newIDs = Set(projects.map(\.id))
+        for id in Set(catalogProjectIDs).subtracting(newIDs)
+            where followedProjectIDs.contains(id) == false {
+            projectSnapshots[id] = nil
+        }
+        catalogProjectIDs = projects.map(\.id)
+        for project in projects {
+            projectSnapshots[project.id] = project
         }
     }
 
@@ -531,14 +644,12 @@ final class ProjectStore {
         _ item: ProjectItem,
         toStatus status: StatusOption,
         in projectID: String
-    ) async {
+    ) async -> Bool {
         guard let project = editableProject(id: projectID),
               let fieldId = project.statusField?.id,
-              let projectIndex = projects.firstIndex(where: { $0.id == project.id }),
-              let itemIndex = projects[projectIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
+              let itemIndex = project.items.firstIndex(where: { $0.id == item.id }) else { return false }
 
-        // Store original for potential revert
-        let originalProject = projects[projectIndex]
+        let originalProject = project
 
         // Optimistic update - create new item with updated status
         let updatedItem = ProjectItem(
@@ -562,10 +673,9 @@ final class ProjectStore {
             engineeringSignals: item.engineeringSignals
         )
 
-        // Create new items array and replace the entire project to trigger @Observable update
-        var newItems = projects[projectIndex].items
+        var newItems = project.items
         newItems[itemIndex] = updatedItem
-        projects[projectIndex] = Project(
+        replaceProject(Project(
             id: project.id,
             owner: project.owner,
             title: project.title,
@@ -575,7 +685,7 @@ final class ProjectStore {
             fields: project.fields,
             statusField: project.statusField,
             items: newItems
-        )
+        ))
 
         // Then sync with server
         do {
@@ -587,10 +697,11 @@ final class ProjectStore {
             )
             lastUpdated = Date()
             await persistCache()
+            return true
         } catch {
-            // Revert on error - restore original project
-            projects[projectIndex] = originalProject
+            replaceProject(originalProject)
             operationErrorMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -599,9 +710,9 @@ final class ProjectStore {
 
         do {
             try await gitHubService.deleteItem(projectId: project.id, itemId: item.id)
-            if let projectIndex = projects.firstIndex(where: { $0.id == project.id }) {
-                projects[projectIndex].items.removeAll { $0.id == item.id }
-            }
+            var updatedProject = project
+            updatedProject.items.removeAll { $0.id == item.id }
+            replaceProject(updatedProject)
             removeItemDetail(for: item)
             lastUpdated = Date()
             await persistCache()
@@ -616,9 +727,9 @@ final class ProjectStore {
 
         do {
             try await gitHubService.archiveItem(projectId: project.id, itemId: item.id)
-            if let projectIndex = projects.firstIndex(where: { $0.id == project.id }) {
-                projects[projectIndex].items.removeAll { $0.id == item.id }
-            }
+            var updatedProject = project
+            updatedProject.items.removeAll { $0.id == item.id }
+            replaceProject(updatedProject)
             removeItemDetail(for: item)
             lastUpdated = Date()
             await persistCache()
@@ -649,6 +760,8 @@ final class ProjectStore {
             )
             if selectedProjectId == project.id {
                 await loadProjectDetails(id: project.id)
+            } else {
+                await refreshProjectSnapshot(id: project.id)
             }
             return true
         } catch is CancellationError {
@@ -659,13 +772,26 @@ final class ProjectStore {
         }
     }
 
+    func moveItemToStatus(
+        projectID: String,
+        itemID: String,
+        fieldID: String,
+        optionID: String
+    ) async -> Bool {
+        guard let project = project(id: projectID),
+              project.statusField?.id == fieldID,
+              let option = project.statusOptions.first(where: { $0.id == optionID }),
+              let item = project.items.first(where: { $0.id == itemID }) else { return false }
+        return await moveItem(item, toStatus: option, in: projectID)
+    }
+
     func moveItems(
         _ items: [ProjectItem],
         to status: StatusOption,
         in projectID: String
     ) async {
         for item in items where item.status != status.name {
-            await moveItem(item, toStatus: status, in: projectID)
+            _ = await moveItem(item, toStatus: status, in: projectID)
         }
     }
 
@@ -688,11 +814,9 @@ final class ProjectStore {
     func addAssignee(to item: ProjectItem, in projectID: String, user: Assignee) async {
         guard let url = item.url,
               let project = editableProject(id: projectID),
-              let projectIndex = projects.firstIndex(where: { $0.id == project.id }),
-              let itemIndex = projects[projectIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
+              let itemIndex = project.items.firstIndex(where: { $0.id == item.id }) else { return }
 
-        // Store original for potential revert
-        let originalProject = projects[projectIndex]
+        let originalProject = project
 
         // Optimistic update - add assignee to local state
         var newAssignees = item.assignees
@@ -719,9 +843,9 @@ final class ProjectStore {
             engineeringSignals: item.engineeringSignals
         )
 
-        var newItems = projects[projectIndex].items
+        var newItems = project.items
         newItems[itemIndex] = updatedItem
-        projects[projectIndex] = Project(
+        replaceProject(Project(
             id: project.id,
             owner: project.owner,
             title: project.title,
@@ -731,15 +855,14 @@ final class ProjectStore {
             fields: project.fields,
             statusField: project.statusField,
             items: newItems
-        )
+        ))
 
         do {
             try await gitHubService.addAssignee(issueUrl: url, userLogin: user.login)
             lastUpdated = Date()
             await persistCache()
         } catch {
-            // Revert on error
-            projects[projectIndex] = originalProject
+            replaceProject(originalProject)
             operationErrorMessage = error.localizedDescription
         }
     }
@@ -747,11 +870,9 @@ final class ProjectStore {
     func removeAssignee(from item: ProjectItem, in projectID: String, user: Assignee) async {
         guard let url = item.url,
               let project = editableProject(id: projectID),
-              let projectIndex = projects.firstIndex(where: { $0.id == project.id }),
-              let itemIndex = projects[projectIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
+              let itemIndex = project.items.firstIndex(where: { $0.id == item.id }) else { return }
 
-        // Store original for potential revert
-        let originalProject = projects[projectIndex]
+        let originalProject = project
 
         // Optimistic update - remove assignee from local state
         let newAssignees = item.assignees.filter { $0.login != user.login }
@@ -775,9 +896,9 @@ final class ProjectStore {
             engineeringSignals: item.engineeringSignals
         )
 
-        var newItems = projects[projectIndex].items
+        var newItems = project.items
         newItems[itemIndex] = updatedItem
-        projects[projectIndex] = Project(
+        replaceProject(Project(
             id: project.id,
             owner: project.owner,
             title: project.title,
@@ -787,15 +908,14 @@ final class ProjectStore {
             fields: project.fields,
             statusField: project.statusField,
             items: newItems
-        )
+        ))
 
         do {
             try await gitHubService.removeAssignee(issueUrl: url, userLogin: user.login)
             lastUpdated = Date()
             await persistCache()
         } catch {
-            // Revert on error
-            projects[projectIndex] = originalProject
+            replaceProject(originalProject)
             operationErrorMessage = error.localizedDescription
         }
     }
@@ -808,6 +928,8 @@ final class ProjectStore {
             try await gitHubService.addLabel(issueUrl: url, label: name)
             if selectedProjectId == projectID {
                 await loadProjectDetails(id: projectID)
+            } else {
+                await refreshProjectSnapshot(id: projectID)
             }
             return true
         } catch is CancellationError {
@@ -826,6 +948,8 @@ final class ProjectStore {
             try await gitHubService.removeLabel(issueUrl: url, label: name)
             if selectedProjectId == projectID {
                 await loadProjectDetails(id: projectID)
+            } else {
+                await refreshProjectSnapshot(id: projectID)
             }
             return true
         } catch is CancellationError {
