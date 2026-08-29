@@ -13,9 +13,6 @@ struct ItemDescriptionView: View {
 
             if let item {
                 descriptionContent(for: item)
-                    .task(id: item.contentId) {
-                        await store.loadItemDetail(for: item)
-                    }
             } else {
                 unavailable
             }

@@ -122,7 +122,7 @@ struct GitHubServiceTests {
     @Test func itemDetailDecodesIssuePullRequestAndDraftAuthors() async throws {
         let fixtures: [(response: String, expected: ProjectItemDetail)] = [
             (
-                #"{"data":{"node":{"__typename":"Issue","id":"ISSUE1","bodyHTML":"<p>Issue body</p>","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-02T00:00:00Z","author":{"login":"octocat","avatarUrl":"https://example.invalid/octocat"}}}}"#,
+                #"{"data":{"node":{"__typename":"Issue","id":"ISSUE1","bodyHTML":"<p>Issue body</p>","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-02T00:00:00Z","author":{"login":"octocat","avatarUrl":"https://example.invalid/octocat"},"viewerCanUpdate":true,"viewerCanSetMilestone":true,"repository":{"nameWithOwner":"acme/app"},"milestone":{"id":"M1","number":2,"title":"Version 2","dueOn":"2026-09-01T00:00:00Z","state":"OPEN","progressPercentage":50},"parent":{"id":"P1","number":10,"title":"Release 2","url":"https://github.com/acme/planning/issues/10","state":"OPEN","repository":{"nameWithOwner":"acme/planning"}},"subIssues":{"nodes":[{"id":"S1","number":11,"title":"Ship API","url":"https://github.com/acme/api/issues/11","state":"CLOSED","repository":{"nameWithOwner":"acme/api"}}]},"subIssuesSummary":{"completed":1,"total":1},"blockedBy":{"nodes":[{"id":"B1","number":12,"title":"Approve schema","url":"https://github.com/acme/schema/issues/12","state":"OPEN","repository":{"nameWithOwner":"acme/schema"}}]},"blocking":{"nodes":[]}}}}"#,
                 ProjectItemDetail(
                     id: "ISSUE1",
                     bodyHTML: "<p>Issue body</p>",
@@ -131,7 +131,50 @@ struct GitHubServiceTests {
                         avatarURL: "https://example.invalid/octocat"
                     ),
                     createdAt: "2026-08-01T00:00:00Z",
-                    updatedAt: "2026-08-02T00:00:00Z"
+                    updatedAt: "2026-08-02T00:00:00Z",
+                    issueMetadata: IssueMetadata(
+                        repository: "acme/app",
+                        milestone: RepositoryMilestone(
+                            id: "M1",
+                            number: 2,
+                            title: "Version 2",
+                            dueOn: "2026-09-01T00:00:00Z",
+                            state: .open,
+                            progressPercentage: 50
+                        ),
+                        parent: IssueReference(
+                            id: "P1",
+                            repository: "acme/planning",
+                            number: 10,
+                            title: "Release 2",
+                            url: URL(string: "https://github.com/acme/planning/issues/10")!,
+                            state: .open
+                        ),
+                        subIssues: [
+                            IssueReference(
+                                id: "S1",
+                                repository: "acme/api",
+                                number: 11,
+                                title: "Ship API",
+                                url: URL(string: "https://github.com/acme/api/issues/11")!,
+                                state: .closed
+                            )
+                        ],
+                        subIssueProgress: SubIssueProgress(completed: 1, total: 1),
+                        blockedBy: [
+                            IssueReference(
+                                id: "B1",
+                                repository: "acme/schema",
+                                number: 12,
+                                title: "Approve schema",
+                                url: URL(string: "https://github.com/acme/schema/issues/12")!,
+                                state: .open
+                            )
+                        ],
+                        blocking: [],
+                        viewerCanUpdate: true,
+                        viewerCanSetMilestone: true
+                    )
                 )
             ),
             (
@@ -141,7 +184,8 @@ struct GitHubServiceTests {
                     bodyHTML: "<p>PR body</p>",
                     author: nil,
                     createdAt: nil,
-                    updatedAt: "2026-08-03T00:00:00Z"
+                    updatedAt: "2026-08-03T00:00:00Z",
+                    issueMetadata: nil
                 )
             ),
             (
@@ -151,7 +195,8 @@ struct GitHubServiceTests {
                     bodyHTML: "",
                     author: ItemAuthor(login: "hubot", avatarURL: nil),
                     createdAt: "2026-08-04T00:00:00Z",
-                    updatedAt: nil
+                    updatedAt: nil,
+                    issueMetadata: nil
                 )
             )
         ]
@@ -344,7 +389,18 @@ struct ProjectStoreTests {
                 bodyHTML: "Shared",
                 author: nil,
                 createdAt: nil,
-                updatedAt: "2026-08-01T00:00:00Z"
+                updatedAt: "2026-08-01T00:00:00Z",
+                issueMetadata: IssueMetadata(
+                    repository: "acme/repo",
+                    milestone: nil,
+                    parent: nil,
+                    subIssues: [],
+                    subIssueProgress: nil,
+                    blockedBy: [],
+                    blocking: [],
+                    viewerCanUpdate: false,
+                    viewerCanSetMilestone: false
+                )
             )
         ))
     }
@@ -456,7 +512,7 @@ struct ProjectStoreTests {
     }
 
     private static func itemDetailResponse(body: String) -> String {
-        #"{"data":{"node":{"__typename":"Issue","id":"CONTENT1","bodyHTML":"\#(body)","createdAt":null,"updatedAt":"2026-08-01T00:00:00Z","author":null}}}"#
+        #"{"data":{"node":{"__typename":"Issue","id":"CONTENT1","bodyHTML":"\#(body)","createdAt":null,"updatedAt":"2026-08-01T00:00:00Z","author":null,"viewerCanUpdate":false,"viewerCanSetMilestone":false,"repository":{"nameWithOwner":"acme/repo"},"milestone":null,"parent":null,"subIssues":{"nodes":[]},"subIssuesSummary":{"completed":0,"total":0},"blockedBy":{"nodes":[]},"blocking":{"nodes":[]}}}}"#
     }
 }
 

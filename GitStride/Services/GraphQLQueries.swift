@@ -262,6 +262,56 @@ enum GraphQLQueries {
                     createdAt
                     updatedAt
                     author { login avatarUrl }
+                    viewerCanUpdate
+                    viewerCanSetMilestone
+                    repository { nameWithOwner }
+                    milestone {
+                        id
+                        number
+                        title
+                        dueOn
+                        state
+                        progressPercentage
+                    }
+                    parent {
+                        id
+                        number
+                        title
+                        url
+                        state
+                        repository { nameWithOwner }
+                    }
+                    subIssues(first: 100) {
+                        nodes {
+                            id
+                            number
+                            title
+                            url
+                            state
+                            repository { nameWithOwner }
+                        }
+                    }
+                    subIssuesSummary { completed total }
+                    blockedBy(first: 50) {
+                        nodes {
+                            id
+                            number
+                            title
+                            url
+                            state
+                            repository { nameWithOwner }
+                        }
+                    }
+                    blocking(first: 50) {
+                        nodes {
+                            id
+                            number
+                            title
+                            url
+                            state
+                            repository { nameWithOwner }
+                        }
+                    }
                 }
                 ... on PullRequest {
                     id
