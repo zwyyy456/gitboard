@@ -172,9 +172,9 @@ actor GitHubService {
         return projects
     }
 
-    func fetchProjectWithItems(project: Project) async throws -> Project {
-        let projectData = try await fetchProjectFields(projectID: project.id)
-        let itemNodes = try await fetchProjectItemNodes(projectID: project.id)
+    func fetchProjectWithItems(id: String, owner: ProjectOwner) async throws -> Project {
+        let projectData = try await fetchProjectFields(projectID: id)
+        let itemNodes = try await fetchProjectItemNodes(projectID: id)
 
         let fields = projectData.fields.compactMap(makeProjectField)
 
@@ -190,8 +190,8 @@ actor GitHubService {
             }
 
         return Project(
-            id: project.id,
-            owner: project.owner,
+            id: id,
+            owner: owner,
             title: projectData.title,
             number: projectData.number,
             url: projectData.url,
