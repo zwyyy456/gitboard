@@ -7,7 +7,7 @@ enum ItemContentType: String, Codable {
     case redacted = "REDACTED"
 }
 
-enum IssueState: String, Codable {
+enum IssueState: String, Codable, Hashable, Sendable {
     case open = "OPEN"
     case closed = "CLOSED"
 }
@@ -38,7 +38,7 @@ enum CheckStatus: String, Codable, Hashable {
     case success = "SUCCESS"
 }
 
-struct SubIssueProgress: Codable, Hashable {
+struct SubIssueProgress: Codable, Hashable, Sendable {
     let completed: Int
     let total: Int
 }
