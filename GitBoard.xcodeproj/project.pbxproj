@@ -20,7 +20,6 @@
 		A0000011 /* StatusSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000011 /* StatusSummaryView.swift */; };
 		A0000012 /* KanbanBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000012 /* KanbanBoardView.swift */; };
 		A0000015 /* ProjectItemRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000015 /* ProjectItemRowView.swift */; };
-		A0000016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000016 /* Assets.xcassets */; };
 		A0000019 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000019 /* SettingsView.swift */; };
 		A0000020 /* UpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000020 /* UpdateController.swift */; };
 		A0000021 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A6000001 /* Sparkle */; };
@@ -48,6 +47,7 @@
 		A0000044 /* WorkspaceCommandContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000044 /* WorkspaceCommandContext.swift */; };
 		A0000045 /* KanbanCardContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000045 /* KanbanCardContextMenu.swift */; };
 		A0000046 /* KanbanCardContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000046 /* KanbanCardContent.swift */; };
+		A0000047 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A1000047 /* AppIcon.icon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -75,7 +75,6 @@
 		A1000011 /* StatusSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusSummaryView.swift; sourceTree = "<group>"; };
 		A1000012 /* KanbanBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBoardView.swift; sourceTree = "<group>"; };
 		A1000015 /* ProjectItemRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectItemRowView.swift; sourceTree = "<group>"; };
-		A1000016 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000017 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1000018 /* GitBoard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GitBoard.entitlements; sourceTree = "<group>"; };
 		A1000019 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -105,6 +104,7 @@
 		A1000044 /* WorkspaceCommandContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceCommandContext.swift; sourceTree = "<group>"; };
 		A1000045 /* KanbanCardContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardContextMenu.swift; sourceTree = "<group>"; };
 		A1000046 /* KanbanCardContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardContent.swift; sourceTree = "<group>"; };
+		A1000047 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -256,7 +256,7 @@
 		A3000009 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				A1000016 /* Assets.xcassets */,
+				A1000047 /* AppIcon.icon */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -374,7 +374,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A0000016 /* Assets.xcassets in Resources */,
+				A0000047 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -574,7 +574,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = GitBoard/GitBoard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -602,7 +601,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = GitBoard/GitBoard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
