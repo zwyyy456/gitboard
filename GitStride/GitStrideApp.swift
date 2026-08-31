@@ -76,10 +76,10 @@ struct GitStrideApp: App {
             QuickAddWindow(model: model)
         }
         .defaultSize(
-            width: AddProjectItemView.presentationSize.width,
-            height: AddProjectItemView.presentationSize.height
+            width: AddProjectItemView.windowDefaultSize.width,
+            height: AddProjectItemView.windowDefaultSize.height
         )
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
 
         Window("Settings", id: "settings") {
             SettingsView(model: model)
