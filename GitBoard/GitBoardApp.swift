@@ -21,16 +21,16 @@ struct GitBoardApp: App {
     var body: some Scene {
         Window("GitBoard", id: "kanban-board") {
             MainWorkspaceView(model: model)
-                .background(KanbanWindowConfigurator())
                 .onAppear {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         NSApp.activate(ignoringOtherApps: true)
                     }
                 }
         }
-        .defaultSize(width: 1000, height: 700)
+        .defaultSize(width: 1100, height: 700)
         .windowResizability(.contentMinSize)
-        .windowStyle(.hiddenTitleBar)
+        .windowStyle(.titleBar)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             GitBoardCommands()
         }
@@ -91,6 +91,7 @@ struct GitBoardApp: App {
 
 private struct GitBoardCommands: Commands {
     @Environment(\.openWindow) private var openWindow
+    @FocusedValue(\.workspaceCommandContext) private var workspaceCommandContext
 
     var body: some Commands {
         CommandMenu("GitBoard") {
@@ -103,6 +104,61 @@ private struct GitBoardCommands: Commands {
                 openWindow(id: "quick-add")
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
+        }
+
+        CommandMenu("Workspace") {
+            if let addItem = workspaceCommandContext?.addItem {
+                Button(addItem.title, action: addItem.perform)
+                    .disabled(addItem.isEnabled == false)
+            }
+
+            if let toggleSelection = workspaceCommandContext?.toggleSelection {
+                Button(toggleSelection.title, action: toggleSelection.perform)
+                    .disabled(toggleSelection.isEnabled == false)
+            }
+
+            if let moveSelection = workspaceCommandContext?.moveSelection,
+               moveSelection.isEmpty == false {
+                Menu("Move To") {
+                    ForEach(moveSelection) { action in
+                        Button(action.title, action: action.perform)
+                            .disabled(action.isEnabled == false)
+                    }
+                }
+            }
+
+            if let archiveSelection = workspaceCommandContext?.archiveSelection {
+                Button(archiveSelection.title, role: .destructive, action: archiveSelection.perform)
+                    .disabled(archiveSelection.isEnabled == false)
+            }
+
+            if let toggleFollowing = workspaceCommandContext?.toggleFollowing {
+                Button(toggleFollowing.title, action: toggleFollowing.perform)
+                    .disabled(toggleFollowing.isEnabled == false)
+            }
+
+            if let stopFollowing = workspaceCommandContext?.stopFollowing,
+               stopFollowing.isEmpty == false {
+                Menu("Following Projects") {
+                    ForEach(stopFollowing) { action in
+                        Button(action.title, role: .destructive, action: action.perform)
+                            .disabled(action.isEnabled == false)
+                    }
+                }
+            }
+
+            Divider()
+
+            Button(workspaceCommandContext?.refresh.title ?? "Refresh") {
+                workspaceCommandContext?.refresh.perform()
+            }
+            .keyboardShortcut("r", modifiers: .command)
+            .disabled(workspaceCommandContext?.refresh.isEnabled != true)
+
+            if let openInGitHub = workspaceCommandContext?.openInGitHub {
+                Button(openInGitHub.title, action: openInGitHub.perform)
+                    .disabled(openInGitHub.isEnabled == false)
+            }
         }
     }
 }
@@ -146,21 +202,4 @@ struct MenuBarWindowFinder: NSViewRepresentable {
             }
         }
     }
-}
-
-// Helper to make window titlebar seamless with content
-struct KanbanWindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            if let window = view.window {
-                window.titlebarAppearsTransparent = true
-                window.titleVisibility = .hidden
-                window.isMovableByWindowBackground = true
-            }
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }

@@ -46,15 +46,13 @@ struct ProjectSelectorView: View {
             .help("Select project")
             .accessibilityLabel("Select project, current project \(store.selectedProject?.title ?? "none")")
 
-            if store.selectedProject?.viewerCanUpdate == false {
-                let label = store.isShowingCachedData
-                    ? "Cached data — refreshing from GitHub"
-                    : "Read-only project"
-                Image(systemName: store.isShowingCachedData ? "internaldrive" : "lock.fill")
+            if store.selectedProject?.viewerCanUpdate == false,
+               store.isShowingCachedData == false {
+                Image(systemName: "lock.fill")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .help(label)
-                    .accessibilityLabel(label)
+                    .help("Read-only project")
+                    .accessibilityLabel("Read-only project")
             }
         }
         .font(.callout.weight(.semibold))

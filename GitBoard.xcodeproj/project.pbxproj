@@ -45,6 +45,9 @@
 		A0000041 /* ItemPropertiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000041 /* ItemPropertiesView.swift */; };
 		A0000042 /* ProjectFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000042 /* ProjectFieldEditor.swift */; };
 		A0000043 /* GitHubHTMLBodyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000043 /* GitHubHTMLBodyView.swift */; };
+		A0000044 /* WorkspaceCommandContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000044 /* WorkspaceCommandContext.swift */; };
+		A0000045 /* KanbanCardContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000045 /* KanbanCardContextMenu.swift */; };
+		A0000046 /* KanbanCardContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000046 /* KanbanCardContent.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -99,6 +102,9 @@
 		A1000041 /* ItemPropertiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemPropertiesView.swift; sourceTree = "<group>"; };
 		A1000042 /* ProjectFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFieldEditor.swift; sourceTree = "<group>"; };
 		A1000043 /* GitHubHTMLBodyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubHTMLBodyView.swift; sourceTree = "<group>"; };
+		A1000044 /* WorkspaceCommandContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceCommandContext.swift; sourceTree = "<group>"; };
+		A1000045 /* KanbanCardContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardContextMenu.swift; sourceTree = "<group>"; };
+		A1000046 /* KanbanCardContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardContent.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -140,6 +146,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000001 /* GitBoardApp.swift */,
+				A1000044 /* WorkspaceCommandContext.swift */,
 				A3000002 /* Models */,
 				A3000003 /* Services */,
 				A3000004 /* Store */,
@@ -224,6 +231,8 @@
 			isa = PBXGroup;
 			children = (
 				A1000012 /* KanbanBoardView.swift */,
+				A1000045 /* KanbanCardContextMenu.swift */,
+				A1000046 /* KanbanCardContent.swift */,
 			);
 			path = Kanban;
 			sourceTree = "<group>";
@@ -384,6 +393,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A0000001 /* GitBoardApp.swift in Sources */,
+				A0000044 /* WorkspaceCommandContext.swift in Sources */,
 				A0000033 /* Monitoring.swift in Sources */,
 				A0000035 /* QuickCreate.swift in Sources */,
 				A0000002 /* Project.swift in Sources */,
@@ -405,6 +415,8 @@
 				A0000010 /* ProjectSelectorView.swift in Sources */,
 				A0000011 /* StatusSummaryView.swift in Sources */,
 				A0000012 /* KanbanBoardView.swift in Sources */,
+				A0000045 /* KanbanCardContextMenu.swift in Sources */,
+				A0000046 /* KanbanCardContent.swift in Sources */,
 				A0000030 /* MainWorkspaceView.swift in Sources */,
 				A0000031 /* MyWorkView.swift in Sources */,
 				A0000025 /* AddProjectItemView.swift in Sources */,

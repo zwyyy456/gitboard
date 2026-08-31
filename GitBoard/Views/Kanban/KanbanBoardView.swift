@@ -1,36 +1,86 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct KanbanBoardView: View {
     @Bindable var store: ProjectStore
     @Bindable var myWorkStore: MyWorkStore
     let toggleFollowing: (Project) async -> Void
-    @State private var refreshRotation: Double = 0
-    @State private var isRefreshing = false
-    @State private var searchText = ""
+    @Binding var searchText: String
+    @Binding var isSelecting: Bool
     @State private var showsAddItem = false
-    @State private var isSelecting = false
     @State private var selectedItemIDs: Set<String> = []
     @State private var isBulkWorking = false
-    @State private var keyMonitor: Any?
     @State private var inspectorReference: ItemInspectorReference?
 
     private var canEditSelectedProject: Bool {
         store.canEditSelectedProject
     }
 
+    private var showsProjectEditingActions: Bool {
+        switch store.selectedProjectContentState {
+        case .content(let project, _, _), .empty(let project, _, _):
+            project.viewerCanUpdate
+        case .none, .loading, .failed:
+            false
+        }
+    }
+
+    private var isRefreshing: Bool {
+        switch store.selectedProjectContentState {
+        case .loading:
+            true
+        case .content(_, let isRefreshing, _), .empty(_, let isRefreshing, _):
+            isRefreshing
+        case .none, .failed:
+            false
+        }
+    }
+
     var body: some View {
+        projectSurface
+            .toolbar {
+                kanbanToolbar
+            }
+            .focusedSceneValue(\.workspaceCommandContext, commandContext)
+            .sheet(isPresented: $showsAddItem) {
+                AddProjectItemView(store: store)
+            }
+            .sheet(item: $inspectorReference) { reference in
+                ItemInspectorView(store: store, reference: reference)
+            }
+            .onChange(of: store.selectedProjectId) { _, _ in
+                searchText = ""
+                isSelecting = false
+                selectedItemIDs.removeAll()
+            }
+            .onChange(of: isSelecting) { _, isSelecting in
+                if isSelecting == false {
+                    selectedItemIDs.removeAll()
+                }
+            }
+            .task {
+                if store.projects.isEmpty {
+                    await store.loadProjects()
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var projectSurface: some View {
+        if isSelecting {
+            boardSurface
+        } else {
+            boardSurface.searchable(
+                text: $searchText,
+                placement: .automatic,
+                prompt: "Search title, #number, or @assignee"
+            )
+        }
+    }
+
+    private var boardSurface: some View {
         VStack(spacing: 0) {
-            // Toolbar
-            toolbar
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
-
-            Divider()
-
             OperationErrorBanner(store: store)
 
-            // Board content
             if store.isLoading && store.projects.isEmpty {
                 loadingView
             } else if let error = store.error {
@@ -39,178 +89,213 @@ struct KanbanBoardView: View {
                 selectedProjectContent
             }
         }
-        .frame(minWidth: 1000, minHeight: 650)
-        .sheet(isPresented: $showsAddItem) {
-            AddProjectItemView(store: store)
-                .frame(
-                    width: AddProjectItemView.presentationSize.width,
-                    height: AddProjectItemView.presentationSize.height
-                )
-        }
-        .sheet(item: $inspectorReference) { reference in
-            ItemInspectorView(store: store, reference: reference)
-        }
-        .onChange(of: store.selectedProjectId) { _, _ in
-            isSelecting = false
-            selectedItemIDs.removeAll()
-        }
-        .task {
-            if store.projects.isEmpty {
-                await store.loadProjects()
-            }
-        }
-        .onAppear {
-            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                if event.modifierFlags.contains(.command) && event.keyCode == 15 { // Cmd+R
-                    if !isRefreshing {
-                        isRefreshing = true
-                        Task {
-                            await store.refresh()
-                            isRefreshing = false
-                        }
-                    }
-                    return nil
-                }
-                return event
-            }
-        }
-        .onDisappear {
-            if let monitor = keyMonitor {
-                NSEvent.removeMonitor(monitor)
-                keyMonitor = nil
-            }
-        }
+        .frame(minWidth: 680, minHeight: 560)
     }
 
-    private var toolbar: some View {
-        HStack(spacing: 16) {
+    @ToolbarContentBuilder
+    private var kanbanToolbar: some ToolbarContent {
+        ToolbarItem(placement: .automatic) {
             ProjectSelectorView(store: store)
+        }
 
-            // Search bar
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-
-                TextField(
-                    canEditSelectedProject
-                        ? "Search, #number, @me · Type > to add"
-                        : "Search, #number, @me",
-                    text: $searchText
-                )
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .frame(minWidth: 150, maxWidth: 300)
-                .onChange(of: searchText) { oldValue, newValue in
-                    if canEditSelectedProject && newValue == ">" {
-                        searchText = ""
-                        showsAddItem = true
-                    }
-                }
-
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-
-            if canEditSelectedProject {
-                Button {
-                    showsAddItem = true
-                } label: {
-                    Label("Add Item", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-                .help("Create an issue or add an existing item")
-
-                Button(isSelecting ? "Done" : "Select") {
-                    isSelecting.toggle()
-                    if isSelecting == false { selectedItemIDs.removeAll() }
-                }
-                .buttonStyle(.bordered)
-            }
-
-            if let project = store.selectedProject {
-                Button {
-                    Task { await toggleFollowing(project) }
-                } label: {
-                    Image(systemName: myWorkStore.isFollowing(project.id) ? "star.fill" : "star")
-                }
-                .buttonStyle(.bordered)
-                .help(myWorkStore.isFollowing(project.id)
-                    ? "Remove from My Work"
-                    : "Follow in My Work")
-            }
-
-            if isSelecting {
-                Text("\(selectedItemIDs.count) selected")
-                    .font(.caption)
+        if isSelecting {
+            ToolbarItemGroup(placement: .automatic) {
+                Text("\(selectedItemIDs.count) Selected")
                     .foregroundStyle(.secondary)
 
-                Menu("Move to") {
+                Menu("Move To") {
                     ForEach(store.selectedProject?.statusOptions ?? []) { status in
                         Button(status.name) { moveSelection(to: status) }
                     }
                 }
                 .disabled(selectedItemIDs.isEmpty || isBulkWorking)
 
-                Button("Archive", systemImage: "archivebox") {
+                Button(role: .destructive) {
                     archiveSelection()
+                } label: {
+                    Label("Archive", systemImage: "archivebox")
                 }
                 .disabled(selectedItemIDs.isEmpty || isBulkWorking)
+
+                Button("Done", action: toggleSelectionMode)
+                    .keyboardShortcut(.cancelAction)
             }
+        } else {
+            ToolbarItemGroup(placement: .automatic) {
+                Button(action: refresh) {
+                    Label {
+                        Text("Refresh Project")
+                    } icon: {
+                        ZStack {
+                            Image(systemName: "arrow.clockwise")
+                                .opacity(isRefreshing ? 0 : 1)
 
-            Spacer()
-
-            // Last updated
-            if let lastUpdated = store.lastUpdated {
-                Text("Updated \(lastUpdated.formatted(.relative(presentation: .named)))")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-            }
-
-            // Refresh button
-            Button {
-                guard !isRefreshing else { return }
-                isRefreshing = true
-                withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
-                    refreshRotation = 360
-                }
-                Task {
-                    await store.refresh()
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        refreshRotation = 0
-                        isRefreshing = false
+                            if isRefreshing {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .frame(width: 16, height: 16)
                     }
                 }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isRefreshing ? .blue : .secondary)
-                    .rotationEffect(.degrees(refreshRotation))
-            }
-            .buttonStyle(.plain)
-            .disabled(isRefreshing)
+                .labelStyle(.iconOnly)
+                .disabled(isRefreshing)
+                .help(refreshHelp)
+                .accessibilityValue(isRefreshing ? "Refreshing" : "")
 
-            // Open in GitHub
-            if let project = store.selectedProject, !project.url.isEmpty,
-               let url = URL(string: project.url) {
-                Link(destination: url) {
-                    Image(systemName: "arrow.up.right.square")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.secondary)
+                if showsProjectEditingActions {
+                    Button("Add Item", systemImage: "plus", action: showAddItem)
+                        .labelStyle(.iconOnly)
+                        .disabled(canEditSelectedProject == false)
+                        .help("Add Item")
                 }
-                .buttonStyle(.plain)
+
+                if let project = store.selectedProject {
+                    Menu("Project Actions", systemImage: "ellipsis.circle") {
+                        if projectURL != nil {
+                            Button(
+                                "Open Project in GitHub",
+                                systemImage: "arrow.up.right.square",
+                                action: openProjectInGitHub
+                            )
+                        }
+
+                        if showsProjectEditingActions {
+                            Button(
+                                "Select Multiple Items…",
+                                systemImage: "checkmark.circle",
+                                action: toggleSelectionMode
+                            )
+                            .disabled(canEditSelectedProject == false)
+                        }
+
+                        if projectURL != nil || showsProjectEditingActions {
+                            Divider()
+                        }
+
+                        let isFollowing = myWorkStore.isFollowing(project.id)
+                        Button(
+                            isFollowing
+                                ? "Remove \(project.title) from My Work"
+                                : "Add \(project.title) to My Work",
+                            systemImage: "briefcase",
+                            action: toggleFollowingProject
+                        )
+                    }
+                    .labelStyle(.iconOnly)
+                    .help("Project Actions")
+                }
             }
         }
+    }
+
+    private var projectURL: URL? {
+        guard let url = store.selectedProject?.url, url.isEmpty == false else { return nil }
+        return URL(string: url)
+    }
+
+    private var refreshHelp: String {
+        guard let lastUpdated = store.lastUpdated else { return "Refresh Project" }
+        let updated = lastUpdated.formatted(.relative(presentation: .named))
+        return "Refresh Project — Updated \(updated)"
+    }
+
+    private var commandContext: WorkspaceCommandContext {
+        var context = WorkspaceCommandContext(
+            refresh: .init(
+                id: "refresh-project",
+                title: "Refresh Project",
+                isEnabled: isRefreshing == false && isSelecting == false,
+                perform: refresh
+            )
+        )
+
+        context.toggleSelection = showsProjectEditingActions
+            ? .init(
+                id: "toggle-selection",
+                title: isSelecting ? "Done Selecting" : "Select Items",
+                isEnabled: isSelecting || canEditSelectedProject,
+                perform: toggleSelectionMode
+            )
+            : nil
+
+        if isSelecting {
+            let canWork = selectedItemIDs.isEmpty == false && isBulkWorking == false
+            context.moveSelection = (store.selectedProject?.statusOptions ?? []).map { status in
+                .init(
+                    id: "move-selection-\(status.id)",
+                    title: status.name,
+                    isEnabled: canWork,
+                    perform: { moveSelection(to: status) }
+                )
+            }
+            context.archiveSelection = .init(
+                id: "archive-selection",
+                title: "Archive Selected Items",
+                isEnabled: canWork,
+                perform: archiveSelection
+            )
+            return context
+        }
+
+        if showsProjectEditingActions {
+            context.addItem = .init(
+                id: "add-item",
+                title: "Add Item…",
+                isEnabled: canEditSelectedProject,
+                perform: showAddItem
+            )
+        }
+
+        if let project = store.selectedProject {
+            let isFollowing = myWorkStore.isFollowing(project.id)
+            context.toggleFollowing = .init(
+                id: "toggle-following",
+                title: isFollowing
+                    ? "Remove \(project.title) from My Work"
+                    : "Add \(project.title) to My Work",
+                perform: toggleFollowingProject
+            )
+        }
+
+        if projectURL != nil {
+            context.openInGitHub = .init(
+                id: "open-project-in-github",
+                title: "Open Project in GitHub",
+                perform: openProjectInGitHub
+            )
+        }
+
+        return context
+    }
+
+    private func showAddItem() {
+        showsAddItem = true
+    }
+
+    private func toggleSelectionMode() {
+        isSelecting.toggle()
+        if isSelecting {
+            searchText = ""
+        } else {
+            selectedItemIDs.removeAll()
+        }
+    }
+
+    private func toggleFollowingProject() {
+        guard let project = store.selectedProject else { return }
+        Task { await toggleFollowing(project) }
+    }
+
+    private func refresh() {
+        guard isRefreshing == false else { return }
+        Task { await store.refresh() }
+    }
+
+    private func openProjectInGitHub() {
+        guard let projectURL else { return }
+        NSWorkspace.shared.open(projectURL)
     }
 
     private var loadingView: some View {
@@ -313,7 +398,13 @@ struct KanbanBoardView: View {
 
     private func boardContent(_ project: Project) -> some View {
         GeometryReader { geometry in
-            ScrollView(.horizontal, showsIndicators: false) {
+            let includesNoStatus = project.noStatusItems.isEmpty == false
+            let columnCount = max(project.statusOptions.count + (includesNoStatus ? 1 : 0), 1)
+            let totalSpacing = CGFloat(columnCount - 1) * 16
+            let availableWidth = geometry.size.width - 32 - totalSpacing
+            let columnWidth = min(420, max(280, availableWidth / CGFloat(columnCount)))
+
+            ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 16) {
                     ForEach(project.statusOptions) { status in
                         let statusItems = filteredItems(for: project.items(forStatus: status.name))
@@ -327,7 +418,7 @@ struct KanbanBoardView: View {
                             selectedItemIDs: $selectedItemIDs,
                             showInspector: { inspectorReference = $0 }
                         )
-                        .frame(height: geometry.size.height - 32)
+                        .frame(width: columnWidth, height: geometry.size.height - 32)
                     }
 
                     let noStatusFiltered = filteredItems(for: project.noStatusItems)
@@ -342,12 +433,11 @@ struct KanbanBoardView: View {
                             selectedItemIDs: $selectedItemIDs,
                             showInspector: { inspectorReference = $0 }
                         )
-                        .frame(height: geometry.size.height - 32)
+                        .frame(width: columnWidth, height: geometry.size.height - 32)
                     }
                 }
                 .padding(16)
             }
-            .scrollIndicators(.never)
         }
     }
 
@@ -425,7 +515,7 @@ struct KanbanColumn: View {
             .padding(.vertical, 12)
 
             // Cards
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView(.vertical) {
                 LazyVStack(spacing: 10) {
                     ForEach(items) { item in
                         if isSelecting {
@@ -466,9 +556,7 @@ struct KanbanColumn: View {
                 }
                 .padding(12)
             }
-            .scrollIndicators(.never)
         }
-        .frame(width: 300)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isTargeted ? statusColor.opacity(0.8) : Color.clear, lineWidth: 2)
@@ -517,184 +605,51 @@ struct KanbanCard: View {
     let onSelect: () -> Void
     let showInspector: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
     @State private var showDeleteConfirmation = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Header with icon and title
-            HStack(alignment: .top, spacing: 8) {
-                itemTypeIcon
-
-                Text(item.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            EngineeringSignalsView(item: item, limit: 2)
-
-            // Footer
-            HStack(spacing: 4) {
-                if let number = item.number {
-                    Text("#\(number)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-
-                if let linkedPR = item.linkedPR {
-                    Text("·")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.quaternary)
-                    Text("PR #\(linkedPR.number)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-
-                Spacer()
-
-                // Assignees
-                if !item.assignees.isEmpty {
-                    HStack(spacing: -5) {
-                        ForEach(item.assignees.prefix(3)) { assignee in
-                            AsyncImage(url: URL(string: assignee.avatarUrl)) { image in
-                                image.resizable().aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Circle().fill(.secondary.opacity(0.3))
-                            }
-                            .frame(width: 20, height: 20)
-                            .clipShape(Circle())
-                            .overlay(
-                                Circle().stroke(Color(nsColor: .controlBackgroundColor), lineWidth: 1.5)
-                            )
-                        }
-
-                        if item.assignees.count > 3 {
-                            Text("+\(item.assignees.count - 3)")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                .padding(.leading, 2)
-                        }
-                    }
+        let styledCard = KanbanCardContent(item: item)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(cardBackground)
+            .overlay(cardBorder)
+            .overlay(alignment: .topTrailing) {
+                if isSelecting {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                        .padding(8)
                 }
             }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .controlBackgroundColor))
-                .shadow(color: .black.opacity(isHovered ? 0.3 : 0.15), radius: isHovered ? 6 : 3, x: 0, y: isHovered ? 3 : 1)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(
-                    isSelected ? Color.accentColor : Color(nsColor: .separatorColor),
-                    lineWidth: isSelected ? 2 : 1
-                )
-        )
-        .overlay(alignment: .topTrailing) {
-            if isSelecting {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                    .padding(8)
+
+        let interactiveCard = styledCard
+            .scaleEffect(isHovered && reduceMotion == false ? 1.01 : 1.0)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isHovered)
+            .onHover { isHovered = $0 }
+            .onTapGesture(perform: activateCard)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityValue(accessibilityValue)
+            .accessibilityHint(isSelecting ? "Toggles selection" : "Shows details")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction {
+                activateCard()
             }
-        }
-        .scaleEffect(isHovered ? 1.01 : 1.0)
-        .animation(.easeOut(duration: 0.15), value: isHovered)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-        .onTapGesture {
-            if isSelecting {
-                onSelect()
-            } else {
-                showInspector()
-            }
-        }
+
+        interactiveCard
         .contextMenu {
-            Button {
-                showInspector()
-            } label: {
-                Label("Show Details", systemImage: "sidebar.right")
-            }
-
-            Button {
-                if let urlString = item.url, let url = URL(string: urlString) {
-                    NSWorkspace.shared.open(url)
-                }
-            } label: {
-                Label("Open in Browser", systemImage: "safari")
-            }
-
-            if store.canEditSelectedProject {
-                Divider()
-
-                Menu {
-                    ForEach(allStatuses) { status in
-                        Button {
-                            Task {
-                                await store.moveItem(item, toStatus: status, in: projectID)
-                            }
-                        } label: {
-                            HStack {
-                                Circle()
-                                    .fill(status.swiftUIColor)
-                                    .frame(width: 8, height: 8)
-                                Text(status.name)
-                                if item.status == status.name {
-                                    Spacer()
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                        .disabled(item.status == status.name)
-                    }
-                } label: {
-                    Label("Move to", systemImage: "arrow.right.circle")
-                }
-
-                Divider()
-
-                if !item.assignees.isEmpty {
-                    Menu {
-                        ForEach(item.assignees) { assignee in
-                            Button {
-                                Task {
-                                    await store.removeAssignee(
-                                        from: item,
-                                        in: projectID,
-                                        user: assignee
-                                    )
-                                }
-                            } label: {
-                                Label(assignee.name ?? assignee.login, systemImage: "person.fill.xmark")
-                            }
-                        }
-                    } label: {
-                        Label("Remove Assignee", systemImage: "person.badge.minus")
-                    }
-
-                    Divider()
-                }
-
-                Button {
-                    Task { _ = await store.archiveItem(item, in: projectID) }
-                } label: {
-                    Label("Archive from Project", systemImage: "archivebox")
-                }
-
-                Divider()
-
-                Button(role: .destructive) {
-                    showDeleteConfirmation = true
-                } label: {
-                    Label("Remove from Project", systemImage: "trash")
-                }
-            }
+            KanbanCardContextMenu(
+                projectID: projectID,
+                item: item,
+                allStatuses: allStatuses,
+                store: store,
+                showDeleteConfirmation: $showDeleteConfirmation,
+                showInspector: showInspector
+            )
         }
         .confirmationDialog(
-            "Remove \"\(item.title)\" from the project?",
+            removalConfirmationTitle,
             isPresented: $showDeleteConfirmation,
             titleVisibility: .visible
         ) {
@@ -707,37 +662,53 @@ struct KanbanCard: View {
         }
     }
 
-    @ViewBuilder
-    private var itemTypeIcon: some View {
-        Group {
-            switch item.contentType {
-            case .issue:
-                Image(systemName: "circle.dotted")
-            case .pullRequest:
-                Image(systemName: "arrow.triangle.merge")
-            case .draftIssue:
-                Image(systemName: "doc.text")
-            case .redacted:
-                Image(systemName: "lock")
-            }
-        }
-        .font(.system(size: 14))
-        .foregroundStyle(stateColor)
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .fill(Color(nsColor: .controlBackgroundColor))
+            .shadow(
+                color: .black.opacity(isHovered ? 0.3 : 0.15),
+                radius: isHovered ? 6 : 3,
+                x: 0,
+                y: isHovered ? 3 : 1
+            )
     }
 
-    private var stateColor: Color {
-        if let state = item.issueState {
-            return state == .open ? .green : .purple
-        }
-        if let state = item.prState {
-            switch state {
-            case .open: return .green
-            case .merged: return .purple
-            case .closed: return .red
-            }
-        }
-        return .secondary
+    private var cardBorder: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .stroke(
+                isSelected ? Color.accentColor : Color(nsColor: .separatorColor),
+                lineWidth: isSelected ? 2 : 1
+            )
     }
+
+    private var accessibilityValue: String {
+        guard isSelecting else { return "" }
+        return isSelected ? "Selected" : "Not selected"
+    }
+
+    private var removalConfirmationTitle: String {
+        "Remove \"\(item.title)\" from the project?"
+    }
+
+    private var accessibilityLabel: String {
+        var parts = [item.title]
+        if let number = item.number {
+            parts.append("Number \(number)")
+        }
+        if let status = item.status {
+            parts.append("Status \(status)")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private func activateCard() {
+        if isSelecting {
+            onSelect()
+        } else {
+            showInspector()
+        }
+    }
+
 }
 
 // MARK: - Drag Preview

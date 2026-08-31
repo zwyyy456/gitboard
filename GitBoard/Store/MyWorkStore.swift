@@ -82,6 +82,32 @@ final class MyWorkStore {
         saveFilters()
     }
 
+    func moveFilters(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        guard offsets.isEmpty == false,
+              offsets.allSatisfy({ filters.indices.contains($0) }),
+              (0...filters.count).contains(destination) else { return }
+
+        let movedFilters = offsets.map { filters[$0] }
+        var reorderedFilters = filters
+        for index in offsets.reversed() {
+            reorderedFilters.remove(at: index)
+        }
+
+        let removedBeforeDestination = offsets.reduce(into: 0) { count, index in
+            if index < destination {
+                count += 1
+            }
+        }
+        reorderedFilters.insert(
+            contentsOf: movedFilters,
+            at: destination - removedBeforeDestination
+        )
+
+        guard reorderedFilters != filters else { return }
+        filters = reorderedFilters
+        saveFilters()
+    }
+
     private func saveFollowedProjects() {
         guard let data = try? JSONEncoder().encode(followedProjects) else { return }
         UserDefaults.standard.set(data, forKey: "followedProjects")
