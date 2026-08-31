@@ -11,9 +11,6 @@ struct MyWorkView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            toolbar
-            Divider()
-
             if let errorMessage = model.myWorkErrorMessage {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -28,12 +25,12 @@ struct MyWorkView: View {
 
             if model.myWorkStore.followedProjects.isEmpty {
                 ContentUnavailableView(
-                    "No Followed Projects",
-                    systemImage: "star",
-                    description: Text("Open a Project Board and click the star to include it in My Work.")
+                    "No Projects in My Work",
+                    systemImage: "briefcase",
+                    description: Text("Open a Project Board and choose Add to My Work from the Project Actions menu.")
                 )
             } else if model.projectStore.isLoadingFollowedProjects && model.myWorkProjects.isEmpty {
-                ProgressView("Loading followed projects…")
+                ProgressView("Loading My Work…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if items.isEmpty {
                 ContentUnavailableView(
@@ -52,45 +49,78 @@ struct MyWorkView: View {
                 .listStyle(.inset)
             }
         }
-        .frame(minWidth: 760, minHeight: 560)
+        .frame(minWidth: 680, minHeight: 560)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                HStack(spacing: 6) {
+                    Label(filter.rawValue, systemImage: filter.icon)
+                    Text("\(items.count)")
+                        .foregroundStyle(.secondary)
+                }
+                .help("\(items.count) items in \(filter.rawValue)")
+            }
+
+            ToolbarItemGroup(placement: .primaryAction) {
+                Menu {
+                    ForEach(model.myWorkStore.followedProjects) { reference in
+                        let title = followedProjectTitle(reference)
+                        Button("Remove \(title) from My Work", role: .destructive) {
+                            stopFollowing(reference)
+                        }
+                    }
+                } label: {
+                    Label(
+                        "Projects \(model.myWorkStore.followedProjects.count)",
+                        systemImage: "briefcase"
+                    )
+                }
+                .disabled(model.myWorkStore.followedProjects.isEmpty)
+                .help("Manage My Work Projects")
+
+                if model.projectStore.isLoadingFollowedProjects {
+                    ProgressView()
+                        .controlSize(.small)
+                        .help("Refreshing My Work")
+                } else {
+                    Button("Refresh My Work", systemImage: "arrow.clockwise", action: refresh)
+                        .labelStyle(.iconOnly)
+                        .help("Refresh My Work")
+                }
+            }
+        }
+        .focusedSceneValue(\.workspaceCommandContext, commandContext)
     }
 
-    private var toolbar: some View {
-        HStack(spacing: 12) {
-            Label(filter.rawValue, systemImage: filter.icon)
-                .font(.title3.bold())
-
-            Text("\(items.count)")
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
-
-            Spacer()
-
-            Menu {
-                ForEach(model.myWorkStore.followedProjects) { reference in
-                    let title = model.projectStore.followedProject(id: reference.id)?.title
-                        ?? reference.displayTitle
-                        ?? reference.owner.login
-                    Button("Stop Following \(title)", role: .destructive) {
-                        Task { await model.stopFollowing(reference) }
-                    }
-                }
-            } label: {
-                Label("Following \(model.myWorkStore.followedProjects.count)", systemImage: "star.fill")
+    private var commandContext: WorkspaceCommandContext {
+        WorkspaceCommandContext(
+            refresh: .init(
+                id: "refresh-my-work",
+                title: "Refresh My Work",
+                isEnabled: model.projectStore.isLoadingFollowedProjects == false,
+                perform: refresh
+            ),
+            stopFollowing: model.myWorkStore.followedProjects.map { reference in
+                .init(
+                    id: "stop-following-\(reference.id)",
+                    title: "Remove \(followedProjectTitle(reference)) from My Work",
+                    perform: { stopFollowing(reference) }
+                )
             }
-            .disabled(model.myWorkStore.followedProjects.isEmpty)
+        )
+    }
 
-            Button {
-                Task { await model.refreshMyWork() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.borderless)
-            .disabled(model.projectStore.isLoadingFollowedProjects)
-            .help("Refresh My Work")
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+    private func followedProjectTitle(_ reference: FollowedProject) -> String {
+        model.projectStore.followedProject(id: reference.id)?.title
+            ?? reference.displayTitle
+            ?? reference.owner.login
+    }
+
+    private func refresh() {
+        Task { await model.refreshMyWork() }
+    }
+
+    private func stopFollowing(_ reference: FollowedProject) {
+        Task { await model.stopFollowing(reference) }
     }
 
     private func openProject(_ project: Project) {
