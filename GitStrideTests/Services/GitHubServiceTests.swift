@@ -105,6 +105,7 @@ struct GitHubServiceTests {
             projectId: "PROJECT_1",
             repository: "acme/widgets",
             title: "Repair login",
+            body: "Login fails after token refresh.",
             labels: ["bug"],
             assignees: ["octocat"]
         )
@@ -114,9 +115,33 @@ struct GitHubServiceTests {
         #expect(calls.count == 3)
         #expect(calls[0].contains("acme/widgets"))
         #expect(calls[0].contains("Repair login"))
+        let bodyFlagIndex = try #require(calls[0].firstIndex(of: "--body"))
+        try #require(calls[0].indices.contains(bodyFlagIndex + 1))
+        #expect(calls[0][bodyFlagIndex + 1] == "Login fails after token refresh.")
         #expect(calls[1].contains("repos/acme/widgets/issues/42"))
         #expect(calls[2].contains("contentId=ISSUE_NODE_42"))
         #expect(calls[2].contains("projectId=PROJECT_1"))
+    }
+
+    @Test func createdDraftIncludesItsDescription() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [
+            #"{"data":{"addProjectV2DraftIssue":{"projectItem":{"id":"DRAFT_1"}}}}"#
+        ])
+        let service = GitHubService(runner: runner)
+
+        let draftID = try await service.createDraftIssue(
+            projectId: "PROJECT_1",
+            title: "Plan migration",
+            body: "Capture compatibility constraints."
+        )
+        let calls = await runner.recordedArguments()
+
+        #expect(draftID == "DRAFT_1")
+        #expect(calls.count == 1)
+        #expect(calls[0].contains { $0.contains("body: $body") })
+        #expect(calls[0].contains("body=Capture compatibility constraints."))
+        #expect(calls[0].contains("projectId=PROJECT_1"))
+        #expect(calls[0].contains("title=Plan migration"))
     }
 
     @Test func itemDetailDecodesIssuePullRequestAndDraftAuthors() async throws {
