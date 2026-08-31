@@ -499,10 +499,10 @@ actor GitHubService {
         ])
     }
 
-    func createDraftIssue(projectId: String, title: String) async throws -> String {
+    func createDraftIssue(projectId: String, title: String, body: String) async throws -> String {
         let payload: DraftIssuePayload = try await request(
             GraphQLQueries.addDraftIssue,
-            variables: ["projectId": projectId, "title": title],
+            variables: ["projectId": projectId, "title": title, "body": body],
             as: DraftIssuePayload.self
         )
         return payload.addProjectV2DraftIssue.projectItem.id
@@ -512,6 +512,7 @@ actor GitHubService {
         projectId: String,
         repository: String,
         title: String,
+        body: String,
         labels: [String] = [],
         assignees: [String] = []
     ) async throws -> String {
@@ -522,7 +523,7 @@ actor GitHubService {
             "issue", "create",
             "--repo", repository,
             "--title", title,
-            "--body", ""
+            "--body", body
         ]
 
         if labels.isEmpty == false {

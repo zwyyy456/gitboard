@@ -1088,6 +1088,7 @@ final class ProjectStore {
     func createIssueAndAdd(
         repository: String,
         title: String,
+        body: String,
         labels: [String],
         assignees: [String],
         status: String? = nil,
@@ -1117,6 +1118,7 @@ final class ProjectStore {
                 projectId: project.id,
                 repository: repository,
                 title: title,
+                body: body,
                 labels: labels,
                 assignees: assignees
             )
@@ -1149,12 +1151,16 @@ final class ProjectStore {
         }
     }
 
-    func createDraftIssue(title: String) async -> Bool {
+    func createDraftIssue(title: String, body: String) async -> Bool {
         guard let project = editableSelectedProject() else { return false }
         operationErrorMessage = nil
 
         do {
-            _ = try await gitHubService.createDraftIssue(projectId: project.id, title: title)
+            _ = try await gitHubService.createDraftIssue(
+                projectId: project.id,
+                title: title,
+                body: body
+            )
             await refresh()
             return true
         } catch is CancellationError {

@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct AddProjectItemView: View {
-    static let presentationSize = CGSize(width: 520, height: 420)
+    static let sheetWidth: CGFloat = 560
+    static let windowDefaultSize = CGSize(width: 560, height: 620)
+    static let windowMinimumSize = CGSize(width: 520, height: 500)
 
     enum Presentation {
         case sheet
@@ -18,6 +20,7 @@ struct AddProjectItemView: View {
     @State private var itemType: NewItemType = .issue
     @State private var repository = ""
     @State private var title = ""
+    @State private var bodyText = ""
     @State private var quickEntry = ""
     @State private var status = ""
     @State private var priority = ""
@@ -141,6 +144,16 @@ struct AddProjectItemView: View {
                 actionBar
             }
         }
+        .frame(
+            width: presentation == .sheet ? Self.sheetWidth : nil,
+            height: presentation == .sheet ? preferredSheetHeight : nil
+        )
+        .frame(
+            minWidth: presentation == .window ? Self.windowMinimumSize.width : nil,
+            idealWidth: presentation == .window ? Self.windowDefaultSize.width : nil,
+            minHeight: presentation == .window ? Self.windowMinimumSize.height : nil,
+            idealHeight: presentation == .window ? Self.windowDefaultSize.height : nil
+        )
         .task {
             validationMessage = nil
             store.clearOperationError()
@@ -229,8 +242,26 @@ struct AddProjectItemView: View {
                         .focused($focusedField, equals: .title)
                 }
 
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 5) {
+                        Text("Description")
+                            .font(.subheadline)
+                        Text("Optional")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    TextField(
+                        "Add context, acceptance criteria, or implementation notes",
+                        text: $bodyText,
+                        axis: .vertical
+                    )
+                    .lineLimit(4...8)
+                    .accessibilityLabel("Description, optional")
+                }
+
                 if itemType == .issue {
-                    DisclosureGroup("Additional Details", isExpanded: $showsMoreOptions) {
+                    DisclosureGroup("Issue Options", isExpanded: $showsMoreOptions) {
                         VStack(alignment: .leading, spacing: 12) {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Labels")
@@ -420,6 +451,15 @@ struct AddProjectItemView: View {
         isWorking || title.trimmed.isEmpty || (itemType == .issue && repository.trimmed.isEmpty)
     }
 
+    private var preferredSheetHeight: CGFloat {
+        switch mode {
+        case .create:
+            return showsMoreOptions ? 700 : 560
+        case .existing, .quickEntry:
+            return 560
+        }
+    }
+
     private var statusOptions: [String] {
         store.selectedProject?.statusOptions.map(\.name) ?? []
     }
@@ -442,11 +482,15 @@ struct AddProjectItemView: View {
         Task {
             let succeeded: Bool
             if itemType == .draft {
-                succeeded = await store.createDraftIssue(title: title.trimmed)
+                succeeded = await store.createDraftIssue(
+                    title: title.trimmed,
+                    body: bodyText
+                )
             } else {
                 succeeded = await store.createIssueAndAdd(
                     repository: repository.trimmed,
                     title: title.trimmed,
+                    body: bodyText,
                     labels: commaSeparated(labels),
                     assignees: commaSeparated(assignees).map(normalizeAssignee),
                     status: status.trimmed.nilIfEmpty,

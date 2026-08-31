@@ -560,8 +560,8 @@ enum GraphQLQueries {
         """
 
     static let addDraftIssue = """
-        mutation($projectId: ID!, $title: String!) {
-            addProjectV2DraftIssue(input: { projectId: $projectId, title: $title }) {
+        mutation($projectId: ID!, $title: String!, $body: String!) {
+            addProjectV2DraftIssue(input: { projectId: $projectId, title: $title, body: $body }) {
                 projectItem {
                     id
                 }
