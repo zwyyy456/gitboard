@@ -92,7 +92,6 @@ struct MainWorkspaceView: View {
                         }
                     }
                 }
-                .frame(minWidth: detailPath.isEmpty ? 680 : nil)
                 .navigationDestination(for: ItemInspectorReference.self) { reference in
                     ItemDetailView(
                         store: model.projectStore,
