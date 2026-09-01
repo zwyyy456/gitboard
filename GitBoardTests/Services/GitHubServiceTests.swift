@@ -391,6 +391,38 @@ struct ProjectCacheTests {
 
 @MainActor
 struct ProjectStoreTests {
+    @Test func kanbanDefaultsToTheActiveWorkflowStatusesInProjectOrder() {
+        let runner = FixtureGitHubCommandRunner(responses: [])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        let project = Self.kanbanProject()
+
+        #expect(store.visibleKanbanStatuses(in: project).map(\.name) == [
+            "Backlog",
+            "Todo",
+            "In Progress",
+            "In Review"
+        ])
+    }
+
+    @Test func kanbanVisibilityCanShowAllButCannotHideTheFinalColumn() throws {
+        let runner = FixtureGitHubCommandRunner(responses: [])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        let project = Self.kanbanProject()
+
+        store.showAllKanbanStatuses(in: project)
+        #expect(store.visibleKanbanStatuses(in: project).count == project.statusOptions.count)
+
+        for status in project.statusOptions.dropLast() {
+            store.setKanbanStatus(status, visible: false, in: project)
+        }
+        let finalStatus = try #require(project.statusOptions.last)
+        store.setKanbanStatus(finalStatus, visible: false, in: project)
+
+        #expect(store.visibleKanbanStatuses(in: project) == [finalStatus])
+    }
+
     @Test func loadedEmptyProjectIsNotFetchedAgainWhenReselected() async throws {
         let runner = FixtureGitHubCommandRunner(responses: Self.emptyProjectResponses)
         let (store, cleanup) = makeStore(runner: runner)
@@ -579,6 +611,28 @@ struct ProjectStoreTests {
         firstProjectFieldsResponse,
         emptyItemsResponse
     ]
+
+    private static func kanbanProject() -> Project {
+        let statuses = [
+            ("DONE", "Done"),
+            ("BACKLOG", "Backlog"),
+            ("TODO", "Todo"),
+            ("IN_PROGRESS", "In Progress"),
+            ("IN_REVIEW", "In Review"),
+            ("CANCELED", "Canceled")
+        ].map { id, name in
+            StatusOption(id: id, name: name, color: "GRAY")
+        }
+        return Project(
+            id: "KANBAN_PROJECT",
+            owner: ProjectOwner(id: "OWNER", login: "owner", name: nil, kind: .user),
+            title: "Kanban",
+            number: 1,
+            url: "https://github.com/users/owner/projects/1",
+            viewerCanUpdate: true,
+            statusField: StatusField(id: "STATUS", name: "Status", options: statuses)
+        )
+    }
 
     private static func detailItem(updatedAt: String) -> ProjectItem {
         ProjectItem(
