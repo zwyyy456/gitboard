@@ -183,7 +183,7 @@ extension Collection where Element == ProjectItem {
     }
 }
 
-struct ItemInspectorReference: Identifiable, Hashable {
+struct ItemInspectorReference: Identifiable, Hashable, Codable {
     let projectID: String
     let itemID: String
 
