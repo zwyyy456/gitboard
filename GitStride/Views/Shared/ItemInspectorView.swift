@@ -7,7 +7,12 @@ struct ItemDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @State private var isInspectorPresented = true
+    @State private var inspectorWidth: CGFloat = 300
+    @State private var pendingInspectorWidthUpdate: Task<Void, Never>?
     @State private var isArchiving = false
+
+    private static let inspectorMinimumWidth: CGFloat = 260
+    private static let inspectorMaximumWidth: CGFloat = 360
 
     private var item: ProjectItem? { store.item(for: reference) }
     private var isRefreshing: Bool { store.isRefreshingItem(reference) }
@@ -24,7 +29,10 @@ struct ItemDetailView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(minWidth: 560, minHeight: 520)
+        .frame(
+            minWidth: allowsOpeningNewWindow ? nil : 560,
+            minHeight: 520
+        )
         .navigationTitle(item?.title ?? "Item")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -78,13 +86,32 @@ struct ItemDetailView: View {
                     }
                 }
             }
+
+            ToolbarItem(placement: .primaryAction) {
+                Button(
+                    isInspectorPresented ? "Hide Inspector" : "Show Inspector",
+                    systemImage: "sidebar.right",
+                    action: toggleInspector
+                )
+                .labelStyle(.iconOnly)
+                .help(isInspectorPresented ? "Hide Inspector" : "Show Inspector")
+            }
         }
         .inspector(isPresented: $isInspectorPresented) {
             ItemPropertiesView(
                 store: store,
                 reference: reference
             )
-            .inspectorColumnWidth(min: 260, ideal: 300, max: 360)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { width in
+                scheduleInspectorWidthUpdate(width)
+            }
+            .inspectorColumnWidth(
+                min: Self.inspectorMinimumWidth,
+                ideal: inspectorWidth,
+                max: Self.inspectorMaximumWidth
+            )
         }
         .focusedValue(\.workspaceCommandContext, commandContext)
         .task(id: item?.contentId) {
@@ -93,7 +120,10 @@ struct ItemDetailView: View {
                 await store.loadItemDetail(for: item)
             }
         }
-        .onDisappear { store.clearOperationError() }
+        .onDisappear {
+            pendingInspectorWidthUpdate?.cancel()
+            store.clearOperationError()
+        }
     }
 
     private var itemURL: URL? {
@@ -153,7 +183,24 @@ struct ItemDetailView: View {
     }
 
     private func toggleInspector() {
-        isInspectorPresented.toggle()
+        pendingInspectorWidthUpdate?.cancel()
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            isInspectorPresented.toggle()
+        }
+    }
+
+    private func scheduleInspectorWidthUpdate(_ width: CGFloat) {
+        guard isInspectorPresented,
+              Self.inspectorMinimumWidth...Self.inspectorMaximumWidth ~= width else { return }
+
+        pendingInspectorWidthUpdate?.cancel()
+        pendingInspectorWidthUpdate = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard Task.isCancelled == false, isInspectorPresented else { return }
+            inspectorWidth = width
+        }
     }
 
     private func archiveItem() {
