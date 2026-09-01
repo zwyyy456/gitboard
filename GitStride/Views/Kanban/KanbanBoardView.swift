@@ -8,8 +8,13 @@ struct KanbanBoardView: View {
     @Binding var searchText: String
     @Binding var isSelecting: Bool
     @State private var showsAddItem = false
+    @State private var showsStatusFilter = false
     @State private var selectedItemIDs: Set<String> = []
     @State private var isBulkWorking = false
+
+    private static let minimumColumnWidth: CGFloat = 280
+    private static let idealOverflowColumnWidth: CGFloat = 320
+    private static let maximumColumnWidth: CGFloat = 420
 
     private var canEditSelectedProject: Bool {
         store.canEditSelectedProject
@@ -47,9 +52,11 @@ struct KanbanBoardView: View {
             .onChange(of: store.selectedProjectId) { _, _ in
                 searchText = ""
                 isSelecting = false
+                showsStatusFilter = false
                 selectedItemIDs.removeAll()
             }
             .onChange(of: isSelecting) { _, isSelecting in
+                showsStatusFilter = false
                 if isSelecting == false {
                     selectedItemIDs.removeAll()
                 }
@@ -86,7 +93,7 @@ struct KanbanBoardView: View {
                 selectedProjectContent
             }
         }
-        .frame(minWidth: 680, minHeight: 560)
+        .frame(minHeight: 560)
     }
 
     @ToolbarContentBuilder
@@ -149,39 +156,55 @@ struct KanbanBoardView: View {
                 }
 
                 if let project = store.selectedProject {
-                    Menu("Project Actions", systemImage: "ellipsis.circle") {
-                        if projectURL != nil {
-                            Button(
-                                "Open Project in GitHub",
-                                systemImage: "arrow.up.right.square",
-                                action: openProjectInGitHub
-                            )
-                        }
-
-                        if showsProjectEditingActions {
-                            Button(
-                                "Select Multiple Items…",
-                                systemImage: "checkmark.circle",
-                                action: toggleSelectionMode
-                            )
-                            .disabled(canEditSelectedProject == false)
-                        }
-
-                        if projectURL != nil || showsProjectEditingActions {
-                            Divider()
-                        }
-
-                        let isFollowing = myWorkStore.isFollowing(project.id)
+                    if projectURL != nil {
                         Button(
-                            isFollowing
-                                ? "Remove \(project.title) from My Work"
-                                : "Add \(project.title) to My Work",
-                            systemImage: "briefcase",
-                            action: toggleFollowingProject
+                            "Open Project in GitHub",
+                            systemImage: "arrow.up.right.square",
+                            action: openProjectInGitHub
                         )
+                        .labelStyle(.iconOnly)
+                        .help("Open Project in GitHub")
                     }
+
+                    if showsProjectEditingActions {
+                        Button(
+                            "Select Multiple Items",
+                            systemImage: "checkmark.circle",
+                            action: toggleSelectionMode
+                        )
+                        .labelStyle(.iconOnly)
+                        .disabled(canEditSelectedProject == false)
+                        .help("Select Multiple Items")
+                    }
+
+                    let isFollowing = myWorkStore.isFollowing(project.id)
+                    let followLabel = isFollowing
+                        ? "Remove \(project.title) from My Work"
+                        : "Add \(project.title) to My Work"
+                    Button(
+                        followLabel,
+                        systemImage: "briefcase",
+                        action: toggleFollowingProject
+                    )
                     .labelStyle(.iconOnly)
-                    .help("Project Actions")
+                    .help(followLabel)
+                }
+            }
+
+            if let project = store.selectedProject,
+               project.statusOptions.isEmpty == false {
+                ToolbarItem(placement: .automatic) {
+                    Button(
+                        "Filter Statuses",
+                        systemImage: statusFilterSystemImage(for: project),
+                        action: toggleStatusFilter
+                    )
+                    .labelStyle(.iconOnly)
+                    .help(statusFilterHelp(for: project))
+                    .accessibilityValue(statusFilterAccessibilityValue(for: project))
+                    .popover(isPresented: $showsStatusFilter, arrowEdge: .top) {
+                        StatusColumnFilterView(store: store, project: project)
+                    }
                 }
             }
         }
@@ -395,15 +418,19 @@ struct KanbanBoardView: View {
 
     private func boardContent(_ project: Project) -> some View {
         GeometryReader { geometry in
+            let visibleStatuses = store.visibleKanbanStatuses(in: project)
             let includesNoStatus = project.noStatusItems.isEmpty == false
-            let columnCount = max(project.statusOptions.count + (includesNoStatus ? 1 : 0), 1)
+            let columnCount = max(visibleStatuses.count + (includesNoStatus ? 1 : 0), 1)
             let totalSpacing = CGFloat(columnCount - 1) * 16
             let availableWidth = geometry.size.width - 32 - totalSpacing
-            let columnWidth = min(420, max(280, availableWidth / CGFloat(columnCount)))
+            let fittingColumnWidth = availableWidth / CGFloat(columnCount)
+            let columnWidth = fittingColumnWidth >= Self.minimumColumnWidth
+                ? min(Self.maximumColumnWidth, fittingColumnWidth)
+                : Self.idealOverflowColumnWidth
 
             ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 16) {
-                    ForEach(project.statusOptions) { status in
+                LazyHStack(alignment: .top, spacing: 16) {
+                    ForEach(visibleStatuses) { status in
                         let statusItems = filteredItems(for: project.items(forStatus: status.name))
                         KanbanColumn(
                             projectID: project.id,
@@ -437,7 +464,44 @@ struct KanbanBoardView: View {
                 }
                 .padding(16)
             }
+            .id(boardScrollIdentity(
+                project: project,
+                visibleStatuses: visibleStatuses,
+                includesNoStatus: includesNoStatus
+            ))
         }
+    }
+
+    private func statusFilterSystemImage(for project: Project) -> String {
+        store.visibleKanbanStatuses(in: project).count == project.statusOptions.count
+            ? "line.3.horizontal.decrease.circle"
+            : "line.3.horizontal.decrease.circle.fill"
+    }
+
+    private func statusFilterHelp(for project: Project) -> String {
+        let hiddenCount = project.statusOptions.count
+            - store.visibleKanbanStatuses(in: project).count
+        return hiddenCount == 0
+            ? "Filter Statuses"
+            : "Filter Statuses — \(hiddenCount) Hidden"
+    }
+
+    private func statusFilterAccessibilityValue(for project: Project) -> String {
+        let visibleCount = store.visibleKanbanStatuses(in: project).count
+        return "\(visibleCount) of \(project.statusOptions.count) statuses shown"
+    }
+
+    private func toggleStatusFilter() {
+        showsStatusFilter.toggle()
+    }
+
+    private func boardScrollIdentity(
+        project: Project,
+        visibleStatuses: [StatusOption],
+        includesNoStatus: Bool
+    ) -> [String] {
+        [project.id, includesNoStatus ? "includes-no-status" : "statuses-only"]
+            + visibleStatuses.map(\.id)
     }
 
     private var selectedItems: [ProjectItem] {

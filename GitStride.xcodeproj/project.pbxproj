@@ -48,6 +48,7 @@
 		A0000045 /* KanbanCardContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000045 /* KanbanCardContextMenu.swift */; };
 		A0000046 /* KanbanCardContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000046 /* KanbanCardContent.swift */; };
 		A0000047 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A1000047 /* AppIcon.icon */; };
+		A0000048 /* StatusColumnFilterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000048 /* StatusColumnFilterView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -105,6 +106,7 @@
 		A1000045 /* KanbanCardContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardContextMenu.swift; sourceTree = "<group>"; };
 		A1000046 /* KanbanCardContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardContent.swift; sourceTree = "<group>"; };
 		A1000047 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		A1000048 /* StatusColumnFilterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusColumnFilterView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -218,6 +220,7 @@
 				A1000012 /* KanbanBoardView.swift */,
 				A1000045 /* KanbanCardContextMenu.swift */,
 				A1000046 /* KanbanCardContent.swift */,
+				A1000048 /* StatusColumnFilterView.swift */,
 			);
 			path = Kanban;
 			sourceTree = "<group>";
@@ -410,6 +413,7 @@
 				A0000012 /* KanbanBoardView.swift in Sources */,
 				A0000045 /* KanbanCardContextMenu.swift in Sources */,
 				A0000046 /* KanbanCardContent.swift in Sources */,
+				A0000048 /* StatusColumnFilterView.swift in Sources */,
 				A0000030 /* MainWorkspaceView.swift in Sources */,
 				A0000031 /* MyWorkView.swift in Sources */,
 				A0000025 /* AddProjectItemView.swift in Sources */,
