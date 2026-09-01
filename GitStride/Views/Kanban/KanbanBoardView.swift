@@ -4,12 +4,12 @@ struct KanbanBoardView: View {
     @Bindable var store: ProjectStore
     @Bindable var myWorkStore: MyWorkStore
     let toggleFollowing: (Project) async -> Void
+    let showItemDetail: (ItemInspectorReference) -> Void
     @Binding var searchText: String
     @Binding var isSelecting: Bool
     @State private var showsAddItem = false
     @State private var selectedItemIDs: Set<String> = []
     @State private var isBulkWorking = false
-    @State private var inspectorReference: ItemInspectorReference?
 
     private var canEditSelectedProject: Bool {
         store.canEditSelectedProject
@@ -43,9 +43,6 @@ struct KanbanBoardView: View {
             .focusedSceneValue(\.workspaceCommandContext, commandContext)
             .sheet(isPresented: $showsAddItem) {
                 AddProjectItemView(store: store)
-            }
-            .sheet(item: $inspectorReference) { reference in
-                ItemInspectorView(store: store, reference: reference)
             }
             .onChange(of: store.selectedProjectId) { _, _ in
                 searchText = ""
@@ -412,11 +409,12 @@ struct KanbanBoardView: View {
                             projectID: project.id,
                             status: status,
                             items: statusItems,
+                            emptyMessage: searchText.isEmpty ? "No items" : "No matching items",
                             allStatuses: project.statusOptions,
                             store: store,
                             isSelecting: isSelecting,
                             selectedItemIDs: $selectedItemIDs,
-                            showInspector: { inspectorReference = $0 }
+                            showInspector: showItemDetail
                         )
                         .frame(width: columnWidth, height: geometry.size.height - 32)
                     }
@@ -427,11 +425,12 @@ struct KanbanBoardView: View {
                             projectID: project.id,
                             status: nil,
                             items: noStatusFiltered,
+                            emptyMessage: searchText.isEmpty ? "No items" : "No matching items",
                             allStatuses: project.statusOptions,
                             store: store,
                             isSelecting: isSelecting,
                             selectedItemIDs: $selectedItemIDs,
-                            showInspector: { inspectorReference = $0 }
+                            showInspector: showItemDetail
                         )
                         .frame(width: columnWidth, height: geometry.size.height - 32)
                     }
@@ -474,6 +473,7 @@ struct KanbanColumn: View {
     let projectID: String
     let status: StatusOption?
     let items: [ProjectItem]
+    let emptyMessage: String
     let allStatuses: [StatusOption]
     @Bindable var store: ProjectStore
     let isSelecting: Bool
@@ -516,40 +516,48 @@ struct KanbanColumn: View {
 
             // Cards
             ScrollView(.vertical) {
-                LazyVStack(spacing: 10) {
-                    ForEach(items) { item in
-                        if isSelecting {
-                            KanbanCard(
-                                projectID: projectID,
-                                item: item,
-                                allStatuses: allStatuses,
-                                store: store,
-                                isSelecting: true,
-                                isSelected: selectedItemIDs.contains(item.id)
-                            ) {
-                                toggleSelection(item.id)
-                            } showInspector: {
-                                showInspector(
-                                    ItemInspectorReference(projectID: projectID, itemID: item.id)
-                                )
-                            }
-                        } else {
-                            KanbanCard(
-                                projectID: projectID,
-                                item: item,
-                                allStatuses: allStatuses,
-                                store: store,
-                                isSelecting: false,
-                                isSelected: false,
-                                onSelect: {},
-                                showInspector: {
+                LazyVStack(spacing: 8) {
+                    if items.isEmpty {
+                        Text(emptyMessage)
+                            .font(.callout)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 24)
+                    } else {
+                        ForEach(items) { item in
+                            if isSelecting {
+                                KanbanCard(
+                                    projectID: projectID,
+                                    item: item,
+                                    allStatuses: allStatuses,
+                                    store: store,
+                                    isSelecting: true,
+                                    isSelected: selectedItemIDs.contains(item.id)
+                                ) {
+                                    toggleSelection(item.id)
+                                } showInspector: {
                                     showInspector(
                                         ItemInspectorReference(projectID: projectID, itemID: item.id)
                                     )
                                 }
-                            )
-                            .draggable(item.id) {
-                                KanbanCardPreview(item: item)
+                            } else {
+                                KanbanCard(
+                                    projectID: projectID,
+                                    item: item,
+                                    allStatuses: allStatuses,
+                                    store: store,
+                                    isSelecting: false,
+                                    isSelected: false,
+                                    onSelect: {},
+                                    showInspector: {
+                                        showInspector(
+                                            ItemInspectorReference(projectID: projectID, itemID: item.id)
+                                        )
+                                    }
+                                )
+                                .draggable(item.id) {
+                                    KanbanCardPreview(item: item)
+                                }
                             }
                         }
                     }
@@ -610,34 +618,27 @@ struct KanbanCard: View {
     @State private var showDeleteConfirmation = false
 
     var body: some View {
-        let styledCard = KanbanCardContent(item: item)
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(cardBackground)
-            .overlay(cardBorder)
-            .overlay(alignment: .topTrailing) {
-                if isSelecting {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                        .padding(8)
+        Button(action: activateCard) {
+            KanbanCardContent(item: item)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(cardBackground)
+                .overlay(cardBorder)
+                .overlay(alignment: .topTrailing) {
+                    if isSelecting {
+                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                            .padding(8)
+                    }
                 }
-            }
-
-        let interactiveCard = styledCard
-            .scaleEffect(isHovered && reduceMotion == false ? 1.01 : 1.0)
+        }
+            .buttonStyle(.plain)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isHovered)
             .onHover { isHovered = $0 }
-            .onTapGesture(perform: activateCard)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityValue(accessibilityValue)
             .accessibilityHint(isSelecting ? "Toggles selection" : "Shows details")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction {
-                activateCard()
-            }
-
-        interactiveCard
         .contextMenu {
             KanbanCardContextMenu(
                 projectID: projectID,
@@ -665,18 +666,26 @@ struct KanbanCard: View {
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 10)
             .fill(Color(nsColor: .controlBackgroundColor))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isHovered ? Color.accentColor.opacity(0.06) : Color.clear)
+            }
             .shadow(
-                color: .black.opacity(isHovered ? 0.3 : 0.15),
-                radius: isHovered ? 6 : 3,
+                color: .black.opacity(0.06),
+                radius: 1,
                 x: 0,
-                y: isHovered ? 3 : 1
+                y: 1
             )
     }
 
     private var cardBorder: some View {
         RoundedRectangle(cornerRadius: 10)
             .stroke(
-                isSelected ? Color.accentColor : Color(nsColor: .separatorColor),
+                isSelected
+                    ? Color.accentColor
+                    : (isHovered
+                        ? Color.accentColor.opacity(0.45)
+                        : Color(nsColor: .separatorColor)),
                 lineWidth: isSelected ? 2 : 1
             )
     }

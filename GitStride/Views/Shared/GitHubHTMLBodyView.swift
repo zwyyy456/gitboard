@@ -109,8 +109,9 @@ struct GitHubHTMLBodyView: NSViewRepresentable {
                 :root { color-scheme: light dark; }
                 * { box-sizing: border-box; }
                 body {
-                  margin: 0;
-                  padding: 20px;
+                  max-width: 760px;
+                  margin: 0 auto;
+                  padding: 24px 24px 48px;
                   color: #1f2328;
                   background: transparent;
                   font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;

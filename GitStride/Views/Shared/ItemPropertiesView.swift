@@ -3,12 +3,16 @@ import SwiftUI
 struct ItemPropertiesView: View {
     @Bindable var store: ProjectStore
     let reference: ItemInspectorReference
-    @Environment(\.dismiss) private var dismiss
 
     @State private var userQuery = ""
     @State private var userResults: [Assignee] = []
     @State private var labelName = ""
     @State private var isWorking = false
+    @State private var isSearchingUsers = false
+    @State private var hasSearchedUsers = false
+    @State private var userSearchGeneration = 0
+    @State private var showsAssigneePicker = false
+    @State private var showsLabelPicker = false
     @State private var relationEditor: IssueRelationKind?
 
     private var project: Project? { store.project(id: reference.projectID) }
@@ -42,13 +46,6 @@ struct ItemPropertiesView: View {
                             .textSelection(.enabled)
                     }
 
-                    if canEdit {
-                        Divider()
-                        Button("Archive from Project", systemImage: "archivebox") {
-                            archive(item)
-                        }
-                        .disabled(isWorking)
-                    }
                 }
                 .padding(20)
             }
@@ -96,7 +93,7 @@ struct ItemPropertiesView: View {
 
     @ViewBuilder
     private func issueSection(_ item: ProjectItem) -> some View {
-        propertySection("Issue") {
+        propertySection("Issue Details") {
             switch store.itemDetailState(for: item) {
             case .idle, .loading:
                 ProgressView()
@@ -421,36 +418,11 @@ struct ItemPropertiesView: View {
             }
 
             if canEdit, item.contentType != .draftIssue {
-                HStack {
-                    TextField("Search GitHub users", text: $userQuery)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { searchUsers() }
-                    Button("Search") { searchUsers() }
-                        .disabled(userQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-
-                ForEach(userResults) { user in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(user.name ?? user.login)
-                            Text("@\(user.login)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button("Add") {
-                            Task {
-                                await store.addAssignee(
-                                    to: item,
-                                    in: reference.projectID,
-                                    user: user
-                                )
-                                userResults.removeAll { $0.id == user.id }
-                            }
-                        }
-                        .disabled(item.assignees.contains { $0.id == user.id })
+                Button("Add Assignee…", systemImage: "plus", action: showAssigneePicker)
+                    .buttonStyle(.borderless)
+                    .popover(isPresented: $showsAssigneePicker) {
+                        assigneePicker(item)
                     }
-                }
             }
         }
     }
@@ -487,15 +459,92 @@ struct ItemPropertiesView: View {
             }
 
             if canEdit {
-                HStack {
-                    TextField("Existing repository label", text: $labelName)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { addLabel(to: item) }
-                    Button("Add") { addLabel(to: item) }
-                        .disabled(labelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
+                Button("Add Label…", systemImage: "plus", action: showLabelPicker)
+                    .buttonStyle(.borderless)
+                    .popover(isPresented: $showsLabelPicker) {
+                        labelPicker(item)
+                    }
             }
         }
+    }
+
+    private func assigneePicker(_ item: ProjectItem) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add Assignee")
+                .font(.headline)
+
+            HStack {
+                TextField("Search GitHub users", text: $userQuery)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { searchUsers() }
+                Button("Search", systemImage: "magnifyingglass", action: searchUsers)
+                    .labelStyle(.iconOnly)
+                    .disabled(
+                        userQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || isSearchingUsers
+                    )
+                    .help("Search GitHub Users")
+            }
+
+            if isSearchingUsers {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel("Searching GitHub users")
+            } else if userResults.isEmpty {
+                Text(hasSearchedUsers ? "No matching users" : "Enter a GitHub login or name.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(userResults) { user in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(user.name ?? user.login)
+                                    Text("@\(user.login)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button("Add") {
+                                    addAssignee(user, to: item)
+                                }
+                                .disabled(item.assignees.contains { $0.id == user.id })
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 240)
+            }
+        }
+        .padding()
+        .frame(width: 320)
+    }
+
+    private func labelPicker(_ item: ProjectItem) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add Label")
+                .font(.headline)
+
+            TextField("Existing repository label", text: $labelName)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { addLabel(to: item) }
+
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) {
+                    showsLabelPicker = false
+                }
+                Button("Add Label") {
+                    addLabel(to: item)
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(labelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding()
+        .frame(width: 320)
     }
 
     @ViewBuilder
@@ -537,8 +586,44 @@ struct ItemPropertiesView: View {
 
     private func searchUsers() {
         let query = userQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard query.isEmpty == false else { return }
-        Task { userResults = await store.searchUsers(query: query) }
+        guard query.isEmpty == false, isSearchingUsers == false else { return }
+        userSearchGeneration += 1
+        let generation = userSearchGeneration
+        isSearchingUsers = true
+        hasSearchedUsers = true
+        Task {
+            let results = await store.searchUsers(query: query)
+            guard generation == userSearchGeneration else { return }
+            if query == userQuery.trimmingCharacters(in: .whitespacesAndNewlines) {
+                userResults = results
+            }
+            isSearchingUsers = false
+        }
+    }
+
+    private func showAssigneePicker() {
+        userQuery = ""
+        userResults = []
+        userSearchGeneration += 1
+        isSearchingUsers = false
+        hasSearchedUsers = false
+        showsAssigneePicker = true
+    }
+
+    private func showLabelPicker() {
+        labelName = ""
+        showsLabelPicker = true
+    }
+
+    private func addAssignee(_ user: Assignee, to item: ProjectItem) {
+        Task {
+            await store.addAssignee(
+                to: item,
+                in: reference.projectID,
+                user: user
+            )
+            userResults.removeAll { $0.id == user.id }
+        }
     }
 
     private func addLabel(to item: ProjectItem) {
@@ -547,6 +632,7 @@ struct ItemPropertiesView: View {
         Task {
             if await store.addLabel(to: item, in: reference.projectID, name: name) {
                 labelName = ""
+                showsLabelPicker = false
             }
         }
     }
@@ -571,14 +657,6 @@ struct ItemPropertiesView: View {
         }
     }
 
-    private func archive(_ item: ProjectItem) {
-        isWorking = true
-        Task {
-            let succeeded = await store.archiveItem(item, in: reference.projectID)
-            isWorking = false
-            if succeeded { dismiss() }
-        }
-    }
 }
 
 private struct IssueRelationEditorView: View {
