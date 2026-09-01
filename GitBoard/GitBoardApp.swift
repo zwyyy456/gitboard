@@ -17,10 +17,14 @@ extension EnvironmentValues {
 struct GitBoardApp: App {
     @State private var model = GitBoardModel()
     @State private var menuBarWindow: NSWindow?
+    @State private var requestedItemReference: ItemInspectorReference?
 
     var body: some Scene {
         Window("GitBoard", id: "kanban-board") {
-            MainWorkspaceView(model: model)
+            MainWorkspaceView(
+                model: model,
+                requestedItemReference: $requestedItemReference
+            )
                 .onAppear {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         NSApp.activate(ignoringOtherApps: true)
@@ -36,7 +40,10 @@ struct GitBoardApp: App {
         }
 
         MenuBarExtra {
-            MenuBarPopoverView(store: model.projectStore)
+            MenuBarPopoverView(
+                store: model.projectStore,
+                requestedItemReference: $requestedItemReference
+            )
                 .environment(\.dismissMenuBar) { @MainActor @Sendable in
                     menuBarWindow?.close()
                 }
@@ -72,6 +79,22 @@ struct GitBoardApp: App {
         }
         .windowResizability(.contentSize)
 
+        WindowGroup("Item Details", id: "item-detail", for: ItemInspectorReference.self) { $reference in
+            NavigationStack {
+                if let reference {
+                    ItemDetailView(
+                        store: model.projectStore,
+                        reference: reference,
+                        allowsOpeningNewWindow: false
+                    )
+                } else {
+                    ContentUnavailableView("Item Unavailable", systemImage: "archivebox")
+                }
+            }
+        }
+        .defaultSize(width: 980, height: 720)
+        .windowResizability(.contentMinSize)
+
         Window("Add to Project", id: "quick-add") {
             QuickAddWindow(model: model)
         }
@@ -94,6 +117,14 @@ private struct GitBoardCommands: Commands {
     @FocusedValue(\.workspaceCommandContext) private var workspaceCommandContext
 
     var body: some Commands {
+        CommandGroup(after: .sidebar) {
+            if let toggleInspector = workspaceCommandContext?.toggleInspector {
+                Button(toggleInspector.title, action: toggleInspector.perform)
+                    .keyboardShortcut("i", modifiers: [.command, .option])
+                    .disabled(toggleInspector.isEnabled == false)
+            }
+        }
+
         CommandMenu("GitBoard") {
             Button("Command Palette…") {
                 openWindow(id: "command-palette")

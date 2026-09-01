@@ -3,6 +3,7 @@ import SwiftUI
 struct MyWorkView: View {
     @Bindable var model: GitBoardModel
     let filter: MyWorkFilter
+    let showItemDetail: (ItemInspectorReference) -> Void
     let didOpenProject: () -> Void
 
     private var items: [MyWorkItem] {
@@ -43,6 +44,7 @@ struct MyWorkView: View {
                     MyWorkRow(
                         workItem: workItem,
                         model: model,
+                        showDetails: { showDetails(workItem) },
                         openProject: { openProject(workItem.project) }
                     )
                 }
@@ -129,54 +131,68 @@ struct MyWorkView: View {
             didOpenProject()
         }
     }
+
+    private func showDetails(_ workItem: MyWorkItem) {
+        showItemDetail(
+            ItemInspectorReference(
+                projectID: workItem.project.id,
+                itemID: workItem.item.id
+            )
+        )
+    }
 }
 
 private struct MyWorkRow: View {
     let workItem: MyWorkItem
     @Bindable var model: GitBoardModel
+    let showDetails: () -> Void
     let openProject: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: workItem.item.contentType == .pullRequest
-                ? "arrow.triangle.pull"
-                : "record.circle")
-                .foregroundStyle(workItem.item.contentType == .pullRequest ? .purple : .green)
-                .frame(width: 18)
+        Button(action: showDetails) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: workItem.item.contentType == .pullRequest
+                    ? "arrow.triangle.pull"
+                    : "record.circle")
+                    .foregroundStyle(workItem.item.contentType == .pullRequest ? .purple : .green)
+                    .frame(width: 18)
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(workItem.item.title)
-                    .font(.body.weight(.medium))
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(workItem.item.title)
+                        .font(.body.weight(.medium))
+                        .lineLimit(2)
 
-                HStack(spacing: 6) {
-                    Text(workItem.project.owner.login)
-                    Text("/")
-                    Text(workItem.project.title)
-                    if let number = workItem.item.number {
-                        Text("#\(number)")
+                    HStack(spacing: 6) {
+                        Text(workItem.project.owner.login)
+                        Text("/")
+                        Text(workItem.project.title)
+                        if let number = workItem.item.number {
+                            Text("#\(number)")
+                        }
+                        if let status = workItem.item.status {
+                            Text(status)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(.secondary.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
                     }
-                    if let status = workItem.item.status {
-                        Text(status)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(.secondary.opacity(0.15))
-                            .clipShape(Capsule())
-                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                    EngineeringSignalsView(item: workItem.item)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
 
-                EngineeringSignalsView(item: workItem.item)
+                Spacer()
             }
-
-            Spacer()
-
-            Button("Open Project") { openProject() }
-                .buttonStyle(.borderless)
+            .contentShape(.rect)
         }
+        .buttonStyle(.plain)
         .padding(.vertical, 5)
+        .accessibilityHint("Shows item details")
         .contextMenu {
+            Button("Show Details", systemImage: "sidebar.right", action: showDetails)
+
             Button("Open Project", systemImage: "rectangle.split.3x1") {
                 openProject()
             }

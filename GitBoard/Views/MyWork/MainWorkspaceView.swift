@@ -2,7 +2,9 @@ import SwiftUI
 
 struct MainWorkspaceView: View {
     @Bindable var model: GitBoardModel
+    @Binding var requestedItemReference: ItemInspectorReference?
     @State private var destination: Destination = .project
+    @State private var detailPath = NavigationPath()
     @State private var projectSearchText = ""
     @State private var isSelectingProjectItems = false
 
@@ -68,21 +70,34 @@ struct MainWorkspaceView: View {
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
         } detail: {
-            switch destination {
-            case .project:
-                KanbanBoardView(
-                    store: model.projectStore,
-                    myWorkStore: model.myWorkStore,
-                    toggleFollowing: { await model.toggleFollowing($0) },
-                    searchText: $projectSearchText,
-                    isSelecting: $isSelectingProjectItems
-                )
-            case .myWork(let filter):
-                MyWorkView(
-                    model: model,
-                    filter: filter
-                ) {
-                    destination = .project
+            NavigationStack(path: $detailPath) {
+                Group {
+                    switch destination {
+                    case .project:
+                        KanbanBoardView(
+                            store: model.projectStore,
+                            myWorkStore: model.myWorkStore,
+                            toggleFollowing: { await model.toggleFollowing($0) },
+                            showItemDetail: showItemDetail,
+                            searchText: $projectSearchText,
+                            isSelecting: $isSelectingProjectItems
+                        )
+                    case .myWork(let filter):
+                        MyWorkView(
+                            model: model,
+                            filter: filter,
+                            showItemDetail: showItemDetail
+                        ) {
+                            destination = .project
+                        }
+                    }
+                }
+                .navigationDestination(for: ItemInspectorReference.self) { reference in
+                    ItemDetailView(
+                        store: model.projectStore,
+                        reference: reference,
+                        allowsOpeningNewWindow: true
+                    )
                 }
             }
         }
@@ -101,9 +116,15 @@ struct MainWorkspaceView: View {
             Task { await model.activateMyWork(accountLogin: login) }
         }
         .onChange(of: destination) { _, destination in
+            detailPath = NavigationPath()
             guard destination != .project else { return }
             projectSearchText = ""
             isSelectingProjectItems = false
+        }
+        .onChange(of: requestedItemReference, initial: true) { _, reference in
+            guard let reference else { return }
+            showItemDetail(reference)
+            requestedItemReference = nil
         }
     }
 
@@ -134,6 +155,11 @@ struct MainWorkspaceView: View {
 
     private func hideFilter(_ filter: MyWorkFilter) {
         setFilterVisible(filter, visible: false)
+    }
+
+    private func showItemDetail(_ reference: ItemInspectorReference) {
+        detailPath = NavigationPath()
+        detailPath.append(reference)
     }
 
     private func setFilterVisible(_ filter: MyWorkFilter, visible: Bool) {

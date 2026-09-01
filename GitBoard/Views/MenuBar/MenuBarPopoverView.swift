@@ -2,13 +2,13 @@ import SwiftUI
 
 struct MenuBarPopoverView: View {
     @Bindable var store: ProjectStore
+    @Binding var requestedItemReference: ItemInspectorReference?
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissMenuBar) private var dismissMenuBar
     @State private var isRefreshing = false
     @State private var isMoreHovered = false
     @State private var searchText = ""
     @State private var keyMonitor: Any?
-    @State private var inspectorReference: ItemInspectorReference?
 
     private var canEditSelectedProject: Bool {
         store.canEditSelectedProject
@@ -31,9 +31,6 @@ struct MenuBarPopoverView: View {
             }
         }
         .frame(width: 400)
-        .sheet(item: $inspectorReference) { reference in
-            ItemInspectorView(store: store, reference: reference)
-        }
         .task {
             if store.projects.isEmpty {
                 await store.loadProjects()
@@ -454,9 +451,11 @@ struct MenuBarPopoverView: View {
                 } else {
                     ForEach(items) { item in
                         ItemRow(item: item, store: store, project: project) {
-                            inspectorReference = ItemInspectorReference(
-                                projectID: project.id,
-                                itemID: item.id
+                            openItemDetails(
+                                ItemInspectorReference(
+                                    projectID: project.id,
+                                    itemID: item.id
+                                )
                             )
                         }
                     }
@@ -478,6 +477,11 @@ struct MenuBarPopoverView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
+    }
+
+    private func openItemDetails(_ reference: ItemInspectorReference) {
+        requestedItemReference = reference
+        openKanbanBoard()
     }
 }
 
@@ -635,6 +639,7 @@ struct ItemRow: View {
     @Bindable var store: ProjectStore
     let project: Project
     let showInspector: () -> Void
+    @Environment(\.openWindow) private var openWindow
 
     @State private var isHovered = false
 
@@ -703,6 +708,8 @@ struct ItemRow: View {
                 Label("Show Details", systemImage: "sidebar.right")
             }
 
+            Button("Open in New Window", systemImage: "macwindow", action: openInNewWindow)
+
             Button {
                 if let urlString = item.url, let url = URL(string: urlString) {
                     NSWorkspace.shared.open(url)
@@ -769,6 +776,13 @@ struct ItemRow: View {
                 }
             }
         }
+    }
+
+    private func openInNewWindow() {
+        openWindow(
+            id: "item-detail",
+            value: ItemInspectorReference(projectID: project.id, itemID: item.id)
+        )
     }
 
     @ViewBuilder

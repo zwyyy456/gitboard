@@ -12,6 +12,7 @@ struct WorkspaceCommandContext {
     var addItem: Action? = nil
     var toggleSelection: Action? = nil
     var toggleFollowing: Action? = nil
+    var toggleInspector: Action? = nil
     var openInGitHub: Action? = nil
     var moveSelection: [Action] = []
     var archiveSelection: Action? = nil

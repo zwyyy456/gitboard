@@ -7,9 +7,12 @@ struct KanbanCardContextMenu: View {
     @Bindable var store: ProjectStore
     @Binding var showDeleteConfirmation: Bool
     let showInspector: () -> Void
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Button("Show Details", systemImage: "sidebar.right", action: showInspector)
+
+        Button("Open in New Window", systemImage: "macwindow", action: openInNewWindow)
 
         Button("Open in Browser", systemImage: "safari", action: openInBrowser)
             .disabled(itemURL == nil)
@@ -67,5 +70,12 @@ struct KanbanCardContextMenu: View {
     private func openInBrowser() {
         guard let itemURL else { return }
         NSWorkspace.shared.open(itemURL)
+    }
+
+    private func openInNewWindow() {
+        openWindow(
+            id: "item-detail",
+            value: ItemInspectorReference(projectID: projectID, itemID: item.id)
+        )
     }
 }

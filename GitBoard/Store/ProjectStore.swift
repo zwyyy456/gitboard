@@ -70,6 +70,7 @@ final class ProjectStore {
     private var itemDetailEntries: [String: ItemDetailEntry] = [:]
     private var itemDetailTasks: [String: Task<ProjectItemDetail, Error>] = [:]
     private var itemDetailGenerations: [String: Int] = [:]
+    private(set) var refreshingItemReferences: Set<ItemInspectorReference> = []
     private var repositoryMilestones: [String: RepositoryMilestonesState] = [:]
 
     private let gitHubService: GitHubService
@@ -150,6 +151,50 @@ final class ProjectStore {
         guard let entry = itemDetailEntries[contentID],
               entry.sourceUpdatedAt == item.updatedAt else { return .idle }
         return entry.state
+    }
+
+    func isRefreshingItem(_ reference: ItemInspectorReference) -> Bool {
+        refreshingItemReferences.contains(reference)
+    }
+
+    func refreshItem(_ reference: ItemInspectorReference) async {
+        guard refreshingItemReferences.contains(reference) == false,
+              let project = project(id: reference.projectID) else { return }
+
+        refreshingItemReferences.insert(reference)
+        operationErrorMessage = nil
+        defer { refreshingItemReferences.remove(reference) }
+
+        do {
+            let refreshedProject = try await gitHubService.fetchProjectWithItems(
+                id: project.id,
+                owner: project.owner
+            )
+            try Task.checkCancellation()
+
+            replaceProject(refreshedProject)
+            lastUpdated = Date()
+
+            if let refreshedItem = item(for: reference) {
+                await loadItemDetail(for: refreshedItem, forceRefresh: true)
+
+                if case .loaded(let detail) = itemDetailState(for: refreshedItem),
+                   let metadata = detail.issueMetadata,
+                   metadata.viewerCanSetMilestone {
+                    await loadMilestones(
+                        repository: metadata.repository,
+                        forceRefresh: true
+                    )
+                }
+            }
+
+            guard Task.isCancelled == false else { return }
+            await persistCache()
+        } catch is CancellationError {
+            return
+        } catch {
+            operationErrorMessage = "Item refresh failed: \(error.localizedDescription)"
+        }
     }
 
     func milestoneState(for repository: String) -> RepositoryMilestonesState {
