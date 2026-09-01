@@ -12,9 +12,10 @@ struct KanbanBoardView: View {
     @State private var selectedItemIDs: Set<String> = []
     @State private var isBulkWorking = false
 
-    private static let minimumColumnWidth: CGFloat = 280
-    private static let idealOverflowColumnWidth: CGFloat = 320
+    private static let minimumColumnWidth: CGFloat = 260
+    private static let idealOverflowColumnWidth: CGFloat = 280
     private static let maximumColumnWidth: CGFloat = 420
+    private static let columnSpacing: CGFloat = 8
 
     private var canEditSelectedProject: Bool {
         store.canEditSelectedProject
@@ -421,7 +422,7 @@ struct KanbanBoardView: View {
             let visibleStatuses = store.visibleKanbanStatuses(in: project)
             let includesNoStatus = project.noStatusItems.isEmpty == false
             let columnCount = max(visibleStatuses.count + (includesNoStatus ? 1 : 0), 1)
-            let totalSpacing = CGFloat(columnCount - 1) * 16
+            let totalSpacing = CGFloat(columnCount - 1) * Self.columnSpacing
             let availableWidth = geometry.size.width - 32 - totalSpacing
             let fittingColumnWidth = availableWidth / CGFloat(columnCount)
             let columnWidth = fittingColumnWidth >= Self.minimumColumnWidth
@@ -429,7 +430,7 @@ struct KanbanBoardView: View {
                 : Self.idealOverflowColumnWidth
 
             ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: 16) {
+                LazyHStack(alignment: .top, spacing: Self.columnSpacing) {
                     ForEach(visibleStatuses) { status in
                         let statusItems = filteredItems(for: project.items(forStatus: status.name))
                         KanbanColumn(
@@ -626,7 +627,7 @@ struct KanbanColumn: View {
                         }
                     }
                 }
-                .padding(12)
+                .padding(8)
             }
         }
         .overlay(

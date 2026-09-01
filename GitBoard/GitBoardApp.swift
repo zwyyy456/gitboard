@@ -31,7 +31,7 @@ struct GitBoardApp: App {
                     }
                 }
         }
-        .defaultSize(width: 1100, height: 700)
+        .defaultSize(width: 1200, height: 800)
         .windowResizability(.contentMinSize)
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
