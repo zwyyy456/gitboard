@@ -72,10 +72,19 @@ final class ProjectStore {
     private var itemDetailGenerations: [String: Int] = [:]
     private(set) var refreshingItemReferences: Set<ItemInspectorReference> = []
     private var repositoryMilestones: [String: RepositoryMilestonesState] = [:]
+    private var hiddenKanbanStatusIDsByProject: [String: Set<String>]
 
     private let gitHubService: GitHubService
     private let projectCache: ProjectCache
     private let defaults: UserDefaults
+
+    private static let defaultVisibleKanbanStatusNames: Set<String> = [
+        "backlog",
+        "todo",
+        "in progress",
+        "in review"
+    ]
+    private static let hiddenKanbanStatusIDsDefaultsKey = "hiddenKanbanStatusIDsByProject"
 
     var selectedProject: Project? {
         guard let id = selectedProjectId else { return nil }
@@ -363,6 +372,57 @@ final class ProjectStore {
         return project.items.filter { $0.status == filter }
     }
 
+    func visibleKanbanStatuses(in project: Project) -> [StatusOption] {
+        let visibleIDs = visibleKanbanStatusIDs(in: project)
+        return project.statusOptions.filter { visibleIDs.contains($0.id) }
+    }
+
+    func visibleKanbanStatusIDs(in project: Project) -> Set<String> {
+        let availableIDs = Set(project.statusOptions.map(\.id))
+        guard availableIDs.isEmpty == false else { return [] }
+
+        if let storedHiddenIDs = hiddenKanbanStatusIDsByProject[project.id] {
+            let visibleIDs = availableIDs.subtracting(storedHiddenIDs)
+            if visibleIDs.isEmpty == false {
+                return visibleIDs
+            }
+        }
+
+        let defaultVisibleIDs = Set(project.statusOptions.compactMap { status in
+            Self.defaultVisibleKanbanStatusNames.contains(Self.normalizedStatusName(status.name))
+                ? status.id
+                : nil
+        })
+        return defaultVisibleIDs.isEmpty ? availableIDs : defaultVisibleIDs
+    }
+
+    func setKanbanStatus(
+        _ status: StatusOption,
+        visible: Bool,
+        in project: Project
+    ) {
+        let availableIDs = Set(project.statusOptions.map(\.id))
+        guard availableIDs.contains(status.id) else { return }
+
+        var hiddenIDs = hiddenKanbanStatusIDsByProject[project.id]
+            ?? defaultHiddenKanbanStatusIDs(in: project)
+        if visible {
+            hiddenIDs.remove(status.id)
+        } else {
+            let visibleIDs = availableIDs.subtracting(hiddenIDs)
+            guard visibleIDs.count > 1 else { return }
+            hiddenIDs.insert(status.id)
+        }
+
+        hiddenKanbanStatusIDsByProject[project.id] = hiddenIDs.intersection(availableIDs)
+        saveHiddenKanbanStatusIDs()
+    }
+
+    func showAllKanbanStatuses(in project: Project) {
+        hiddenKanbanStatusIDsByProject[project.id] = []
+        saveHiddenKanbanStatusIDs()
+    }
+
     var repositorySuggestions: [String] {
         guard let project = selectedProject else { return [] }
         return Array(Set(project.items.compactMap(\.repositoryName))).sorted()
@@ -376,9 +436,43 @@ final class ProjectStore {
         self.gitHubService = gitHubService
         self.projectCache = projectCache
         self.defaults = defaults
+        hiddenKanbanStatusIDsByProject = Self.loadHiddenKanbanStatusIDs(from: defaults)
         selectedOwnerId = defaults.string(forKey: "selectedOwnerId")
         selectedProjectId = defaults.string(forKey: "selectedProjectId")
         selectedStatusFilter = defaults.string(forKey: "selectedStatusFilter")
+    }
+
+    private func defaultHiddenKanbanStatusIDs(in project: Project) -> Set<String> {
+        let visibleIDs = Set(project.statusOptions.compactMap { status in
+            Self.defaultVisibleKanbanStatusNames.contains(Self.normalizedStatusName(status.name))
+                ? status.id
+                : nil
+        })
+        guard visibleIDs.isEmpty == false else { return [] }
+        return Set(project.statusOptions.map(\.id)).subtracting(visibleIDs)
+    }
+
+    private func saveHiddenKanbanStatusIDs() {
+        let persistedSelections = hiddenKanbanStatusIDsByProject.mapValues {
+            Array($0).sorted()
+        }
+        guard let data = try? JSONEncoder().encode(persistedSelections) else { return }
+        defaults.set(data, forKey: Self.hiddenKanbanStatusIDsDefaultsKey)
+    }
+
+    private static func loadHiddenKanbanStatusIDs(
+        from defaults: UserDefaults
+    ) -> [String: Set<String>] {
+        guard let data = defaults.data(forKey: hiddenKanbanStatusIDsDefaultsKey),
+              let persistedSelections = try? JSONDecoder().decode(
+                [String: [String]].self,
+                from: data
+              ) else { return [:] }
+        return persistedSelections.mapValues(Set.init)
+    }
+
+    private static func normalizedStatusName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     func loadProjects() async {
