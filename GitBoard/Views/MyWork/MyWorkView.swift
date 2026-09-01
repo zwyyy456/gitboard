@@ -51,7 +51,7 @@ struct MyWorkView: View {
                 .listStyle(.inset)
             }
         }
-        .frame(minWidth: 680, minHeight: 560)
+        .frame(minHeight: 560)
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 HStack(spacing: 6) {

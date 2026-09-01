@@ -204,6 +204,7 @@ struct ItemPropertiesView: View {
             .foregroundStyle(.secondary)
 
             ProgressView(value: milestone.progressPercentage, total: 100)
+                .frame(maxWidth: 180, alignment: .leading)
                 .accessibilityLabel("Milestone progress")
                 .accessibilityValue("\(Int(milestone.progressPercentage.rounded())) percent")
         }
