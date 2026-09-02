@@ -105,11 +105,11 @@ struct ProjectItem: Identifiable, Codable, Hashable {
     let issueState: IssueState?
     let prState: PullRequestState?
     let updatedAt: String?
-    let status: String?
-    let statusOptionId: String?
-    let assignees: [Assignee]
+    var status: String?
+    var statusOptionId: String?
+    var assignees: [Assignee]
     let labels: [IssueLabel]
-    let fieldValues: [String: ProjectFieldValue]
+    var fieldValues: [String: ProjectFieldValue]
     let linkedPR: LinkedPR?
     let engineeringSignals: EngineeringSignals?
 
