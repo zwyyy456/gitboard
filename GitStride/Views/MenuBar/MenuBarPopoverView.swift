@@ -894,38 +894,3 @@ struct AvatarStack: View {
         }
     }
 }
-
-// MARK: - PR Badge
-
-struct PRBadge: View {
-    let item: ProjectItem
-    @State private var isHovered = false
-
-    var body: some View {
-        Button {
-            if let urlString = item.url, let url = URL(string: urlString) {
-                NSWorkspace.shared.open(url)
-            }
-        } label: {
-            HStack(spacing: 3) {
-                Image(systemName: "arrow.triangle.merge")
-                    .font(.system(size: 9, weight: .semibold))
-                if let number = item.number {
-                    Text("#\(number)")
-                        .font(.system(size: 10, weight: .medium))
-                }
-            }
-            .foregroundStyle(isHovered ? .primary : .secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.secondary.opacity(isHovered ? 0.15 : 0.08))
-            )
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-    }
-}
