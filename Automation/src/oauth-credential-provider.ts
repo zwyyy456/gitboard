@@ -13,6 +13,13 @@ export class OAuthCredentialError extends Error {
     }
 }
 
+export interface AccessTokenProvider {
+    withValidAccessToken<T>(
+        credentialID: string,
+        operation: (accessToken: string) => Promise<T>
+    ): Promise<T>;
+}
+
 interface CredentialRecord {
     id: string;
     encrypted_access_token: string;
@@ -40,7 +47,7 @@ interface RefreshedCredential {
     scopes: string[];
 }
 
-export class OAuthCredentialProvider {
+export class OAuthCredentialProvider implements AccessTokenProvider {
     constructor(
         private readonly database: D1Database,
         private readonly configuration: OAuthProviderConfiguration,
