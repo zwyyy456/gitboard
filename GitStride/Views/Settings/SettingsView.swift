@@ -15,13 +15,19 @@ struct SettingsView: View {
                 }
                 .tag(0)
 
+            AutomationSettingsView(setup: model.automationSetup)
+                .tabItem {
+                    Label("Automation", systemImage: "arrow.triangle.branch")
+                }
+                .tag(2)
+
             AboutView()
                 .tabItem {
                     Label("About", systemImage: "info.circle")
                 }
                 .tag(1)
         }
-        .frame(width: 440, height: 500)
+        .frame(width: 520, height: 560)
     }
 }
 
