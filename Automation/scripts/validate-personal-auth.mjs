@@ -354,7 +354,7 @@ async function clearStatus(token, projectID, itemID, fieldID) {
 }
 
 function printUsage() {
-    console.log(`Usage: node Automation/scripts/validate-personal-auth.mjs [--device-flow] [--rotate-refresh-token] [--gh-control]
+    console.log(`Usage: node Automation/scripts/validate-personal-auth.mjs [--device-flow] [--rotate-refresh-token] [--gh-control | --gh-mapping]
 
 Required environment:
   GB_REPOSITORY                 owner/repository
@@ -387,10 +387,13 @@ async function main() {
         printUsage();
         return;
     }
-    const allowedArguments = new Set(["--device-flow", "--rotate-refresh-token", "--gh-control"]);
+    const allowedArguments = new Set(["--device-flow", "--rotate-refresh-token", "--gh-control", "--gh-mapping"]);
     const unknownArguments = [...argumentsSet].filter((argument) => !allowedArguments.has(argument));
     if (unknownArguments.length) {
         throw new ValidationError(`Unknown argument: ${unknownArguments[0]}`);
+    }
+    if (argumentsSet.has("--gh-control") && argumentsSet.has("--gh-mapping")) {
+        throw new ValidationError("--gh-control and --gh-mapping cannot be used together");
     }
 
     const [repositoryOwner, repositoryName, extraRepositoryPart] = requiredEnvironment("GB_REPOSITORY").split("/");
@@ -439,58 +442,68 @@ async function main() {
     if (oauthIdentity.login.toLowerCase() !== projectOwner.toLowerCase()) {
         throw new ValidationError("OAuth user does not own the configured personal Project");
     }
+    console.log("✓ OAuth token has only the project scope");
     console.log("✓ OAuth identity matches the personal installation owner");
     console.log(`✓ Installation token found ${closingIssueResult.issues.length} closing Issue(s)`);
 
     const project = await loadProject(oauthToken, projectOwner, projectNumber);
     const closingIssueIDs = new Set(closingIssueResult.issues.map((issue) => issue.id));
-    const oauthProjectItems = await loadProjectItems(oauthToken, projectOwner, projectNumber);
-    let item = oauthProjectItems.find(
-        (candidate) => closingIssueIDs.has(candidate.content?.id)
-    ) ?? null;
-    let installationLookupError;
-    if (!item) {
-        let installationItemID;
-        try {
-            installationItemID = await findProjectItemViaInstallation(
-                installationToken,
-                closingIssueIDs,
-                new Set(oauthProjectItems.map((candidate) => candidate.id))
-            );
-        } catch (error) {
-            installationLookupError = error;
+    let item;
+    if (argumentsSet.has("--gh-mapping")) {
+        item = await findProjectItemWithGH(projectOwner, projectNumber, closingIssueIDs);
+        if (!item) {
+            throw new ValidationError("Local gh could not locate a closing Issue's personal Project item");
         }
-        if (installationItemID) {
-            item = oauthProjectItems.find((candidate) => candidate.id === installationItemID);
-            if (!item) {
+        console.log("✓ Local gh supplied the Issue-to-Project-item mapping");
+    } else {
+        const oauthProjectItems = await loadProjectItems(oauthToken, projectOwner, projectNumber);
+        item = oauthProjectItems.find(
+            (candidate) => closingIssueIDs.has(candidate.content?.id)
+        ) ?? null;
+        let installationLookupError;
+        if (!item) {
+            let installationItemID;
+            try {
+                installationItemID = await findProjectItemViaInstallation(
+                    installationToken,
+                    closingIssueIDs,
+                    new Set(oauthProjectItems.map((candidate) => candidate.id))
+                );
+            } catch (error) {
+                installationLookupError = error;
+            }
+            if (installationItemID) {
+                item = oauthProjectItems.find((candidate) => candidate.id === installationItemID);
+                if (!item) {
+                    throw new ValidationError(
+                        "installation token found the Project item, but OAuth could not read it by item ID"
+                    );
+                }
+                console.log("✓ Installation token located the private Issue's personal Project item");
+                console.log("✓ OAuth project-only token read the known Project item by ID");
+            }
+        }
+        if (!item && argumentsSet.has("--gh-control")) {
+            const controlItem = await findProjectItemWithGH(projectOwner, projectNumber, closingIssueIDs);
+            if (controlItem) {
+                const installationDetail = installationLookupError instanceof Error
+                    ? `; installation lookup failed: ${installationLookupError.message}`
+                    : "";
                 throw new ValidationError(
-                    "installation token found the Project item, but OAuth could not read it by item ID"
+                    `neither minimal token could locate a Project item that the local gh repo+project token can see${installationDetail}`
                 );
             }
-            console.log("✓ Installation token located the private Issue's Project item");
-            console.log("✓ OAuth project-only token read the known Project item by ID");
-        }
-    }
-    if (!item && argumentsSet.has("--gh-control")) {
-        const controlItem = await findProjectItemWithGH(projectOwner, projectNumber, closingIssueIDs);
-        if (controlItem) {
-            const installationDetail = installationLookupError instanceof Error
-                ? `; installation lookup failed: ${installationLookupError.message}`
-                : "";
             throw new ValidationError(
-                `neither minimal token could locate a Project item that the local gh repo+project token can see${installationDetail}`
+                "neither project-only OAuth nor the local gh token found the Issue in the configured Project"
             );
         }
-        throw new ValidationError(
-            "neither project-only OAuth nor the local gh token found the Issue in the configured Project"
-        );
-    }
-    if (!item) {
-        if (installationLookupError) throw installationLookupError;
-        throw new ValidationError("Neither minimal token could locate the closing Issue's personal Project item");
-    }
-    if (!installationLookupError && item.content?.id) {
-        console.log("✓ OAuth project-only token located the private Issue's Project item");
+        if (!item) {
+            if (installationLookupError) throw installationLookupError;
+            throw new ValidationError("Neither minimal token could locate the closing Issue's personal Project item");
+        }
+        if (!installationLookupError && item.content?.id) {
+            console.log("✓ OAuth project-only token located the private Issue's personal Project item");
+        }
     }
 
     const originalStatusOptionID = item.fieldValueByName?.optionId ?? null;
@@ -536,7 +549,11 @@ async function main() {
         }
     }
 
-    console.log("Phase 0 personal authorization validation passed");
+    if (argumentsSet.has("--gh-mapping")) {
+        console.log("Boundary 1 known-item mutation validation passed");
+    } else {
+        console.log("Phase 0 personal authorization validation passed");
+    }
 }
 
 main().catch((error) => {

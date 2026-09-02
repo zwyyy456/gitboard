@@ -62,6 +62,30 @@ item ID. If both minimal-token paths fail, `--gh-control` uses the locally
 authenticated `gh` token for a read-only comparison. The token remains in memory
 and is never printed or uploaded.
 
+### Known-item mutation boundary
+
+The local-mapping design has one separate boundary to validate: whether the
+project-only OAuth token can update a private repository's Project item when the
+item ID is already known. Run the same disposable setup with:
+
+```bash
+node Automation/scripts/validate-personal-auth.mjs \
+  --device-flow \
+  --gh-mapping
+```
+
+In this mode, the locally authenticated `gh` token only resolves the closing
+Issue to its Project item ID and reads the original Status. The script then uses
+the OAuth token, whose ordinary scopes must contain only `project`, to change
+the known item and restore its original Status. It deliberately skips both
+minimal-token association lookups so a successful mutation proves this boundary
+directly. Neither token nor the complete Project payload is printed or uploaded.
+
+Success ends with `Boundary 1 known-item mutation validation passed`. A GraphQL
+authorization or node-resolution error at the mutation step means a known item
+ID is insufficient for project-only OAuth and the local-mapping design cannot be
+used for that private item.
+
 For an already-issued token pair, the direct-token form remains available:
 
 ```bash
