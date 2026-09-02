@@ -88,6 +88,17 @@ describe("PersonalProjectGateway", () => {
         ])).rejects.toMatchObject({ code: "OAUTH_SCOPE_MISSING" });
     });
 
+    test("classifies a rate-limited 403 as transient", async () => {
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(projectResponse(
+            { message: "rate limited" },
+            { status: 403, headers: { "Retry-After": "60" } }
+        )));
+
+        await expect(makeGateway(new StubWriter()).applyStatuses(project, [
+            assignment("ISSUE", "owner/repository", "IN_PROGRESS"),
+        ])).rejects.toMatchObject({ code: "TRANSIENT_GITHUB_FAILURE" });
+    });
+
     test("re-resolves once when the looked-up item was deleted", async () => {
         vi.stubGlobal("fetch", vi.fn()
             .mockResolvedValueOnce(projectResponse([item("OLD_ITEM", "ISSUE")]))

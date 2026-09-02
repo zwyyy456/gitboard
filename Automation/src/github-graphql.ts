@@ -45,7 +45,10 @@ export class GitHubGraphQLClient implements GraphQLRequester {
             throw new GitHubGraphQLError("TRANSIENT");
         }
         if (!response.ok) {
-            throw new GitHubGraphQLError(classifyHTTPStatus(response.status), response.status);
+            throw new GitHubGraphQLError(
+                classifyHTTPStatus(response.status, response.headers),
+                response.status
+            );
         }
 
         let body: unknown;
@@ -67,8 +70,12 @@ export class GitHubGraphQLClient implements GraphQLRequester {
     }
 }
 
-function classifyHTTPStatus(status: number): GitHubGraphQLErrorKind {
+function classifyHTTPStatus(status: number, headers: Headers): GitHubGraphQLErrorKind {
     if (status === 401) return "AUTHENTICATION";
+    if (status === 403
+        && (headers.has("Retry-After") || headers.get("X-RateLimit-Remaining") === "0")) {
+        return "TRANSIENT";
+    }
     if (status === 403) return "FORBIDDEN";
     if (status === 404) return "NOT_FOUND";
     if (status === 429 || status >= 500) return "TRANSIENT";
@@ -81,6 +88,7 @@ function classifyGraphQLErrors(errors: unknown[]): GitHubGraphQLErrorKind {
     ));
     if (types.includes("FORBIDDEN")) return "FORBIDDEN";
     if (types.includes("NOT_FOUND")) return "NOT_FOUND";
+    if (types.includes("RATE_LIMITED")) return "TRANSIENT";
     return "INVALID_RESPONSE";
 }
 
