@@ -7,6 +7,7 @@ struct KanbanCardContextMenu: View {
     @Bindable var store: ProjectStore
     @Binding var showDeleteConfirmation: Bool
     let showInspector: () -> Void
+    let reportError: (Error) -> Void
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -24,7 +25,11 @@ struct KanbanCardContextMenu: View {
                 ForEach(allStatuses) { status in
                     Button(status.name) {
                         Task {
-                            await store.moveItem(item, toStatus: status, in: projectID)
+                            do {
+                                try await store.moveItem(item, toStatus: status, in: projectID)
+                            } catch {
+                                reportError(error)
+                            }
                         }
                     }
                     .disabled(item.status == status.name)
@@ -38,11 +43,15 @@ struct KanbanCardContextMenu: View {
                     ForEach(item.assignees) { assignee in
                         Button(assignee.name ?? assignee.login, systemImage: "person.fill.xmark") {
                             Task {
-                                await store.removeAssignee(
-                                    from: item,
-                                    in: projectID,
-                                    user: assignee
-                                )
+                                do {
+                                    try await store.removeAssignee(
+                                        from: item,
+                                        in: projectID,
+                                        user: assignee
+                                    )
+                                } catch {
+                                    reportError(error)
+                                }
                             }
                         }
                     }
@@ -52,7 +61,13 @@ struct KanbanCardContextMenu: View {
             }
 
             Button("Archive from Project", systemImage: "archivebox") {
-                Task { _ = await store.archiveItem(item, in: projectID) }
+                Task {
+                    do {
+                        try await store.archiveItem(item, in: projectID)
+                    } catch {
+                        reportError(error)
+                    }
+                }
             }
 
             Divider()

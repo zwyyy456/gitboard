@@ -127,7 +127,7 @@ struct AddProjectItemView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-                if let message = validationMessage ?? store.operationErrorMessage {
+                if let message = validationMessage {
                     Label(message, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.red)
@@ -156,7 +156,6 @@ struct AddProjectItemView: View {
         )
         .task {
             validationMessage = nil
-            store.clearOperationError()
             if repository.isEmpty {
                 repository = store.repositorySuggestions.first ?? ""
             }
@@ -170,7 +169,6 @@ struct AddProjectItemView: View {
         }
         .onChange(of: mode) { _, newMode in
             validationMessage = nil
-            store.clearOperationError()
             switch newMode {
             case .create:
                 focusedField = .title
@@ -179,9 +177,6 @@ struct AddProjectItemView: View {
             case .quickEntry:
                 focusedField = .quickEntry
             }
-        }
-        .onDisappear {
-            store.clearOperationError()
         }
     }
 
@@ -479,26 +474,31 @@ struct AddProjectItemView: View {
     private func createItem() {
         guard isWorking == false else { return }
         isWorking = true
+        validationMessage = nil
         Task {
-            let succeeded: Bool
-            if itemType == .draft {
-                succeeded = await store.createDraftIssue(
-                    title: title.trimmed,
-                    body: bodyText
-                )
-            } else {
-                succeeded = await store.createIssueAndAdd(
-                    repository: repository.trimmed,
-                    title: title.trimmed,
-                    body: bodyText,
-                    labels: commaSeparated(labels),
-                    assignees: commaSeparated(assignees).map(normalizeAssignee),
-                    status: status.trimmed.nilIfEmpty,
-                    priority: priority.trimmed.nilIfEmpty
-                )
+            do {
+                if itemType == .draft {
+                    try await store.createDraftIssue(
+                        title: title.trimmed,
+                        body: bodyText
+                    )
+                } else {
+                    try await store.createIssueAndAdd(
+                        repository: repository.trimmed,
+                        title: title.trimmed,
+                        body: bodyText,
+                        labels: commaSeparated(labels),
+                        assignees: commaSeparated(assignees).map(normalizeAssignee),
+                        status: status.trimmed.nilIfEmpty,
+                        priority: priority.trimmed.nilIfEmpty
+                    )
+                }
+                close()
+            } catch is CancellationError {
+            } catch {
+                validationMessage = error.localizedDescription
             }
             isWorking = false
-            if succeeded { close() }
         }
     }
 
@@ -524,20 +524,32 @@ struct AddProjectItemView: View {
 
     private func addURL() {
         isWorking = true
+        validationMessage = nil
         Task {
-            let succeeded = await store.addExistingItem(url: query.trimmed)
+            do {
+                try await store.addExistingItem(url: query.trimmed)
+                close()
+            } catch is CancellationError {
+            } catch {
+                validationMessage = error.localizedDescription
+            }
             isWorking = false
-            if succeeded { close() }
         }
     }
 
     private func add(_ item: GitHubItemCandidate) {
         guard isWorking == false else { return }
         isWorking = true
+        validationMessage = nil
         Task {
-            let succeeded = await store.addExistingItem(item)
+            do {
+                try await store.addExistingItem(item)
+                close()
+            } catch is CancellationError {
+            } catch {
+                validationMessage = error.localizedDescription
+            }
             isWorking = false
-            if succeeded { close() }
         }
     }
 
@@ -568,7 +580,6 @@ struct AddProjectItemView: View {
             return
         }
 
-        store.clearOperationError()
         title = request.title
         if let requestedRepository = request.repository {
             repository = resolvedRepository(requestedRepository)
