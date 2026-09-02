@@ -1,4 +1,5 @@
 import type { AutomationMessage, Env } from "./index";
+import { receiveInstallationWebhook } from "./installation-lifecycle";
 
 const pullRequestActions = new Set([
     "closed",
@@ -39,6 +40,9 @@ export async function receiveGitHubWebhook(request: Request, env: Env): Promise<
     const eventName = request.headers.get("X-GitHub-Event");
     if (eventName === "ping") {
         return new Response(null, { status: 204 });
+    }
+    if (eventName === "installation" || eventName === "installation_repositories") {
+        return receiveInstallationWebhook(eventName, body, env);
     }
     if (eventName !== "pull_request") {
         return Response.json({ accepted: false, reason: "unsupported_event" }, { status: 202 });
