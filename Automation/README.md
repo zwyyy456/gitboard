@@ -48,13 +48,16 @@ export GB_PROJECT_NUMBER=1
 
 node Automation/scripts/validate-personal-auth.mjs \
   --device-flow \
-  --rotate-refresh-token
+  --rotate-refresh-token \
+  --gh-control
 ```
 
 The script prints GitHub's device verification URL and a one-time user code.
 Approve it in the browser. It then creates both tokens in memory, validates the
 cross-token GraphQL path, changes the item to another Status option, restores the
-original Status, and discards the tokens.
+original Status, and discards the tokens. If the project-only lookup fails,
+`--gh-control` uses the locally authenticated `gh` token for a read-only
+comparison. The token remains in memory and is never printed or uploaded.
 
 For an already-issued token pair, the direct-token form remains available:
 
