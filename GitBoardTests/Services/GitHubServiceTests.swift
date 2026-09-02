@@ -446,6 +446,64 @@ struct ProjectStoreTests {
         #expect(await runner.recordedArguments().count == callCount)
     }
 
+    @Test func failedStatusMoveKeepsAConcurrentAssigneeUpdate() async throws {
+        let runner = SuspendingGitHubCommandRunner(steps:
+            Self.mutationProjectResponses.map { .response($0) } + [
+                .suspended("status-move", Self.graphQLFailureResponse),
+                .response("")
+            ]
+        )
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+
+        let project = try #require(store.selectedProject)
+        let item = try #require(project.items.first)
+        let review = try #require(project.statusOptions.first { $0.id == "REVIEW" })
+        let moveTask = Task { await store.moveItem(item, toStatus: review, in: project.id) }
+        await runner.waitUntilSuspended("status-move")
+
+        let assignee = Assignee(
+            login: "octocat",
+            avatarUrl: "https://example.invalid/avatar",
+            name: nil
+        )
+        await store.addAssignee(to: item, in: project.id, user: assignee)
+        await runner.release("status-move")
+        #expect(await moveTask.value == false)
+
+        let updatedItem = try #require(store.project(id: project.id)?.items.first)
+        #expect(updatedItem.status == "Todo")
+        #expect(updatedItem.statusOptionId == "TODO")
+        #expect(updatedItem.assignees == [assignee])
+    }
+
+    @Test func itemRejectsASecondStatusMoveWhileOneIsPending() async throws {
+        let runner = SuspendingGitHubCommandRunner(steps:
+            Self.mutationProjectResponses.map { .response($0) } + [
+                .suspended("status-move", Self.graphQLSuccessResponse)
+            ]
+        )
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+
+        let project = try #require(store.selectedProject)
+        let item = try #require(project.items.first)
+        let review = try #require(project.statusOptions.first { $0.id == "REVIEW" })
+        let firstMove = Task { await store.moveItem(item, toStatus: review, in: project.id) }
+        await runner.waitUntilSuspended("status-move")
+        let callCount = await runner.recordedCallCount()
+
+        let secondMoveSucceeded = await store.moveItem(item, toStatus: review, in: project.id)
+
+        #expect(secondMoveSucceeded == false)
+        #expect(await runner.recordedCallCount() == callCount)
+        await runner.release("status-move")
+        #expect(await firstMove.value)
+        #expect(store.project(id: project.id)?.items.first?.status == "Review")
+    }
+
     @Test func selectingAnotherProjectDiscardsThePreviousInFlightLoad() async throws {
         let runner = SuspendingGitHubCommandRunner(steps: [
             .response(Self.sessionResponse),
@@ -611,6 +669,20 @@ struct ProjectStoreTests {
         firstProjectFieldsResponse,
         emptyItemsResponse
     ]
+
+    private static let mutationProjectResponses = [
+        sessionResponse,
+        ownersResponse,
+        #"{"data":{"owner":{"projectsV2":{"nodes":[{"id":"P1","title":"One","number":1,"url":"https://github.com/users/me/projects/1","viewerCanUpdate":true}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#,
+        #"{"data":{"node":{"title":"One","number":1,"url":"https://github.com/users/me/projects/1","viewerCanUpdate":true,"fields":{"nodes":[{"__typename":"ProjectV2SingleSelectField","id":"STATUS","name":"Status","dataType":"SINGLE_SELECT","options":[{"id":"TODO","name":"Todo","color":"GRAY"},{"id":"REVIEW","name":"Review","color":"YELLOW"}]}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#,
+        #"{"data":{"node":{"items":{"nodes":[{"id":"ITEM1","content":{"__typename":"Issue","id":"CONTENT1","title":"Item","number":1,"url":"https://github.com/acme/app/issues/1","state":"OPEN","updatedAt":"2026-08-01T00:00:00Z","assignees":{"nodes":[]},"labels":{"nodes":[]},"closedByPullRequestsReferences":{"nodes":[]}},"fieldValueByName":{"name":"Todo","optionId":"TODO"},"fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"TODO","field":{"id":"STATUS"}}]}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+    ]
+
+    private static let graphQLFailureResponse =
+        #"{"data":null,"errors":[{"message":"Status failed"}]}"#
+
+    private static let graphQLSuccessResponse =
+        #"{"data":{"updateProjectV2ItemFieldValue":{"projectV2Item":{"id":"P1"}}}}"#
 
     private static func kanbanProject() -> Project {
         let statuses = [

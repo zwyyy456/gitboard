@@ -23,6 +23,17 @@ private struct ItemDetailEntry {
     let state: ItemDetailState
 }
 
+private struct ItemMutationKey: Hashable {
+    enum Aspect: Hashable {
+        case status
+        case assignee(String)
+    }
+
+    let projectID: String
+    let itemID: String
+    let aspect: Aspect
+}
+
 @MainActor
 @Observable
 final class ProjectStore {
@@ -72,6 +83,7 @@ final class ProjectStore {
     private var itemDetailGenerations: [String: Int] = [:]
     private(set) var refreshingItemReferences: Set<ItemInspectorReference> = []
     private var repositoryMilestones: [String: RepositoryMilestonesState] = [:]
+    private var pendingItemMutations: Set<ItemMutationKey> = []
     private var hiddenKanbanStatusIDsByProject: [String: Set<String>]
 
     private let gitHubService: GitHubService
@@ -911,47 +923,24 @@ final class ProjectStore {
     ) async -> Bool {
         guard let project = editableProject(id: projectID),
               let fieldId = project.statusField?.id,
-              let itemIndex = project.items.firstIndex(where: { $0.id == item.id }) else { return false }
-
-        let originalProject = project
-
-        // Optimistic update - create new item with updated status
-        let updatedItem = ProjectItem(
-            id: item.id,
-            contentId: item.contentId,
-            contentType: item.contentType,
-            title: item.title,
-            number: item.number,
-            url: item.url,
-            issueState: item.issueState,
-            prState: item.prState,
-            updatedAt: item.updatedAt,
-            status: status.name,
-            statusOptionId: status.id,
-            assignees: item.assignees,
-            labels: item.labels,
-            fieldValues: item.fieldValues.merging([
-                fieldId: .singleSelect(optionId: status.id, name: status.name)
-            ]) { _, new in new },
-            linkedPR: item.linkedPR,
-            engineeringSignals: item.engineeringSignals
+              let currentItem = project.items.first(where: { $0.id == item.id }) else { return false }
+        let mutationKey = ItemMutationKey(
+            projectID: projectID,
+            itemID: item.id,
+            aspect: .status
         )
+        guard pendingItemMutations.insert(mutationKey).inserted else { return false }
+        defer { pendingItemMutations.remove(mutationKey) }
 
-        var newItems = project.items
-        newItems[itemIndex] = updatedItem
-        replaceProject(Project(
-            id: project.id,
-            owner: project.owner,
-            title: project.title,
-            number: project.number,
-            url: project.url,
-            viewerCanUpdate: project.viewerCanUpdate,
-            fields: project.fields,
-            statusField: project.statusField,
-            items: newItems
-        ))
+        let originalStatus = currentItem.status
+        let originalStatusOptionId = currentItem.statusOptionId
+        let originalFieldValue = currentItem.fieldValues[fieldId]
+        updateItem(projectID: projectID, itemID: item.id) { item in
+            item.status = status.name
+            item.statusOptionId = status.id
+            item.fieldValues[fieldId] = .singleSelect(optionId: status.id, name: status.name)
+        }
 
-        // Then sync with server
         do {
             try await gitHubService.updateItemStatus(
                 projectId: project.id,
@@ -963,7 +952,11 @@ final class ProjectStore {
             await persistCache()
             return true
         } catch {
-            replaceProject(originalProject)
+            updateItem(projectID: projectID, itemID: item.id) { item in
+                item.status = originalStatus
+                item.statusOptionId = originalStatusOptionId
+                item.fieldValues[fieldId] = originalFieldValue
+            }
             operationErrorMessage = error.localizedDescription
             return false
         }
@@ -1078,55 +1071,28 @@ final class ProjectStore {
     func addAssignee(to item: ProjectItem, in projectID: String, user: Assignee) async {
         guard let url = item.url,
               let project = editableProject(id: projectID),
-              let itemIndex = project.items.firstIndex(where: { $0.id == item.id }) else { return }
-
-        let originalProject = project
-
-        // Optimistic update - add assignee to local state
-        var newAssignees = item.assignees
-        if !newAssignees.contains(where: { $0.login == user.login }) {
-            newAssignees.append(user)
-        }
-
-        let updatedItem = ProjectItem(
-            id: item.id,
-            contentId: item.contentId,
-            contentType: item.contentType,
-            title: item.title,
-            number: item.number,
-            url: item.url,
-            issueState: item.issueState,
-            prState: item.prState,
-            updatedAt: item.updatedAt,
-            status: item.status,
-            statusOptionId: item.statusOptionId,
-            assignees: newAssignees,
-            labels: item.labels,
-            fieldValues: item.fieldValues,
-            linkedPR: item.linkedPR,
-            engineeringSignals: item.engineeringSignals
+              let currentItem = project.items.first(where: { $0.id == item.id }),
+              currentItem.assignees.contains(where: { $0.login == user.login }) == false else { return }
+        let mutationKey = ItemMutationKey(
+            projectID: projectID,
+            itemID: item.id,
+            aspect: .assignee(user.login.lowercased())
         )
+        guard pendingItemMutations.insert(mutationKey).inserted else { return }
+        defer { pendingItemMutations.remove(mutationKey) }
 
-        var newItems = project.items
-        newItems[itemIndex] = updatedItem
-        replaceProject(Project(
-            id: project.id,
-            owner: project.owner,
-            title: project.title,
-            number: project.number,
-            url: project.url,
-            viewerCanUpdate: project.viewerCanUpdate,
-            fields: project.fields,
-            statusField: project.statusField,
-            items: newItems
-        ))
+        updateItem(projectID: projectID, itemID: item.id) { item in
+            item.assignees.append(user)
+        }
 
         do {
             try await gitHubService.addAssignee(issueUrl: url, userLogin: user.login)
             lastUpdated = Date()
             await persistCache()
         } catch {
-            replaceProject(originalProject)
+            updateItem(projectID: projectID, itemID: item.id) { item in
+                item.assignees.removeAll { $0.login == user.login }
+            }
             operationErrorMessage = error.localizedDescription
         }
     }
@@ -1134,52 +1100,33 @@ final class ProjectStore {
     func removeAssignee(from item: ProjectItem, in projectID: String, user: Assignee) async {
         guard let url = item.url,
               let project = editableProject(id: projectID),
-              let itemIndex = project.items.firstIndex(where: { $0.id == item.id }) else { return }
-
-        let originalProject = project
-
-        // Optimistic update - remove assignee from local state
-        let newAssignees = item.assignees.filter { $0.login != user.login }
-
-        let updatedItem = ProjectItem(
-            id: item.id,
-            contentId: item.contentId,
-            contentType: item.contentType,
-            title: item.title,
-            number: item.number,
-            url: item.url,
-            issueState: item.issueState,
-            prState: item.prState,
-            updatedAt: item.updatedAt,
-            status: item.status,
-            statusOptionId: item.statusOptionId,
-            assignees: newAssignees,
-            labels: item.labels,
-            fieldValues: item.fieldValues,
-            linkedPR: item.linkedPR,
-            engineeringSignals: item.engineeringSignals
+              let currentItem = project.items.first(where: { $0.id == item.id }),
+              let originalIndex = currentItem.assignees.firstIndex(where: {
+                  $0.login == user.login
+              }) else { return }
+        let mutationKey = ItemMutationKey(
+            projectID: projectID,
+            itemID: item.id,
+            aspect: .assignee(user.login.lowercased())
         )
+        guard pendingItemMutations.insert(mutationKey).inserted else { return }
+        defer { pendingItemMutations.remove(mutationKey) }
 
-        var newItems = project.items
-        newItems[itemIndex] = updatedItem
-        replaceProject(Project(
-            id: project.id,
-            owner: project.owner,
-            title: project.title,
-            number: project.number,
-            url: project.url,
-            viewerCanUpdate: project.viewerCanUpdate,
-            fields: project.fields,
-            statusField: project.statusField,
-            items: newItems
-        ))
+        updateItem(projectID: projectID, itemID: item.id) { item in
+            item.assignees.removeAll { $0.login == user.login }
+        }
 
         do {
             try await gitHubService.removeAssignee(issueUrl: url, userLogin: user.login)
             lastUpdated = Date()
             await persistCache()
         } catch {
-            replaceProject(originalProject)
+            updateItem(projectID: projectID, itemID: item.id) { item in
+                guard item.assignees.contains(where: { $0.login == user.login }) == false else {
+                    return
+                }
+                item.assignees.insert(user, at: min(originalIndex, item.assignees.count))
+            }
             operationErrorMessage = error.localizedDescription
         }
     }
@@ -1372,6 +1319,17 @@ final class ProjectStore {
             return nil
         }
         return project
+    }
+
+    private func updateItem(
+        projectID: String,
+        itemID: String,
+        transform: (inout ProjectItem) -> Void
+    ) {
+        guard var project = project(id: projectID),
+              let itemIndex = project.items.firstIndex(where: { $0.id == itemID }) else { return }
+        transform(&project.items[itemIndex])
+        replaceProject(project)
     }
 
     private func finishItemDetailLoad(
