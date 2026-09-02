@@ -51,6 +51,12 @@
 		A0000049 /* MenuBarItemRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000049 /* MenuBarItemRow.swift */; };
 		A0000050 /* KanbanItemViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000050 /* KanbanItemViews.swift */; };
 		A0000051 /* IssueRelationEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000051 /* IssueRelationEditorView.swift */; };
+		A0000052 /* AutomationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000052 /* AutomationService.swift */; };
+		A0000053 /* ManagementTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000053 /* ManagementTokenStore.swift */; };
+		A0000054 /* AutomationSetupModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000054 /* AutomationSetupModel.swift */; };
+		A0000055 /* AutomationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000055 /* AutomationSettingsView.swift */; };
+		A0000056 /* AutomationConfigurationForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000056 /* AutomationConfigurationForm.swift */; };
+		A0000057 /* StatusOptionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000057 /* StatusOptionPicker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -111,6 +117,12 @@
 		A1000049 /* MenuBarItemRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarItemRow.swift; sourceTree = "<group>"; };
 		A1000050 /* KanbanItemViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanItemViews.swift; sourceTree = "<group>"; };
 		A1000051 /* IssueRelationEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IssueRelationEditorView.swift; sourceTree = "<group>"; };
+		A1000052 /* AutomationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationService.swift; sourceTree = "<group>"; };
+		A1000053 /* ManagementTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagementTokenStore.swift; sourceTree = "<group>"; };
+		A1000054 /* AutomationSetupModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationSetupModel.swift; sourceTree = "<group>"; };
+		A1000055 /* AutomationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationSettingsView.swift; sourceTree = "<group>"; };
+		A1000056 /* AutomationConfigurationForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationConfigurationForm.swift; sourceTree = "<group>"; };
+		A1000057 /* StatusOptionPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusOptionPicker.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -174,6 +186,7 @@
 		A3000003 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				A1000052 /* AutomationService.swift */,
 				A1000036 /* GlobalHotKeyController.swift */,
 				A1000022 /* GitHubCommandRunner.swift */,
 				A1000027 /* ProjectCache.swift */,
@@ -181,6 +194,7 @@
 				A1000005 /* GitHubService.swift */,
 				A1000006 /* GraphQLQueries.swift */,
 				A1000007 /* NotificationService.swift */,
+				A1000053 /* ManagementTokenStore.swift */,
 				A1000020 /* UpdateController.swift */,
 			);
 			path = Services;
@@ -189,6 +203,7 @@
 		A3000004 /* Store */ = {
 			isa = PBXGroup;
 			children = (
+				A1000054 /* AutomationSetupModel.swift */,
 				A1000032 /* GitBoardModel.swift */,
 				A1000029 /* MyWorkStore.swift */,
 				A1000008 /* ProjectStore.swift */,
@@ -267,7 +282,10 @@
 		A3000011 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				A1000056 /* AutomationConfigurationForm.swift */,
+				A1000055 /* AutomationSettingsView.swift */,
 				A1000019 /* SettingsView.swift */,
+				A1000057 /* StatusOptionPicker.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -395,6 +413,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				A0000001 /* GitBoardApp.swift in Sources */,
+				A0000052 /* AutomationService.swift in Sources */,
+				A0000053 /* ManagementTokenStore.swift in Sources */,
+				A0000054 /* AutomationSetupModel.swift in Sources */,
+				A0000055 /* AutomationSettingsView.swift in Sources */,
+				A0000056 /* AutomationConfigurationForm.swift in Sources */,
+				A0000057 /* StatusOptionPicker.swift in Sources */,
 				A0000044 /* WorkspaceCommandContext.swift in Sources */,
 				A0000033 /* Monitoring.swift in Sources */,
 				A0000035 /* QuickCreate.swift in Sources */,

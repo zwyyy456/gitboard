@@ -20,6 +20,8 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>GitBoardAutomationBaseURL</key>
+	<string>$(GITBOARD_AUTOMATION_BASE_URL)</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2024 Yogesh. All rights reserved.</string>
 	<key>NSPrincipalClass</key>
