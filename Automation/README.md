@@ -53,6 +53,13 @@ identity and actual `project` scope, saves each replacement token pair with an
 optimistic credential version, and performs one refresh/retry after a 401.
 Tokens use versioned AES-GCM envelopes and are never included in errors.
 
+`PersonalProjectGateway` groups assignments by the Issue repository and uses the
+versioned personal Project REST endpoint with `repo:OWNER/REPOSITORY is:issue`.
+It follows every Link page and matches only exact `content.node_id` values. An
+unresolved scan with any item lacking `item.node_id` or `content.node_id` fails
+as visibility-indeterminate; only a complete, fully identifiable scan yields
+`NOT_IN_PROJECT`. Project response content is reduced to those two node IDs.
+
 ## Authorization boundary validation
 
 Before deployment, the personal-account authorization boundary must be verified
