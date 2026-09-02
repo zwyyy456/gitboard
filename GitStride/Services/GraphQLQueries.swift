@@ -518,47 +518,6 @@ enum GraphQLQueries {
         }
         """
 
-    static let addAssignees = """
-        mutation($assignableId: ID!, $assigneeIds: [ID!]!) {
-            addAssigneesToAssignable(input: { assignableId: $assignableId, assigneeIds: $assigneeIds }) {
-                assignable {
-                    ... on Issue {
-                        id
-                    }
-                    ... on PullRequest {
-                        id
-                    }
-                }
-            }
-        }
-        """
-
-    static let removeAssignees = """
-        mutation($assignableId: ID!, $assigneeIds: [ID!]!) {
-            removeAssigneesFromAssignable(input: { assignableId: $assignableId, assigneeIds: $assigneeIds }) {
-                assignable {
-                    ... on Issue {
-                        id
-                    }
-                    ... on PullRequest {
-                        id
-                    }
-                }
-            }
-        }
-        """
-
-    static let getUser = """
-        query($login: String!) {
-            user(login: $login) {
-                id
-                login
-                avatarUrl
-                name
-            }
-        }
-        """
-
     static let addDraftIssue = """
         mutation($projectId: ID!, $title: String!, $body: String!) {
             addProjectV2DraftIssue(input: { projectId: $projectId, title: $title, body: $body }) {
