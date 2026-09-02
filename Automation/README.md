@@ -114,3 +114,43 @@ node Automation/scripts/validate-personal-auth.mjs --rotate-refresh-token
 Refreshing consumes the supplied access/refresh token pair. The replacement
 tokens remain in memory only and are discarded when validation finishes. The
 script never prints token values or complete GitHub responses.
+
+## Phase 0B: organization boundary validation
+
+An organization Project can contain an Issue from a private repository owned by
+a personal account. Project item changes are delivered through an organization
+webhook, not the GitHub App's own webhook. Configure the organization webhook
+for `Projects V2 item`, then record these non-secret values from one delivery:
+
+- `projects_v2_item.project_node_id`
+- `projects_v2_item.node_id`
+- `projects_v2_item.content_node_id`
+
+Install the same GitHub App on the organization with the organization `Projects`
+permission set to read and write. Run the boundary validator with the
+organization installation ID and the webhook IDs:
+
+```bash
+export GB_GITHUB_APP_ID=123456
+export GB_ORGANIZATION_INSTALLATION_ID=12345678
+export GB_GITHUB_APP_PRIVATE_KEY_PATH="/absolute/path/to/test-app.private-key.pem"
+export GB_ORGANIZATION=organization
+export GB_PROJECT_NUMBER=1
+export GB_PROJECT_NODE_ID=PVT_example
+export GB_PROJECT_ITEM_NODE_ID=PVTI_example
+export GB_CONTENT_NODE_ID=I_example
+
+node Automation/scripts/validate-organization-auth.mjs
+```
+
+The script creates the organization installation token in memory, scans every
+item in the Project, and compares the webhook IDs with the scan. It changes the
+known item's Status with the organization installation token and restores the
+original value before exiting. `GB_TARGET_STATUS_OPTION_ID` can select the
+temporary Status; otherwise the script chooses a different option.
+
+The final line states whether the organization scan exposed the personal private
+Issue's content node ID. If it did, the Worker can initialize the mapping from a
+full Project scan. If the Project item was visible but its content was hidden,
+desktop mapping initialization is required. Tokens and complete GitHub responses
+are never printed or persisted.
