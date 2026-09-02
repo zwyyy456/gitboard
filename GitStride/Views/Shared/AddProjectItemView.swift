@@ -508,8 +508,15 @@ struct AddProjectItemView: View {
             addURL()
         } else {
             isWorking = true
+            validationMessage = nil
             Task {
-                results = await store.searchItems(query: query.trimmed)
+                do {
+                    results = try await store.searchItems(query: query.trimmed)
+                } catch is CancellationError {
+                    // Closing the sheet cancels the search.
+                } catch {
+                    validationMessage = error.localizedDescription
+                }
                 isWorking = false
             }
         }
