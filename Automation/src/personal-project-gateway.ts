@@ -46,6 +46,12 @@ export interface ProjectStatusWriter {
     ): Promise<void>;
 }
 
+export class ProjectStatusWriterError extends Error {
+    constructor(readonly code: "ITEM_NOT_FOUND") {
+        super(code);
+    }
+}
+
 interface ResolvedItem {
     issueNodeID: string;
     itemNodeID: string;
@@ -100,15 +106,61 @@ export class PersonalProjectGateway {
                 }
                 continue;
             }
+            outcomes[assignment.issueNodeID] = await this.writeAssignment(
+                accessToken,
+                project,
+                assignment,
+                itemNodeID
+            );
+        }
+        return outcomes;
+    }
+
+    private async writeAssignment(
+        accessToken: string,
+        project: PersonalProjectConfiguration,
+        assignment: IssueStatusAssignment,
+        itemNodeID: string
+    ): Promise<ApplyOutcome> {
+        const statusOptionID = project.statusOptionIDs[assignment.desiredStatus];
+        try {
             await this.statusWriter.updateStatus(
                 accessToken,
                 project,
                 itemNodeID,
-                project.statusOptionIDs[assignment.desiredStatus]
+                statusOptionID
             );
-            outcomes[assignment.issueNodeID] = "APPLIED";
+            return "APPLIED";
+        } catch (error) {
+            if (!(error instanceof ProjectStatusWriterError)) {
+                throw error;
+            }
         }
-        return outcomes;
+
+        const resolution = await this.resolveRepositoryItems(
+            accessToken,
+            project,
+            assignment.issueRepositoryNameWithOwner,
+            [assignment.issueNodeID]
+        );
+        const replacement = resolution.found[0];
+        if (!replacement) {
+            return "NOT_IN_PROJECT";
+        }
+        try {
+            await this.statusWriter.updateStatus(
+                accessToken,
+                project,
+                replacement.itemNodeID,
+                statusOptionID
+            );
+            return "APPLIED";
+        } catch (error) {
+            if (error instanceof ProjectStatusWriterError) {
+                throw new PersonalProjectError("PROJECT_CONFIGURATION_INVALID");
+            }
+            throw error;
+        }
     }
 
     private async resolveRepositoryItems(
