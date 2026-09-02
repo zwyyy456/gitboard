@@ -144,10 +144,13 @@ node Automation/scripts/validate-organization-auth.mjs
 ```
 
 The script creates the organization installation token in memory, scans every
-item in the Project, and compares the webhook IDs with the scan. It changes the
-known item's Status with the organization installation token and restores the
-original value before exiting. `GB_TARGET_STATUS_OPTION_ID` can select the
-temporary Status; otherwise the script chooses a different option.
+item in the Project, and compares the webhook IDs with the scan. If that scan
+hides the personal private Issue, the locally authenticated `gh` token supplies
+the known mapping and original Status without printing or persisting its token.
+The script then changes the known item's Status with the organization
+installation token and restores the original value before exiting.
+`GB_TARGET_STATUS_OPTION_ID` can select the temporary Status; otherwise the
+script chooses a different option.
 
 The final line states whether the organization scan exposed the personal private
 Issue's content node ID. If it did, the Worker can initialize the mapping from a
