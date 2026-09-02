@@ -55,9 +55,12 @@ node Automation/scripts/validate-personal-auth.mjs \
 The script prints GitHub's device verification URL and a one-time user code.
 Approve it in the browser. It then creates both tokens in memory, validates the
 cross-token GraphQL path, changes the item to another Status option, restores the
-original Status, and discards the tokens. If the project-only lookup fails,
-`--gh-control` uses the locally authenticated `gh` token for a read-only
-comparison. The token remains in memory and is never printed or uploaded.
+original Status, and discards the tokens. It first tries the OAuth-side lookup;
+if private content is hidden, it tries the complementary path where the
+installation token resolves Issue to Project item and OAuth reads that known
+item ID. If both minimal-token paths fail, `--gh-control` uses the locally
+authenticated `gh` token for a read-only comparison. The token remains in memory
+and is never printed or uploaded.
 
 For an already-issued token pair, the direct-token form remains available:
 
