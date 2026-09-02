@@ -60,6 +60,11 @@ unresolved scan with any item lacking `item.node_id` or `content.node_id` fails
 as visibility-indeterminate; only a complete, fully identifiable scan yields
 `NOT_IN_PROJECT`. Project response content is reduced to those two node IDs.
 
+Status updates use only `updateProjectV2ItemFieldValue` with the Project, REST
+item `node_id`, Status field, and option IDs. A node-resolution failure triggers
+one fresh REST lookup: a missing item becomes `NOT_IN_PROJECT`, while a new item
+ID is retried once. There is no REST PATCH writer and no unbounded retry.
+
 ## Authorization boundary validation
 
 Before deployment, the personal-account authorization boundary must be verified
