@@ -48,6 +48,9 @@
 		A0000046 /* KanbanCardContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000046 /* KanbanCardContent.swift */; };
 		A0000047 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A1000047 /* AppIcon.icon */; };
 		A0000048 /* StatusColumnFilterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000048 /* StatusColumnFilterView.swift */; };
+		A0000049 /* MenuBarItemRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000049 /* MenuBarItemRow.swift */; };
+		A0000050 /* KanbanItemViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000050 /* KanbanItemViews.swift */; };
+		A0000051 /* IssueRelationEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000051 /* IssueRelationEditorView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -105,6 +108,9 @@
 		A1000046 /* KanbanCardContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardContent.swift; sourceTree = "<group>"; };
 		A1000047 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		A1000048 /* StatusColumnFilterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusColumnFilterView.swift; sourceTree = "<group>"; };
+		A1000049 /* MenuBarItemRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarItemRow.swift; sourceTree = "<group>"; };
+		A1000050 /* KanbanItemViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanItemViews.swift; sourceTree = "<group>"; };
+		A1000051 /* IssueRelationEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IssueRelationEditorView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -206,6 +212,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000009 /* MenuBarPopoverView.swift */,
+				A1000049 /* MenuBarItemRow.swift */,
 				A1000010 /* ProjectSelectorView.swift */,
 			);
 			path = MenuBar;
@@ -215,6 +222,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000012 /* KanbanBoardView.swift */,
+				A1000050 /* KanbanItemViews.swift */,
 				A1000045 /* KanbanCardContextMenu.swift */,
 				A1000046 /* KanbanCardContent.swift */,
 				A1000048 /* StatusColumnFilterView.swift */,
@@ -232,6 +240,7 @@
 				A1000040 /* ItemDescriptionView.swift */,
 				A1000026 /* ItemInspectorView.swift */,
 				A1000041 /* ItemPropertiesView.swift */,
+				A1000051 /* IssueRelationEditorView.swift */,
 				A1000042 /* ProjectFieldEditor.swift */,
 				A1000015 /* OperationErrorBanner.swift */,
 			);
@@ -410,6 +419,8 @@
 				A0000045 /* KanbanCardContextMenu.swift in Sources */,
 				A0000046 /* KanbanCardContent.swift in Sources */,
 				A0000048 /* StatusColumnFilterView.swift in Sources */,
+				A0000049 /* MenuBarItemRow.swift in Sources */,
+				A0000050 /* KanbanItemViews.swift in Sources */,
 				A0000030 /* MainWorkspaceView.swift in Sources */,
 				A0000031 /* MyWorkView.swift in Sources */,
 				A0000025 /* AddProjectItemView.swift in Sources */,
@@ -419,6 +430,7 @@
 				A0000040 /* ItemDescriptionView.swift in Sources */,
 				A0000026 /* ItemInspectorView.swift in Sources */,
 				A0000041 /* ItemPropertiesView.swift in Sources */,
+				A0000051 /* IssueRelationEditorView.swift in Sources */,
 				A0000042 /* ProjectFieldEditor.swift in Sources */,
 				A0000015 /* OperationErrorBanner.swift in Sources */,
 				A0000019 /* SettingsView.swift in Sources */,
