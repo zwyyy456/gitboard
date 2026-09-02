@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
 import { createPrivateKey, sign } from "node:crypto";
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { promisify } from "node:util";
 
 const graphqlURL = "https://api.github.com/graphql";
 const apiVersion = "2026-03-10";
+const execFileAsync = promisify(execFile);
 
 class ValidationError extends Error {}
 
@@ -271,7 +274,21 @@ async function findProjectItem(token, owner, projectNumber, issueIDs) {
         if (item) return item;
         cursor = items.pageInfo.hasNextPage ? items.pageInfo.endCursor : null;
     } while (cursor);
-    throw new ValidationError("OAuth token could not locate a closing Issue's personal Project item");
+    return null;
+}
+
+async function findProjectItemWithGH(owner, projectNumber, issueIDs) {
+    let token;
+    try {
+        const result = await execFileAsync("gh", ["auth", "token", "--hostname", "github.com"]);
+        token = result.stdout.trim();
+    } catch {
+        throw new ValidationError("gh control could not read the authenticated GitHub token");
+    }
+    if (!token) {
+        throw new ValidationError("gh control returned an empty GitHub token");
+    }
+    return findProjectItem(token, owner, projectNumber, issueIDs);
 }
 
 async function updateStatus(token, projectID, itemID, fieldID, optionID) {
@@ -304,7 +321,7 @@ async function clearStatus(token, projectID, itemID, fieldID) {
 }
 
 function printUsage() {
-    console.log(`Usage: node Automation/scripts/validate-personal-auth.mjs [--device-flow] [--rotate-refresh-token]
+    console.log(`Usage: node Automation/scripts/validate-personal-auth.mjs [--device-flow] [--rotate-refresh-token] [--gh-control]
 
 Required environment:
   GB_REPOSITORY                 owner/repository
@@ -337,7 +354,7 @@ async function main() {
         printUsage();
         return;
     }
-    const allowedArguments = new Set(["--device-flow", "--rotate-refresh-token"]);
+    const allowedArguments = new Set(["--device-flow", "--rotate-refresh-token", "--gh-control"]);
     const unknownArguments = [...argumentsSet].filter((argument) => !allowedArguments.has(argument));
     if (unknownArguments.length) {
         throw new ValidationError(`Unknown argument: ${unknownArguments[0]}`);
@@ -393,12 +410,27 @@ async function main() {
     console.log(`✓ Installation token found ${closingIssueResult.issues.length} closing Issue(s)`);
 
     const project = await loadProject(oauthToken, projectOwner, projectNumber);
+    const closingIssueIDs = new Set(closingIssueResult.issues.map((issue) => issue.id));
     const item = await findProjectItem(
         oauthToken,
         projectOwner,
         projectNumber,
-        new Set(closingIssueResult.issues.map((issue) => issue.id))
+        closingIssueIDs
     );
+    if (!item && argumentsSet.has("--gh-control")) {
+        const controlItem = await findProjectItemWithGH(projectOwner, projectNumber, closingIssueIDs);
+        if (controlItem) {
+            throw new ValidationError(
+                "project-only OAuth could not see a Project item that the local gh repo+project token can see"
+            );
+        }
+        throw new ValidationError(
+            "neither project-only OAuth nor the local gh token found the Issue in the configured Project"
+        );
+    }
+    if (!item) {
+        throw new ValidationError("OAuth token could not locate a closing Issue's personal Project item");
+    }
     console.log("✓ OAuth project-only token located the private Issue's Project item");
 
     const originalStatusOptionID = item.fieldValueByName?.optionId ?? null;
