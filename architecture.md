@@ -19,10 +19,12 @@
 - `ProjectStore` 是全部远程 `Project` 快照、项目目录顺序、当前项目、状态筛选、远程 mutation、加载/错误状态、更新时间和当前用户的唯一可写真源。项目目录与 My Work 只保存排序或关注引用，不复制完整项目快照。
 - `MyWorkStore` 只拥有关注项目引用和 My Work 筛选偏好，并从 `ProjectStore` 的快照派生列表；不得直接请求 GitHub、保存远程快照或执行远程 mutation。
 - `GitBoardModel` 负责 app 级组合与跨功能编排，包括 My Work 刷新、监控生命周期、通知动作和静音/稍后提醒偏好。它不复制 `ProjectStore` 的远程实体状态。
+- `AutomationSetupModel` 负责自动化的 setup session、配置草稿、连接健康和管理操作；它由 `GitBoardModel` 持有，设置窗口不得创建竞争实例。
 - `ProjectStore` 保持 `@MainActor` 隔离。所有会改变可观察 UI 状态的结果必须回到该 owner 应用。
 - Views 只持有搜索文本、输入草稿、表单校验、焦点、局部展开状态等 surface-local presentation state；不得复制可写的项目集合、当前项目或远程 mutation 状态。
 - 菜单栏和看板可以采用不同的局部展示状态，但共享项目选择和远程数据。一个 surface 的出现或消失不得重建全局 store。
 - `GitHubService`、`ProjectMonitor` 和 `ProjectCache` 以 actor 隔离外部副作用或后台任务，不发布第二套可观察业务状态。
+- `AutomationService` 是桌面 App 与 Automation Worker 的唯一 HTTP 边界。View 不拼接 Worker 请求、不解析响应，也不接触 management token。
 
 ## 异步任务与轮询
 
@@ -57,6 +59,14 @@
 - GitHub 项目、条目、assignee、加载状态、错误、更新时间和搜索输入均不成为本地业务真源。缓存内容只能作为启动展示和失败时的只读回退。
 - 启动后若已保存的项目或状态身份不再存在，应用必须回到可操作状态；不得长期保留指向缺失远程实体的半初始化选择。
 - GitHub token、完整 API 响应和私有项目内容不得进入本地偏好存储。
+- Worker management token 只保存在系统 Keychain；OAuth access/refresh token 只保存在 Worker 的加密凭据表，不进入桌面 App、`UserDefaults`、缓存、日志或错误文案。
+
+## Automation Worker 边界
+
+- `Automation/` 中的 Worker 独立承担 webhook 验证、Queue 编排、GitHub App installation 读取、个人 Project Item 定位、状态写入、OAuth 轮换与管理 API。
+- 桌面 App 原有 `gh` 认证继续只服务交互式浏览与编辑；后台 automation 不读取或复制本机 `gh` token。
+- Worker 为完成自动化会瞬时接收 GitHub Project Item 响应，但应用层只传播必要 identity 字段，不持久化或记录私人 Issue 内容，也不保存 Issue 到 Project Item 的映射。
+- Webhook 与运行日志只能包含 delivery ID、automation ID、处理阶段、状态码和稳定错误码，不得包含完整 payload、Issue 标题/正文或凭据。
 
 ## 目录边界
 

@@ -96,6 +96,11 @@ export async function receiveGitHubWebhook(request: Request, env: Env): Promise<
     await env.DB.prepare(
         "UPDATE webhook_deliveries SET processing_state = 'QUEUED' WHERE delivery_id = ?"
     ).bind(deliveryID).run();
+    console.info("automation_delivery_queued", {
+        deliveryID,
+        automationID: automation.id,
+        eventAction: payload.action,
+    });
 
     return Response.json({ accepted: true }, { status: 202 });
 }

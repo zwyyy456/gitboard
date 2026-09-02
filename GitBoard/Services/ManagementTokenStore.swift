@@ -39,6 +39,13 @@ struct ManagementTokenStore {
         }
     }
 
+    func delete() throws {
+        let status = SecItemDelete(baseQuery as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw ManagementTokenStoreError.keychain(status)
+        }
+    }
+
     private var baseQuery: [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,

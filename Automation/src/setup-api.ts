@@ -24,6 +24,8 @@ interface SetupSessionRecord {
     installation_id: number | null;
     state: SetupState;
     expires_at: string;
+    purpose?: "INITIAL" | "REAUTHORIZE";
+    automation_id?: string | null;
     github_user_database_id?: number;
     github_login?: string;
 }
@@ -111,6 +113,38 @@ async function createSetupSession(env: Env): Promise<Response> {
     }, { status: 201 });
 }
 
+export async function createReauthorizationSession(
+    userID: string,
+    automationID: string,
+    installationID: number,
+    env: Env
+): Promise<Response> {
+    const id = crypto.randomUUID();
+    const setupToken = randomToken();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + setupLifetimeMilliseconds).toISOString();
+    const result = await env.DB.prepare(
+        `INSERT INTO setup_sessions (
+            id, setup_token_hash, user_id, oauth_credential_id, installation_id,
+            state, expires_at, created_at, updated_at, purpose, automation_id
+         )
+         SELECT ?, ?, ?, oauth_credential_id, ?, 'OAUTH_PENDING', ?, ?, ?,
+                'REAUTHORIZE', id
+         FROM project_automations
+         WHERE id = ? AND user_id = ?`
+    ).bind(
+        id, await hashToken(setupToken), userID, installationID,
+        expiresAt, now.toISOString(), now.toISOString(), automationID, userID
+    ).run();
+    if (result.meta.changes !== 1) throw new SetupRequestError(404, "AUTOMATION_NOT_FOUND");
+    return Response.json({
+        id,
+        setupToken,
+        authorizationURL: `${publicBaseURL(env)}/setup/${id}/oauth`,
+        expiresAt,
+    }, { status: 201 });
+}
+
 async function beginOAuth(sessionID: string, env: Env): Promise<Response> {
     const session = await loadSession(env.DB, sessionID);
     requireState(session, "OAUTH_PENDING");
@@ -132,7 +166,8 @@ async function finishOAuth(url: URL, env: Env): Promise<Response> {
     if (!code || !state) throw new SetupRequestError(400, "INVALID_OAUTH_CALLBACK");
 
     const session = await env.DB.prepare(
-        `SELECT id, setup_token_hash, user_id, oauth_credential_id, installation_id, state, expires_at
+        `SELECT id, setup_token_hash, user_id, oauth_credential_id, installation_id,
+                state, expires_at, purpose, automation_id
          FROM setup_sessions
          WHERE oauth_state_hash = ?`
     ).bind(await hashToken(state)).first<SetupSessionRecord>();
@@ -143,6 +178,9 @@ async function finishOAuth(url: URL, env: Env): Promise<Response> {
     const user = await loadGitHubUser(token.accessToken, env.GITHUB_API_VERSION);
     if (!user.scopes.includes("project")) {
         throw new SetupRequestError(403, "OAUTH_SCOPE_MISSING");
+    }
+    if (session.purpose === "REAUTHORIZE") {
+        return finishReauthorizationOAuth(session, token, user, env);
     }
     const existingUser = await env.DB.prepare(
         "SELECT id FROM users WHERE github_user_database_id = ?"
@@ -194,6 +232,75 @@ async function finishOAuth(url: URL, env: Env): Promise<Response> {
     );
     response.headers.append("Set-Cookie", setupCookie(session.id, env));
     return response;
+}
+
+async function finishReauthorizationOAuth(
+    session: SetupSessionRecord,
+    token: GitHubOAuthToken,
+    user: GitHubUser,
+    env: Env
+): Promise<Response> {
+    if (!session.user_id || !session.oauth_credential_id || !session.automation_id) {
+        throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+    }
+    const expectedUser = await env.DB.prepare(
+        "SELECT github_user_database_id FROM users WHERE id = ?"
+    ).bind(session.user_id).first<{ github_user_database_id: number }>();
+    if (!expectedUser || expectedUser.github_user_database_id !== user.databaseID) {
+        throw new SetupRequestError(403, "OAUTH_ACCOUNT_MISMATCH");
+    }
+
+    const encryptedAccessToken = await encryptCredentialToken(
+        session.oauth_credential_id,
+        "access",
+        token.accessToken,
+        env.OAUTH_TOKEN_ENCRYPTION_KEY
+    );
+    const encryptedRefreshToken = await encryptCredentialToken(
+        session.oauth_credential_id,
+        "refresh",
+        token.refreshToken,
+        env.OAUTH_TOKEN_ENCRYPTION_KEY
+    );
+    const now = new Date().toISOString();
+    const results = await env.DB.batch([
+        env.DB.prepare(
+            `UPDATE users
+             SET github_user_node_id = ?, github_login = ?, updated_at = ?
+             WHERE id = ?`
+        ).bind(user.nodeID, user.login, now, session.user_id),
+        env.DB.prepare(
+            `UPDATE oauth_credentials
+             SET encrypted_access_token = ?, encrypted_refresh_token = ?,
+                 access_token_expires_at = ?, refresh_token_expires_at = ?,
+                 granted_scopes = ?, credential_version = credential_version + 1,
+                 health_state = 'ACTIVE', updated_at = ?
+             WHERE id = ? AND user_id = ?`
+        ).bind(
+            encryptedAccessToken, encryptedRefreshToken,
+            token.accessTokenExpiresAt, token.refreshTokenExpiresAt,
+            JSON.stringify(user.scopes), now,
+            session.oauth_credential_id, session.user_id
+        ),
+        env.DB.prepare(
+            `UPDATE project_automations
+             SET enabled = 1, health_state = 'CONTENT_VISIBILITY_UNVERIFIED', updated_at = ?
+             WHERE id = ? AND user_id = ?`
+        ).bind(now, session.automation_id, session.user_id),
+        env.DB.prepare(
+            `UPDATE setup_sessions
+             SET oauth_state_hash = NULL, state = 'COMPLETE', updated_at = ?
+             WHERE id = ? AND state = 'OAUTH_PENDING'`
+        ).bind(now, session.id),
+    ]);
+    if (results[1].meta.changes !== 1
+        || results[2].meta.changes !== 1
+        || results[3].meta.changes !== 1) {
+        throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+    }
+    return new Response(reauthorizationCompleteHTML, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
 }
 
 async function finishInstallation(request: Request, url: URL, env: Env): Promise<Response> {
@@ -713,3 +820,8 @@ const setupCompleteHTML = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>GitBoard setup</title></head><body><main><h1>GitBoard is connected</h1>
 <p>Return to GitBoard to choose a repository and project workflow.</p></main></body></html>`;
+
+const reauthorizationCompleteHTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>GitBoard authorization</title></head><body><main><h1>GitBoard is reauthorized</h1>
+<p>You can return to GitBoard.</p></main></body></html>`;

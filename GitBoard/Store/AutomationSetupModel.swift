@@ -22,6 +22,8 @@ final class AutomationSetupModel {
     private(set) var repositories: [AutomationService.Repository] = []
     private(set) var projects: [AutomationService.Project] = []
     private(set) var statusFields: [AutomationService.StatusField] = []
+    private(set) var automations: [AutomationService.Automation] = []
+    private(set) var busyAutomationIDs: Set<String> = []
 
     var selectedRepositoryID: Int64?
     var selectedProjectID: String?
@@ -37,6 +39,7 @@ final class AutomationSetupModel {
     private var loadingProjectID: String?
     private var loadedProjectID: String?
     private var pendingManagementToken: String?
+    private var isReauthorization = false
 
     init(
         service: AutomationService? = AutomationService.configured(),
@@ -71,6 +74,7 @@ final class AutomationSetupModel {
             return nil
         }
         phase = .starting
+        isReauthorization = false
         errorMessage = nil
         do {
             let session = try await service.createSetupSession()
@@ -110,6 +114,11 @@ final class AutomationSetupModel {
                         setupToken: setupToken
                     )
                     return
+                case "COMPLETE" where isReauthorization:
+                    clearSetupSession()
+                    errorMessage = nil
+                    phase = .connected
+                    return
                 case "COMPLETE", "EXCHANGED":
                     throw AutomationServiceError.server("SETUP_STATE_CHANGED")
                 default:
@@ -126,6 +135,92 @@ final class AutomationSetupModel {
 
     func browserURL() -> URL? {
         authorizationURL
+    }
+
+    func loadAutomations() async {
+        guard phase == .connected, let service else {
+            return
+        }
+        do {
+            let managementToken = try requireManagementToken()
+            automations = try await service.automations(managementToken: managementToken)
+            if automations.isEmpty {
+                try tokenStore.delete()
+                phase = .disconnected
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            handleManagementFailure(error)
+        }
+    }
+
+    func setAutomationEnabled(id: String, enabled: Bool) async {
+        guard let service else { return }
+        busyAutomationIDs.insert(id)
+        errorMessage = nil
+        defer { busyAutomationIDs.remove(id) }
+        do {
+            let managementToken = try requireManagementToken()
+            let updated = try await service.setAutomation(
+                id: id,
+                enabled: enabled,
+                managementToken: managementToken
+            )
+            if let index = automations.firstIndex(where: { $0.id == id }) {
+                automations[index] = updated
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            handleManagementFailure(error)
+        }
+    }
+
+    func deleteAutomation(id: String) async {
+        guard let service else { return }
+        busyAutomationIDs.insert(id)
+        errorMessage = nil
+        defer { busyAutomationIDs.remove(id) }
+        do {
+            let managementToken = try requireManagementToken()
+            try await service.deleteAutomation(id: id, managementToken: managementToken)
+            automations.removeAll { $0.id == id }
+            if automations.isEmpty {
+                try tokenStore.delete()
+                phase = .disconnected
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            handleManagementFailure(error)
+        }
+    }
+
+    func reauthorizeAutomation(id: String) async -> URL? {
+        guard let service else { return nil }
+        phase = .starting
+        errorMessage = nil
+        do {
+            let managementToken = try requireManagementToken()
+            let session = try await service.beginReauthorization(
+                id: id,
+                managementToken: managementToken
+            )
+            setupSessionID = session.id
+            setupToken = session.setupToken
+            authorizationURL = session.authorizationURL
+            isReauthorization = true
+            phase = .waitingForBrowser
+            return session.authorizationURL
+        } catch is CancellationError {
+            phase = .connected
+            return nil
+        } catch {
+            phase = .connected
+            handleManagementFailure(error)
+            return nil
+        }
     }
 
     func selectProject(_ projectID: String?) async {
@@ -261,6 +356,7 @@ final class AutomationSetupModel {
         statusFields = []
         loadingProjectID = nil
         loadedProjectID = nil
+        isReauthorization = false
         selectedRepositoryID = nil
         selectedProjectID = nil
         selectedStatusFieldID = nil
@@ -270,6 +366,25 @@ final class AutomationSetupModel {
     private func fail(_ error: Error, fallback: Phase = .disconnected) {
         phase = fallback
         errorMessage = message(for: error)
+    }
+
+    private func handleManagementFailure(_ error: Error) {
+        if let serviceError = error as? AutomationServiceError,
+           case .server("MANAGEMENT_AUTH_REQUIRED") = serviceError {
+            try? tokenStore.delete()
+            automations = []
+            phase = .disconnected
+            errorMessage = "The saved automation connection is no longer valid. Connect again."
+            return
+        }
+        errorMessage = message(for: error)
+    }
+
+    private func requireManagementToken() throws -> String {
+        guard let token = try tokenStore.load() else {
+            throw AutomationServiceError.server("MANAGEMENT_AUTH_REQUIRED")
+        }
+        return token
     }
 
     private func message(for error: Error) -> String {
@@ -288,6 +403,10 @@ final class AutomationSetupModel {
             return "Your GitHub account cannot update the selected Project."
         case "SOURCE_REPOSITORY_ALREADY_CONFIGURED":
             return "That repository already has an automation."
+        case "AUTOMATION_NOT_READY":
+            return "Resolve the connection error before resuming this automation."
+        case "OAUTH_ACCOUNT_MISMATCH":
+            return "Authorize the same personal GitHub account used by this automation."
         case "PROJECT_API_INCOMPATIBLE", "INVALID_OAUTH_RESPONSE":
             return "GitHub returned data that this version of GitBoard cannot use."
         default:

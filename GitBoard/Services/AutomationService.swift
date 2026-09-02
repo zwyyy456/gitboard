@@ -55,6 +55,25 @@ actor AutomationService {
         let doneOptionID: String
     }
 
+    struct DeliveryStatus: Decodable, Sendable {
+        let state: String
+        let errorCode: String?
+        let receivedAt: Date?
+    }
+
+    struct Automation: Decodable, Identifiable, Sendable {
+        let id: String
+        let repositoryID: Int64
+        let repositoryNameWithOwner: String
+        let projectOwnerLogin: String
+        let projectNumber: Int
+        let projectNodeID: String
+        let enabled: Bool
+        let healthState: String
+        let updatedAt: Date
+        let lastDelivery: DeliveryStatus?
+    }
+
     private struct ProjectFieldsRequest: Encodable {
         let projectNodeID: String
         let projectNumber: Int
@@ -75,6 +94,18 @@ actor AutomationService {
 
     private struct ManagementTokenResponse: Decodable {
         let managementToken: String
+    }
+
+    private struct AutomationListResponse: Decodable {
+        let automations: [Automation]
+    }
+
+    private struct AutomationResponse: Decodable {
+        let automation: Automation
+    }
+
+    private struct AutomationUpdate: Encodable {
+        let enabled: Bool
     }
 
     private struct ServerError: Decodable {
@@ -160,6 +191,45 @@ actor AutomationService {
         return response.managementToken
     }
 
+    func automations(managementToken: String) async throws -> [Automation] {
+        let response: AutomationListResponse = try await send(
+            path: "api/automations",
+            bearerToken: managementToken
+        )
+        return response.automations
+    }
+
+    func setAutomation(
+        id: String,
+        enabled: Bool,
+        managementToken: String
+    ) async throws -> Automation {
+        let response: AutomationResponse = try await send(
+            path: "api/automations/\(id)",
+            method: "PATCH",
+            bearerToken: managementToken,
+            body: AutomationUpdate(enabled: enabled)
+        )
+        return response.automation
+    }
+
+    func deleteAutomation(id: String, managementToken: String) async throws {
+        _ = try await perform(
+            path: "api/automations/\(id)",
+            method: "DELETE",
+            bearerToken: managementToken,
+            encodedBody: nil
+        )
+    }
+
+    func beginReauthorization(id: String, managementToken: String) async throws -> SetupSession {
+        try await send(
+            path: "api/automations/\(id)/reauthorization",
+            method: "POST",
+            bearerToken: managementToken
+        )
+    }
+
     private func send<ResponseBody: Decodable>(
         path: String,
         method: String = "GET",
@@ -193,6 +263,25 @@ actor AutomationService {
         bearerToken: String?,
         encodedBody: Data?
     ) async throws -> ResponseBody {
+        let data = try await perform(
+            path: path,
+            method: method,
+            bearerToken: bearerToken,
+            encodedBody: encodedBody
+        )
+        do {
+            return try decoder.decode(ResponseBody.self, from: data)
+        } catch {
+            throw AutomationServiceError.invalidResponse
+        }
+    }
+
+    private func perform(
+        path: String,
+        method: String,
+        bearerToken: String?,
+        encodedBody: Data?
+    ) async throws -> Data {
         var request = URLRequest(url: baseURL.appending(path: path))
         request.httpMethod = method
         request.httpBody = encodedBody
@@ -212,11 +301,7 @@ actor AutomationService {
             let code = try? decoder.decode(ServerError.self, from: data).error
             throw AutomationServiceError.server(code ?? "HTTP_\(response.statusCode)")
         }
-        do {
-            return try decoder.decode(ResponseBody.self, from: data)
-        } catch {
-            throw AutomationServiceError.invalidResponse
-        }
+        return data
     }
 }
 

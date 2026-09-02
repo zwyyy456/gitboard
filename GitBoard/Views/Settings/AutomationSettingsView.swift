@@ -37,10 +37,14 @@ struct AutomationSettingsView: View {
                     Label("Automation is enabled, but the connection was not saved locally.", systemImage: "key")
                     Button("Retry Saving to Keychain", action: setup.retryTokenStorage)
                 case .connected:
-                    Label("GitHub Automation is connected.", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                    Text("Closing Issues can now follow pull request progress without GitBoard running.")
-                        .foregroundStyle(.secondary)
+                    if setup.automations.isEmpty && setup.errorMessage == nil {
+                        ProgressView("Loading automation status…")
+                    } else if setup.automations.isEmpty {
+                        Text("Connection status could not be loaded.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        AutomationConnectionList(setup: setup)
+                    }
                 }
 
                 if let errorMessage = setup.errorMessage {
@@ -49,10 +53,19 @@ struct AutomationSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            Section("Privacy") {
+                Text("The Worker temporarily processes GitHub Project Item responses to run automation, but does not persist or log private Issue content.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .formStyle(.grouped)
         .task(id: setup.setupSessionID) {
             await setup.observeSetup()
+        }
+        .task(id: setup.phase) {
+            await setup.loadAutomations()
         }
     }
 

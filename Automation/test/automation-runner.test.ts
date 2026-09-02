@@ -30,6 +30,7 @@ describe("AutomationRunner", () => {
         }]);
         expect(database.deliveryState).toBe("COMPLETED");
         expect(database.attemptCount).toBe(1);
+        expect(database.automationHealth).toBe("ACTIVE");
     });
 
     test("retries only a transient classified failure", async () => {
@@ -106,6 +107,7 @@ class RunnerDatabase {
     deliveryState: string;
     attemptCount = 0;
     errorCode: string | null = null;
+    automationHealth: string | null = null;
 
     readonly binding: D1Database;
 
@@ -148,6 +150,8 @@ class RunnerDatabase {
                         } else if (sql.includes("SET processing_state = ?")) {
                             this.deliveryState = String(values[0]);
                             this.errorCode = values[1] == null ? null : String(values[1]);
+                        } else if (sql.includes("health_state = 'ACTIVE'")) {
+                            this.automationHealth = "ACTIVE";
                         }
                         return { meta: { changes: 1 } };
                     },

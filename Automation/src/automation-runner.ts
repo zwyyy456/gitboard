@@ -108,11 +108,25 @@ export class AutomationRunner {
                 ? await this.projectGateway.applyStatuses(configuration(automation), assignments)
                 : {};
             const hasMissingItem = Object.values(outcomes).includes("NOT_IN_PROJECT");
+            if (Object.values(outcomes).includes("APPLIED")) {
+                await this.database.prepare(
+                    `UPDATE project_automations
+                     SET health_state = 'ACTIVE', updated_at = ?
+                     WHERE id = ? AND health_state = 'CONTENT_VISIBILITY_UNVERIFIED'`
+                ).bind(new Date().toISOString(), automation.automation_id).run();
+            }
             await this.finishDelivery(
                 message.deliveryID,
                 "COMPLETED",
                 hasMissingItem ? "NOT_IN_PROJECT" : null
             );
+            console.info("automation_delivery_completed", {
+                deliveryID: message.deliveryID,
+                automationID: automation.automation_id,
+                outcome: assignments.length === 0
+                    ? "NO_CHANGE"
+                    : hasMissingItem ? "NOT_IN_PROJECT" : "APPLIED",
+            });
             return { action: "ack" };
         } catch (error) {
             return this.handleFailure(message.deliveryID, automation, error, attempt);
@@ -169,6 +183,12 @@ export class AutomationRunner {
                  SET processing_state = 'RETRYING', error_code = ?
                  WHERE delivery_id = ?`
             ).bind(code, deliveryID).run();
+            console.info("automation_delivery_retrying", {
+                deliveryID,
+                automationID: automation.automation_id,
+                errorCode: code,
+                attempt,
+            });
             return { action: "retry", delaySeconds: retryDelay(attempt) };
         }
 
@@ -189,6 +209,11 @@ export class AutomationRunner {
                 automation.oauth_credential_id
             ).run();
         }
+        console.info("automation_delivery_failed", {
+            deliveryID,
+            automationID: automation.automation_id,
+            errorCode: code,
+        });
         return { action: "ack" };
     }
 
