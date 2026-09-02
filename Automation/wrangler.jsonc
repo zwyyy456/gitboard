@@ -16,6 +16,17 @@
         "binding": "AUTOMATION_QUEUE",
         "queue": "gitboard-automation"
       }
+    ],
+    "consumers": [
+      {
+        "queue": "gitboard-automation",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 8,
+        "dead_letter_queue": "gitboard-automation-dlq",
+        "max_concurrency": 1,
+        "retry_delay": 60
+      }
     ]
   },
   "vars": {

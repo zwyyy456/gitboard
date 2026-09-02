@@ -6,7 +6,10 @@ export interface InstallationRepository {
 }
 
 export class GitHubAppRequestError extends Error {
-    constructor(readonly status: number) {
+    constructor(
+        readonly status: number,
+        readonly retryable = false
+    ) {
         super(`GitHub App request failed with status ${status}`);
     }
 }
@@ -39,7 +42,7 @@ export class GitHubAppClient implements InstallationTokenProvider {
             }
         );
         if (!response.ok) {
-            throw new GitHubAppRequestError(response.status);
+            throw new GitHubAppRequestError(response.status, isRateLimited(response.headers));
         }
         let body: unknown;
         try {
@@ -61,7 +64,7 @@ export class GitHubAppClient implements InstallationTokenProvider {
         while (url) {
             const response: Response = await fetch(url, { headers: this.headers(token) });
             if (!response.ok) {
-                throw new GitHubAppRequestError(response.status);
+                throw new GitHubAppRequestError(response.status, isRateLimited(response.headers));
             }
             let body: unknown;
             try {
@@ -204,4 +207,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isPositiveInteger(value: unknown): value is number {
     return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function isRateLimited(headers: Headers): boolean {
+    return headers.has("Retry-After") || headers.get("X-RateLimit-Remaining") === "0";
 }

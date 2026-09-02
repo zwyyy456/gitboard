@@ -221,7 +221,7 @@ export class PersonalProjectGateway {
             throw new PersonalProjectError("OAUTH_SCOPE_MISSING", response.status);
         }
         if (!response.ok) {
-            throw classifyRESTFailure(response.status);
+            throw classifyRESTFailure(response);
         }
 
         let body: unknown;
@@ -304,14 +304,22 @@ function hasProjectScope(value: string | null): boolean {
         .includes("project");
 }
 
-function classifyRESTFailure(status: number): PersonalProjectError {
+function classifyRESTFailure(response: Response): PersonalProjectError {
+    const status = response.status;
     if (status === 401) return new PersonalProjectError("OAUTH_REAUTH_REQUIRED", status);
+    if (status === 403 && isRateLimited(response.headers)) {
+        return new PersonalProjectError("TRANSIENT_GITHUB_FAILURE", status);
+    }
     if (status === 403) return new PersonalProjectError("OAUTH_REAUTH_REQUIRED", status);
     if (status === 404) return new PersonalProjectError("PROJECT_CONFIGURATION_INVALID", status);
     if (status === 429 || status >= 500) {
         return new PersonalProjectError("TRANSIENT_GITHUB_FAILURE", status);
     }
     return new PersonalProjectError("PROJECT_API_INCOMPATIBLE", status);
+}
+
+function isRateLimited(headers: Headers): boolean {
+    return headers.has("Retry-After") || headers.get("X-RateLimit-Remaining") === "0";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

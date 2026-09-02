@@ -73,7 +73,9 @@ export class RepositoryTruthReader {
                 throw mapGraphQLError(error);
             }
             if (error instanceof GitHubAppRequestError) {
-                throw mapHTTPStatus(error.status);
+                throw error.retryable
+                    ? new RepositoryTruthError("TRANSIENT_GITHUB_FAILURE")
+                    : mapHTTPStatus(error.status);
             }
             throw new RepositoryTruthError("TRANSIENT_GITHUB_FAILURE");
         }

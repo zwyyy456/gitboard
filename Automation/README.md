@@ -65,6 +65,12 @@ item `node_id`, Status field, and option IDs. A node-resolution failure triggers
 one fresh REST lookup: a missing item becomes `NOT_IN_PROJECT`, while a new item
 ID is retried once. There is no REST PATCH writer and no unbounded retry.
 
+The Queue consumer runs with one global concurrent invocation and processes each
+batch sequentially. Every attempt reloads repository truth; completed or failed
+delivery IDs are acknowledged without another GitHub call. Stable failures are
+recorded and acknowledged, while network, rate-limit, and 5xx failures are
+retried with a bounded delay. Status writes remain idempotent across redelivery.
+
 ## Authorization boundary validation
 
 Before deployment, the personal-account authorization boundary must be verified
