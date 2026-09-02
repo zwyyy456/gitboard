@@ -5,6 +5,7 @@ import { GraphQLStatusWriter } from "./graphql-status-writer";
 import { OAuthCredentialProvider } from "./oauth-credential-provider";
 import { PersonalProjectGateway } from "./personal-project-gateway";
 import { RepositoryTruthReader } from "./repository-truth-reader";
+import { handleManagementRequest } from "./management-api";
 import { handleSetupRequest } from "./setup-api";
 import { receiveGitHubWebhook, WebhookRequestError } from "./webhook-receiver";
 
@@ -53,6 +54,9 @@ export default {
             || url.pathname === "/setup/github-app"
             || url.pathname === "/api/management/token") {
             return handleSetupRequest(request, env);
+        }
+        if (url.pathname === "/api/automations" || url.pathname.startsWith("/api/automations/")) {
+            return handleManagementRequest(request, env);
         }
         return new Response("Not found", { status: 404 });
     },
