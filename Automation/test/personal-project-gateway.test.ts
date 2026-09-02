@@ -5,6 +5,7 @@ import {
     type IssueStatusAssignment,
     type PersonalProjectConfiguration,
     type ProjectStatusWriter,
+    ProjectStatusWriterError,
 } from "../src/personal-project-gateway";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -86,6 +87,33 @@ describe("PersonalProjectGateway", () => {
             assignment("ISSUE", "owner/repository", "IN_PROGRESS"),
         ])).rejects.toMatchObject({ code: "OAUTH_SCOPE_MISSING" });
     });
+
+    test("re-resolves once when the looked-up item was deleted", async () => {
+        vi.stubGlobal("fetch", vi.fn()
+            .mockResolvedValueOnce(projectResponse([item("OLD_ITEM", "ISSUE")]))
+            .mockResolvedValueOnce(projectResponse([])));
+        const writer = new StubWriter([new ProjectStatusWriterError("ITEM_NOT_FOUND")]);
+
+        await expect(makeGateway(writer).applyStatuses(project, [
+            assignment("ISSUE", "owner/repository", "DONE"),
+        ])).resolves.toEqual({ ISSUE: "NOT_IN_PROJECT" });
+        expect(writer.updates).toEqual([{ itemNodeID: "OLD_ITEM", optionID: "DONE_OPTION" }]);
+    });
+
+    test("writes once more when re-resolution finds a replacement item", async () => {
+        vi.stubGlobal("fetch", vi.fn()
+            .mockResolvedValueOnce(projectResponse([item("OLD_ITEM", "ISSUE")]))
+            .mockResolvedValueOnce(projectResponse([item("NEW_ITEM", "ISSUE")])));
+        const writer = new StubWriter([new ProjectStatusWriterError("ITEM_NOT_FOUND")]);
+
+        await expect(makeGateway(writer).applyStatuses(project, [
+            assignment("ISSUE", "owner/repository", "DONE"),
+        ])).resolves.toEqual({ ISSUE: "APPLIED" });
+        expect(writer.updates).toEqual([
+            { itemNodeID: "OLD_ITEM", optionID: "DONE_OPTION" },
+            { itemNodeID: "NEW_ITEM", optionID: "DONE_OPTION" },
+        ]);
+    });
 });
 
 const project: PersonalProjectConfiguration = {
@@ -113,6 +141,8 @@ class StubAccessTokens implements AccessTokenProvider {
 class StubWriter implements ProjectStatusWriter {
     readonly updates: Array<{ itemNodeID: string; optionID: string }> = [];
 
+    constructor(private readonly failures: Error[] = []) {}
+
     async updateStatus(
         _token: string,
         _project: PersonalProjectConfiguration,
@@ -120,6 +150,8 @@ class StubWriter implements ProjectStatusWriter {
         optionID: string
     ): Promise<void> {
         this.updates.push({ itemNodeID, optionID });
+        const failure = this.failures.shift();
+        if (failure) throw failure;
     }
 }
 
