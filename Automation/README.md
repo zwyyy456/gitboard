@@ -43,6 +43,10 @@ for those Issues, including closed pull requests. Both connections are fully
 paginated. Cross-repository Issues are accepted only when their numeric
 repository ID is present in the same installation's D1 repository set.
 
+`WorkflowReducer` is a pure function. Its priority is merged → open ready → open
+draft → all closed-unmerged; a closed Issue without a merged closing pull request
+and an Issue without closing pull requests are left unchanged.
+
 ## Authorization boundary validation
 
 Before deployment, the personal-account authorization boundary must be verified

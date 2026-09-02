@@ -21,3 +21,5 @@ export interface IssueWorkflowTruth {
     issueRepositoryNameWithOwner: string;
     closingPullRequests: ClosingPullRequestTruth[];
 }
+
+export type DesiredStatus = "DONE" | "IN_REVIEW" | "IN_PROGRESS";
