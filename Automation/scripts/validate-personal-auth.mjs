@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import { createPrivateKey, sign } from "node:crypto";
+import { readFile } from "node:fs/promises";
+
 const graphqlURL = "https://api.github.com/graphql";
 const apiVersion = "2026-03-10";
 
@@ -55,10 +58,7 @@ async function graphQL(token, query, variables) {
     return body.data;
 }
 
-async function rotateOAuthToken() {
-    const clientID = requiredEnvironment("GB_OAUTH_CLIENT_ID");
-    const clientSecret = requiredEnvironment("GB_OAUTH_CLIENT_SECRET");
-    const refreshToken = requiredEnvironment("GB_OAUTH_REFRESH_TOKEN");
+async function oauthRequest(parameters) {
     const response = await fetch("https://github.com/login/oauth/access_token", {
         method: "POST",
         headers: {
@@ -66,14 +66,20 @@ async function rotateOAuthToken() {
             "Content-Type": "application/x-www-form-urlencoded",
             "User-Agent": "GitBoard-authorization-validator",
         },
-        body: new URLSearchParams({
-            client_id: clientID,
-            client_secret: clientSecret,
-            grant_type: "refresh_token",
-            refresh_token: refreshToken,
-        }),
+        body: new URLSearchParams(parameters),
     });
     const body = await response.json().catch(() => null);
+    return { response, body };
+}
+
+async function rotateOAuthToken({ clientID, clientSecret, refreshToken }) {
+    const parameters = {
+        client_id: clientID,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+    };
+    if (clientSecret) parameters.client_secret = clientSecret;
+    const { response, body } = await oauthRequest(parameters);
     if (!response.ok || !body?.access_token || !body?.refresh_token) {
         throw new ValidationError(`OAuth refresh failed: ${body?.error_description ?? body?.error ?? response.status}`);
     }
@@ -81,6 +87,80 @@ async function rotateOAuthToken() {
         throw new ValidationError("OAuth refresh response did not contain token expiration values");
     }
     return body.access_token;
+}
+
+async function oauthDeviceFlow() {
+    const clientID = requiredEnvironment("GB_OAUTH_CLIENT_ID");
+    const startResponse = await fetch("https://github.com/login/device/code", {
+        method: "POST",
+        headers: {
+            Accept: "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "GitBoard-authorization-validator",
+        },
+        body: new URLSearchParams({ client_id: clientID, scope: "project offline_access" }),
+    });
+    const start = await startResponse.json().catch(() => null);
+    if (!startResponse.ok || !start?.device_code || !start?.user_code || !start?.verification_uri) {
+        throw new ValidationError(`OAuth device flow could not start: ${start?.error_description ?? start?.error ?? startResponse.status}`);
+    }
+
+    console.log(`Open ${start.verification_uri} and enter code ${start.user_code}`);
+    let intervalSeconds = start.interval;
+    const expiresAt = Date.now() + start.expires_in * 1_000;
+    while (Date.now() < expiresAt) {
+        await new Promise((resolve) => setTimeout(resolve, intervalSeconds * 1_000));
+        const { body } = await oauthRequest({
+            client_id: clientID,
+            device_code: start.device_code,
+            grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+        });
+        if (body?.access_token) {
+            if (!body.refresh_token || !Number.isFinite(body.expires_in) || !Number.isFinite(body.refresh_token_expires_in)) {
+                throw new ValidationError("OAuth device flow did not return an expiring access/refresh token pair");
+            }
+            console.log("✓ OAuth project/offline_access device authorization succeeded");
+            return {
+                accessToken: body.access_token,
+                clientID,
+                refreshToken: body.refresh_token,
+            };
+        }
+        if (body?.error === "authorization_pending") continue;
+        if (body?.error === "slow_down") {
+            intervalSeconds += 5;
+            continue;
+        }
+        throw new ValidationError(`OAuth device authorization failed: ${body?.error_description ?? body?.error ?? "unknown error"}`);
+    }
+    throw new ValidationError("OAuth device authorization expired before it was approved");
+}
+
+function base64URL(value) {
+    return Buffer.from(value).toString("base64url");
+}
+
+async function mintInstallationToken() {
+    const appID = requiredEnvironment("GB_GITHUB_APP_ID");
+    const installationID = requiredEnvironment("GB_INSTALLATION_ID");
+    const privateKeyPath = requiredEnvironment("GB_GITHUB_APP_PRIVATE_KEY_PATH");
+    const privateKey = createPrivateKey(await readFile(privateKeyPath));
+    const now = Math.floor(Date.now() / 1_000);
+    const header = base64URL(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+    const payload = base64URL(JSON.stringify({ iat: now - 60, exp: now + 9 * 60, iss: appID }));
+    const unsignedToken = `${header}.${payload}`;
+    const signature = sign("RSA-SHA256", Buffer.from(unsignedToken), privateKey).toString("base64url");
+    const jwt = `${unsignedToken}.${signature}`;
+    const { body } = await githubRequest(
+        `https://api.github.com/app/installations/${encodeURIComponent(installationID)}/access_tokens`,
+        jwt,
+        { method: "POST" }
+    );
+    if (!body?.token) {
+        throw new ValidationError("GitHub App did not return an installation access token");
+    }
+    console.log("✓ GitHub App installation token generated in memory");
+    return body.token;
 }
 
 async function loadOAuthIdentity(token) {
@@ -94,9 +174,9 @@ async function loadOAuthIdentity(token) {
     if (!scopes.has("project")) {
         throw new ValidationError("OAuth token is missing the project scope");
     }
-    const unexpectedRepositoryScope = ["repo", "public_repo"].find((scope) => scopes.has(scope));
-    if (unexpectedRepositoryScope) {
-        throw new ValidationError(`OAuth token has unexpected repository scope: ${unexpectedRepositoryScope}`);
+    const unexpectedScopes = [...scopes].filter((scope) => scope !== "project");
+    if (unexpectedScopes.length) {
+        throw new ValidationError(`OAuth token has unexpected scope: ${unexpectedScopes[0]}`);
     }
     return { nodeID: body.node_id, login: body.login };
 }
@@ -224,21 +304,31 @@ async function clearStatus(token, projectID, itemID, fieldID) {
 }
 
 function printUsage() {
-    console.log(`Usage: node Automation/scripts/validate-personal-auth.mjs [--rotate-refresh-token]
+    console.log(`Usage: node Automation/scripts/validate-personal-auth.mjs [--device-flow] [--rotate-refresh-token]
 
 Required environment:
-  GB_INSTALLATION_TOKEN
-  GB_OAUTH_TOKEN                 unless --rotate-refresh-token is used
   GB_REPOSITORY                 owner/repository
   GB_PR_NUMBER
   GB_PROJECT_OWNER
   GB_PROJECT_NUMBER
+
+Recommended GitHub App inputs:
+  GB_GITHUB_APP_ID
+  GB_INSTALLATION_ID
+  GB_GITHUB_APP_PRIVATE_KEY_PATH
+
+Recommended OAuth device-flow input:
+  GB_OAUTH_CLIENT_ID
+
+Optional direct-token inputs:
+  GB_INSTALLATION_TOKEN
+  GB_OAUTH_TOKEN
   GB_TARGET_STATUS_OPTION_ID
 
 Refresh validation additionally requires:
   GB_OAUTH_CLIENT_ID
-  GB_OAUTH_CLIENT_SECRET
-  GB_OAUTH_REFRESH_TOKEN`);
+  GB_OAUTH_REFRESH_TOKEN
+  GB_OAUTH_CLIENT_SECRET          unless --device-flow is used`);
 }
 
 async function main() {
@@ -247,13 +337,12 @@ async function main() {
         printUsage();
         return;
     }
-    const unknownArguments = [...argumentsSet].filter((argument) => argument !== "--rotate-refresh-token");
+    const allowedArguments = new Set(["--device-flow", "--rotate-refresh-token"]);
+    const unknownArguments = [...argumentsSet].filter((argument) => !allowedArguments.has(argument));
     if (unknownArguments.length) {
         throw new ValidationError(`Unknown argument: ${unknownArguments[0]}`);
     }
 
-    const installationToken = requiredEnvironment("GB_INSTALLATION_TOKEN");
-    let oauthToken;
     const [repositoryOwner, repositoryName, extraRepositoryPart] = requiredEnvironment("GB_REPOSITORY").split("/");
     if (!repositoryOwner || !repositoryName || extraRepositoryPart) {
         throw new ValidationError("GB_REPOSITORY must use owner/repository format");
@@ -261,13 +350,28 @@ async function main() {
     const pullRequestNumber = positiveInteger("GB_PR_NUMBER");
     const projectOwner = requiredEnvironment("GB_PROJECT_OWNER");
     const projectNumber = positiveInteger("GB_PROJECT_NUMBER");
-    const targetStatusOptionID = requiredEnvironment("GB_TARGET_STATUS_OPTION_ID");
-
-    if (argumentsSet.has("--rotate-refresh-token")) {
-        oauthToken = await rotateOAuthToken();
+    const installationToken = process.env.GB_INSTALLATION_TOKEN?.trim() || await mintInstallationToken();
+    let oauthToken;
+    let deviceAuthorization;
+    if (argumentsSet.has("--device-flow")) {
+        deviceAuthorization = await oauthDeviceFlow();
+        oauthToken = deviceAuthorization.accessToken;
+    } else if (argumentsSet.has("--rotate-refresh-token")) {
+        oauthToken = await rotateOAuthToken({
+            clientID: requiredEnvironment("GB_OAUTH_CLIENT_ID"),
+            clientSecret: requiredEnvironment("GB_OAUTH_CLIENT_SECRET"),
+            refreshToken: requiredEnvironment("GB_OAUTH_REFRESH_TOKEN"),
+        });
         console.log("✓ OAuth access/refresh token rotation succeeded");
     } else {
         oauthToken = requiredEnvironment("GB_OAUTH_TOKEN");
+    }
+    if (deviceAuthorization && argumentsSet.has("--rotate-refresh-token")) {
+        oauthToken = await rotateOAuthToken({
+            clientID: deviceAuthorization.clientID,
+            refreshToken: deviceAuthorization.refreshToken,
+        });
+        console.log("✓ OAuth access/refresh token rotation succeeded");
     }
 
     const [oauthIdentity, closingIssueResult] = await Promise.all([
@@ -289,10 +393,6 @@ async function main() {
     console.log(`✓ Installation token found ${closingIssueResult.issues.length} closing Issue(s)`);
 
     const project = await loadProject(oauthToken, projectOwner, projectNumber);
-    const optionIDs = new Set(project.statusField.options.map((option) => option.id));
-    if (!optionIDs.has(targetStatusOptionID)) {
-        throw new ValidationError("GB_TARGET_STATUS_OPTION_ID is not an option in the Project Status field");
-    }
     const item = await findProjectItem(
         oauthToken,
         projectOwner,
@@ -302,6 +402,16 @@ async function main() {
     console.log("✓ OAuth project-only token located the private Issue's Project item");
 
     const originalStatusOptionID = item.fieldValueByName?.optionId ?? null;
+    const configuredTargetStatusOptionID = process.env.GB_TARGET_STATUS_OPTION_ID?.trim();
+    const optionIDs = new Set(project.statusField.options.map((option) => option.id));
+    if (configuredTargetStatusOptionID && !optionIDs.has(configuredTargetStatusOptionID)) {
+        throw new ValidationError("GB_TARGET_STATUS_OPTION_ID is not an option in the Project Status field");
+    }
+    const targetStatusOptionID = configuredTargetStatusOptionID
+        ?? project.statusField.options.find((option) => option.id !== originalStatusOptionID)?.id;
+    if (!targetStatusOptionID) {
+        throw new ValidationError("The Project needs a Status option different from the item's current value");
+    }
     if (originalStatusOptionID === targetStatusOptionID) {
         throw new ValidationError("Target Status option must differ from the current Status option");
     }
