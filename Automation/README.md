@@ -37,6 +37,12 @@ installation token. Repository access is reconciled from GitHub into D1;
 suspension, deletion, or source repository removal disables the affected
 automation. Neither token is written to D1 or logs.
 
+For each queued pull request, `RepositoryTruthReader` uses an installation token
+to reload every currently visible closing Issue and every closing pull request
+for those Issues, including closed pull requests. Both connections are fully
+paginated. Cross-repository Issues are accepted only when their numeric
+repository ID is present in the same installation's D1 repository set.
+
 ## Authorization boundary validation
 
 Before deployment, the personal-account authorization boundary must be verified

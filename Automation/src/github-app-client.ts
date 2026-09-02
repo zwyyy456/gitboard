@@ -11,7 +11,11 @@ export class GitHubAppRequestError extends Error {
     }
 }
 
-export class GitHubAppClient {
+export interface InstallationTokenProvider {
+    createInstallationAccessToken(installationID: number): Promise<string>;
+}
+
+export class GitHubAppClient implements InstallationTokenProvider {
     constructor(
         private readonly appID: string,
         private readonly privateKey: string,
@@ -37,7 +41,12 @@ export class GitHubAppClient {
         if (!response.ok) {
             throw new GitHubAppRequestError(response.status);
         }
-        const body: unknown = await response.json();
+        let body: unknown;
+        try {
+            body = await response.json();
+        } catch {
+            throw new GitHubAppRequestError(502);
+        }
         if (!isRecord(body) || typeof body.token !== "string") {
             throw new GitHubAppRequestError(502);
         }
@@ -54,7 +63,12 @@ export class GitHubAppClient {
             if (!response.ok) {
                 throw new GitHubAppRequestError(response.status);
             }
-            const body: unknown = await response.json();
+            let body: unknown;
+            try {
+                body = await response.json();
+            } catch {
+                throw new GitHubAppRequestError(502);
+            }
             if (!isRecord(body) || !Array.isArray(body.repositories)) {
                 throw new GitHubAppRequestError(502);
             }
