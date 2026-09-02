@@ -25,6 +25,12 @@ can provision the resource on first deployment and write the assigned ID back
 to the configuration. Review that generated change before committing it. D1
 migrations remain the only source of schema changes.
 
+GitHub App webhooks are accepted at `POST /webhooks/github`. The receiver
+verifies `X-Hub-Signature-256` before decoding, ignores unrelated events and
+actions, and places only delivery, installation, repository, pull request, and
+action identifiers on the Queue. The D1 delivery row is the deduplication
+record; complete webhook payloads are neither queued nor stored.
+
 ## Authorization boundary validation
 
 Before deployment, the personal-account authorization boundary must be verified
