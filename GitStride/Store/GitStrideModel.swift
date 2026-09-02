@@ -6,6 +6,7 @@ import Observation
 final class GitStrideModel {
     let projectStore = ProjectStore()
     let myWorkStore = MyWorkStore()
+    let automationSetup = AutomationSetupModel()
 
     var monitoringEnabled: Bool
     var monitoringIntervalMinutes: Int
