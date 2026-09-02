@@ -9,6 +9,7 @@ struct MenuBarPopoverView: View {
     @State private var isMoreHovered = false
     @State private var searchText = ""
     @State private var keyMonitor: Any?
+    @State private var operationErrorMessage: String?
 
     private var canEditSelectedProject: Bool {
         store.canEditSelectedProject
@@ -18,7 +19,10 @@ struct MenuBarPopoverView: View {
         VStack(alignment: .leading, spacing: 0) {
             headerView
 
-            OperationErrorBanner(store: store)
+            OperationErrorBanner(
+                message: operationErrorMessage ?? store.operationErrorMessage,
+                dismiss: dismissOperationError
+            )
 
             if store.isLoading && store.projects.isEmpty {
                 loadingView
@@ -81,6 +85,19 @@ struct MenuBarPopoverView: View {
                     store.selectedStatusFilter = statuses[newIndex].name
                 }
             }
+        }
+    }
+
+    private func report(_ error: Error) {
+        guard (error is CancellationError) == false else { return }
+        operationErrorMessage = error.localizedDescription
+    }
+
+    private func dismissOperationError() {
+        if operationErrorMessage != nil {
+            operationErrorMessage = nil
+        } else {
+            store.clearOperationError()
         }
     }
 
@@ -450,14 +467,20 @@ struct MenuBarPopoverView: View {
                     emptyFilterView
                 } else {
                     ForEach(items) { item in
-                        ItemRow(item: item, store: store, project: project) {
-                            openItemDetails(
-                                ItemInspectorReference(
-                                    projectID: project.id,
-                                    itemID: item.id
+                        ItemRow(
+                            item: item,
+                            store: store,
+                            project: project,
+                            showInspector: {
+                                openItemDetails(
+                                    ItemInspectorReference(
+                                        projectID: project.id,
+                                        itemID: item.id
+                                    )
                                 )
-                            )
-                        }
+                            },
+                            reportError: report
+                        )
                     }
                 }
             }
@@ -639,6 +662,7 @@ struct ItemRow: View {
     @Bindable var store: ProjectStore
     let project: Project
     let showInspector: () -> Void
+    let reportError: (Error) -> Void
     @Environment(\.openWindow) private var openWindow
 
     @State private var isHovered = false
@@ -725,7 +749,11 @@ struct ItemRow: View {
                     ForEach(project.statusOptions) { status in
                         Button {
                             Task {
-                                await store.moveItem(item, toStatus: status, in: project.id)
+                                do {
+                                    try await store.moveItem(item, toStatus: status, in: project.id)
+                                } catch {
+                                    reportError(error)
+                                }
                             }
                         } label: {
                             HStack {
@@ -752,11 +780,15 @@ struct ItemRow: View {
                         ForEach(item.assignees) { assignee in
                             Button {
                                 Task {
-                                    await store.removeAssignee(
-                                        from: item,
-                                        in: project.id,
-                                        user: assignee
-                                    )
+                                    do {
+                                        try await store.removeAssignee(
+                                            from: item,
+                                            in: project.id,
+                                            user: assignee
+                                        )
+                                    } catch {
+                                        reportError(error)
+                                    }
                                 }
                             } label: {
                                 Label(assignee.name ?? assignee.login, systemImage: "person.fill.xmark")
@@ -770,7 +802,13 @@ struct ItemRow: View {
                 Divider()
 
                 Button {
-                    Task { _ = await store.archiveItem(item, in: project.id) }
+                    Task {
+                        do {
+                            try await store.archiveItem(item, in: project.id)
+                        } catch {
+                            reportError(error)
+                        }
+                    }
                 } label: {
                     Label("Archive from Project", systemImage: "archivebox")
                 }
