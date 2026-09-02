@@ -10,6 +10,7 @@ struct ItemDetailView: View {
     @State private var inspectorWidth: CGFloat = 300
     @State private var pendingInspectorWidthUpdate: Task<Void, Never>?
     @State private var isArchiving = false
+    @State private var operationErrorMessage: String?
 
     private static let inspectorMinimumWidth: CGFloat = 260
     private static let inspectorMaximumWidth: CGFloat = 360
@@ -21,12 +22,33 @@ struct ItemDetailView: View {
     }
 
     var body: some View {
-        Group {
-            if item != nil, store.project(id: reference.projectID) != nil {
-                ItemDescriptionView(store: store, reference: reference)
-            } else {
-                ContentUnavailableView("Item Unavailable", systemImage: "archivebox")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            if let operationErrorMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(operationErrorMessage)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                    Spacer()
+                    Button("Dismiss", systemImage: "xmark") {
+                        self.operationErrorMessage = nil
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.orange.opacity(0.12))
+            }
+
+            Group {
+                if item != nil, store.project(id: reference.projectID) != nil {
+                    ItemDescriptionView(store: store, reference: reference)
+                } else {
+                    ContentUnavailableView("Item Unavailable", systemImage: "archivebox")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
         .frame(
@@ -100,7 +122,8 @@ struct ItemDetailView: View {
         .inspector(isPresented: $isInspectorPresented) {
             ItemPropertiesView(
                 store: store,
-                reference: reference
+                reference: reference,
+                operationErrorMessage: $operationErrorMessage
             )
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.width
@@ -115,14 +138,12 @@ struct ItemDetailView: View {
         }
         .focusedValue(\.workspaceCommandContext, commandContext)
         .task(id: item?.contentId) {
-            store.clearOperationError()
             if let item {
                 await store.loadItemDetail(for: item)
             }
         }
         .onDisappear {
             pendingInspectorWidthUpdate?.cancel()
-            store.clearOperationError()
         }
     }
 
@@ -179,7 +200,16 @@ struct ItemDetailView: View {
     }
 
     private func refreshItem() {
-        Task { await store.refreshItem(reference) }
+        operationErrorMessage = nil
+        Task {
+            do {
+                try await store.refreshItem(reference)
+            } catch is CancellationError {
+                return
+            } catch {
+                operationErrorMessage = "Item refresh failed: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func toggleInspector() {

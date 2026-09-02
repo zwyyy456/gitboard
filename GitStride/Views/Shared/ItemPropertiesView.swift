@@ -3,6 +3,7 @@ import SwiftUI
 struct ItemPropertiesView: View {
     @Bindable var store: ProjectStore
     let reference: ItemInspectorReference
+    @Binding var operationErrorMessage: String?
 
     @State private var userQuery = ""
     @State private var userResults: [Assignee] = []
@@ -38,7 +39,8 @@ struct ItemPropertiesView: View {
 
                     signalsSection(item)
 
-                    if let message = store.operationErrorMessage {
+                    if operationErrorMessage == nil,
+                       let message = store.operationErrorMessage {
                         Label(message, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
                             .foregroundStyle(.red)
@@ -79,6 +81,7 @@ struct ItemPropertiesView: View {
                     isEditable: canEdit && isWorking == false
                 ) { value in
                     isWorking = true
+                    operationErrorMessage = nil
                     _ = await store.updateField(
                         on: item,
                         in: reference.projectID,
@@ -401,6 +404,7 @@ struct ItemPropertiesView: View {
 
                         if canEdit {
                             Button {
+                                operationErrorMessage = nil
                                 Task {
                                     await store.removeAssignee(
                                         from: item,
@@ -442,12 +446,17 @@ struct ItemPropertiesView: View {
                         Spacer()
                         if canEdit {
                             Button {
+                                operationErrorMessage = nil
                                 Task {
-                                    _ = await store.removeLabel(
-                                        from: item,
-                                        in: reference.projectID,
-                                        name: label.name
-                                    )
+                                    do {
+                                        try await store.removeLabel(
+                                            from: item,
+                                            in: reference.projectID,
+                                            name: label.name
+                                        )
+                                    } catch {
+                                        report(error)
+                                    }
                                 }
                             } label: {
                                 Image(systemName: "xmark")
@@ -592,11 +601,17 @@ struct ItemPropertiesView: View {
         let generation = userSearchGeneration
         isSearchingUsers = true
         hasSearchedUsers = true
+        operationErrorMessage = nil
         Task {
-            let results = await store.searchUsers(query: query)
-            guard generation == userSearchGeneration else { return }
-            if query == userQuery.trimmingCharacters(in: .whitespacesAndNewlines) {
-                userResults = results
+            do {
+                let results = try await store.searchUsers(query: query)
+                guard generation == userSearchGeneration else { return }
+                if query == userQuery.trimmingCharacters(in: .whitespacesAndNewlines) {
+                    userResults = results
+                }
+            } catch {
+                guard generation == userSearchGeneration else { return }
+                report(error)
             }
             isSearchingUsers = false
         }
@@ -617,31 +632,45 @@ struct ItemPropertiesView: View {
     }
 
     private func addAssignee(_ user: Assignee, to item: ProjectItem) {
+        operationErrorMessage = nil
         Task {
-            await store.addAssignee(
-                to: item,
-                in: reference.projectID,
-                user: user
-            )
-            userResults.removeAll { $0.id == user.id }
+            do {
+                try await store.addAssignee(
+                    to: item,
+                    in: reference.projectID,
+                    user: user
+                )
+                userResults.removeAll { $0.id == user.id }
+            } catch {
+                report(error)
+            }
         }
     }
 
     private func addLabel(to item: ProjectItem) {
         let name = labelName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard name.isEmpty == false else { return }
+        operationErrorMessage = nil
         Task {
-            if await store.addLabel(to: item, in: reference.projectID, name: name) {
+            do {
+                try await store.addLabel(to: item, in: reference.projectID, name: name)
                 labelName = ""
                 showsLabelPicker = false
+            } catch {
+                report(error)
             }
         }
     }
 
     private func changeMilestone(_ milestone: RepositoryMilestone?, on item: ProjectItem) {
         isWorking = true
+        operationErrorMessage = nil
         Task {
-            _ = await store.setMilestone(milestone, on: item)
+            do {
+                try await store.setMilestone(milestone, on: item)
+            } catch {
+                report(error)
+            }
             isWorking = false
         }
     }
@@ -652,10 +681,20 @@ struct ItemPropertiesView: View {
         from item: ProjectItem
     ) {
         isWorking = true
+        operationErrorMessage = nil
         Task {
-            _ = await store.removeRelation(kind, relatedIssue: issue, from: item)
+            do {
+                try await store.removeRelation(kind, relatedIssue: issue, from: item)
+            } catch {
+                report(error)
+            }
             isWorking = false
         }
+    }
+
+    private func report(_ error: Error) {
+        guard (error is CancellationError) == false else { return }
+        operationErrorMessage = error.localizedDescription
     }
 
 }
@@ -671,6 +710,7 @@ private struct IssueRelationEditorView: View {
     @State private var results: [GitHubItemCandidate] = []
     @State private var isSearching = false
     @State private var isAdding = false
+    @State private var operationErrorMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -729,7 +769,7 @@ private struct IssueRelationEditorView: View {
                 .listStyle(.inset)
             }
 
-            if let message = store.operationErrorMessage {
+            if let message = operationErrorMessage {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.red)
@@ -745,7 +785,6 @@ private struct IssueRelationEditorView: View {
         }
         .padding(20)
         .frame(width: 460, height: 420)
-        .onAppear { store.clearOperationError() }
     }
 
     private var trimmedQuery: String {
@@ -778,13 +817,19 @@ private struct IssueRelationEditorView: View {
         let query = trimmedQuery
         guard query.isEmpty == false else { return }
         isSearching = true
-        store.clearOperationError()
+        operationErrorMessage = nil
         Task {
-            let candidates = await store.searchItems(query: query)
-            results = candidates.filter {
-                $0.contentType == .issue
-                    && $0.id != item.contentId
-                    && existingIssueIDs.contains($0.id) == false
+            do {
+                let candidates = try await store.searchItems(query: query)
+                results = candidates.filter {
+                    $0.contentType == .issue
+                        && $0.id != item.contentId
+                        && existingIssueIDs.contains($0.id) == false
+                }
+            } catch is CancellationError {
+                // Closing the sheet cancels the task; there is no error to present.
+            } catch {
+                operationErrorMessage = error.localizedDescription
             }
             isSearching = false
         }
@@ -792,10 +837,17 @@ private struct IssueRelationEditorView: View {
 
     private func add(_ candidate: GitHubItemCandidate) {
         isAdding = true
+        operationErrorMessage = nil
         Task {
-            let succeeded = await store.addRelation(kind, target: candidate, on: item)
+            do {
+                try await store.addRelation(kind, target: candidate, on: item)
+                dismiss()
+            } catch is CancellationError {
+                // Closing the sheet cancels the task; there is no error to present.
+            } catch {
+                operationErrorMessage = error.localizedDescription
+            }
             isAdding = false
-            if succeeded { dismiss() }
         }
     }
 }
