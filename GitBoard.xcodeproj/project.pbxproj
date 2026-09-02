@@ -17,9 +17,8 @@
 		A0000008 /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000008 /* ProjectStore.swift */; };
 		A0000009 /* MenuBarPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000009 /* MenuBarPopoverView.swift */; };
 		A0000010 /* ProjectSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000010 /* ProjectSelectorView.swift */; };
-		A0000011 /* StatusSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000011 /* StatusSummaryView.swift */; };
 		A0000012 /* KanbanBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000012 /* KanbanBoardView.swift */; };
-		A0000015 /* ProjectItemRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000015 /* ProjectItemRowView.swift */; };
+		A0000015 /* OperationErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000015 /* OperationErrorBanner.swift */; };
 		A0000019 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000019 /* SettingsView.swift */; };
 		A0000020 /* UpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000020 /* UpdateController.swift */; };
 		A0000021 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A6000001 /* Sparkle */; };
@@ -73,9 +72,8 @@
 		A1000008 /* ProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStore.swift; sourceTree = "<group>"; };
 		A1000009 /* MenuBarPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPopoverView.swift; sourceTree = "<group>"; };
 		A1000010 /* ProjectSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectSelectorView.swift; sourceTree = "<group>"; };
-		A1000011 /* StatusSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusSummaryView.swift; sourceTree = "<group>"; };
 		A1000012 /* KanbanBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBoardView.swift; sourceTree = "<group>"; };
-		A1000015 /* ProjectItemRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectItemRowView.swift; sourceTree = "<group>"; };
+		A1000015 /* OperationErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperationErrorBanner.swift; sourceTree = "<group>"; };
 		A1000017 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1000018 /* GitBoard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GitBoard.entitlements; sourceTree = "<group>"; };
 		A1000019 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -209,7 +207,6 @@
 			children = (
 				A1000009 /* MenuBarPopoverView.swift */,
 				A1000010 /* ProjectSelectorView.swift */,
-				A1000011 /* StatusSummaryView.swift */,
 			);
 			path = MenuBar;
 			sourceTree = "<group>";
@@ -236,7 +233,7 @@
 				A1000026 /* ItemInspectorView.swift */,
 				A1000041 /* ItemPropertiesView.swift */,
 				A1000042 /* ProjectFieldEditor.swift */,
-				A1000015 /* ProjectItemRowView.swift */,
+				A1000015 /* OperationErrorBanner.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -409,7 +406,6 @@
 				A0000034 /* ProjectMonitor.swift in Sources */,
 				A0000009 /* MenuBarPopoverView.swift in Sources */,
 				A0000010 /* ProjectSelectorView.swift in Sources */,
-				A0000011 /* StatusSummaryView.swift in Sources */,
 				A0000012 /* KanbanBoardView.swift in Sources */,
 				A0000045 /* KanbanCardContextMenu.swift in Sources */,
 				A0000046 /* KanbanCardContent.swift in Sources */,
@@ -424,7 +420,7 @@
 				A0000026 /* ItemInspectorView.swift in Sources */,
 				A0000041 /* ItemPropertiesView.swift in Sources */,
 				A0000042 /* ProjectFieldEditor.swift in Sources */,
-				A0000015 /* ProjectItemRowView.swift in Sources */,
+				A0000015 /* OperationErrorBanner.swift in Sources */,
 				A0000019 /* SettingsView.swift in Sources */,
 				A0000020 /* UpdateController.swift in Sources */,
 			);

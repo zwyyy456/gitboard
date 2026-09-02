@@ -111,42 +111,4 @@ struct Project: Identifiable, Codable, Hashable {
         items.filter { $0.status == nil }
     }
 
-    var statusCounts: [(status: StatusOption, count: Int)] {
-        statusOptions.map { option in
-            (option, itemCount(forStatus: option.name))
-        }
-    }
-}
-
-struct UserSearchResponse: Codable {
-    let data: DataContainer
-
-    struct DataContainer: Codable {
-        let search: SearchConnection
-    }
-
-    struct SearchConnection: Codable {
-        let nodes: [UserNode]
-    }
-
-    struct UserNode: Codable {
-        let login: String?
-        let avatarUrl: String?
-        let name: String?
-    }
-}
-
-struct GetUserResponse: Codable {
-    let data: DataContainer
-
-    struct DataContainer: Codable {
-        let user: UserNode?
-    }
-
-    struct UserNode: Codable {
-        let id: String
-        let login: String
-        let avatarUrl: String
-        let name: String?
-    }
 }
