@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
 import { createPrivateKey, sign } from "node:crypto";
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { promisify } from "node:util";
 
 const graphqlURL = "https://api.github.com/graphql";
 const apiVersion = "2026-03-10";
+const execFileAsync = promisify(execFile);
 
 class ValidationError extends Error {}
 
@@ -142,6 +145,20 @@ async function loadOrganizationProject(token, organization, projectNumber) {
     return { id: project.id, items, statusField };
 }
 
+async function loadOrganizationProjectWithGH(organization, projectNumber) {
+    let token;
+    try {
+        const result = await execFileAsync("gh", ["auth", "token", "--hostname", "github.com"]);
+        token = result.stdout.trim();
+    } catch {
+        throw new ValidationError("Local gh could not read the authenticated GitHub token");
+    }
+    if (!token) {
+        throw new ValidationError("Local gh returned an empty GitHub token");
+    }
+    return loadOrganizationProject(token, organization, projectNumber);
+}
+
 async function updateStatus(token, projectID, itemID, fieldID, optionID) {
     const data = await graphQL(
         token,
@@ -232,27 +249,28 @@ async function main() {
     console.log("✓ Webhook project_node_id matches the organization Project");
     console.log(`✓ Organization installation token scanned ${project.items.length} Project item(s)`);
 
-    const item = project.items.find((candidate) => candidate.id === expectedItemID);
-    if (!item) {
-        throw new ValidationError(
-            "Organization installation token could not enumerate the webhook Project item; Status mutation was skipped"
-        );
-    }
-    console.log("✓ Full scan found the webhook Project item");
-
-    const scannedContentID = item.content?.id ?? null;
+    const scannedItem = project.items.find((candidate) => candidate.id === expectedItemID) ?? null;
+    const scannedContentID = scannedItem?.content?.id ?? null;
     if (scannedContentID && scannedContentID !== expectedContentID) {
         throw new ValidationError("Full scan returned a different content node ID for the webhook Project item");
     }
-    if (scannedContentID && item.content.__typename !== "Issue") {
+    if (scannedContentID && scannedItem.content.__typename !== "Issue") {
         throw new ValidationError("Full scan resolved the webhook content as a non-Issue item");
     }
-    const requiresDesktopMapping = !scannedContentID;
-    console.log(
-        requiresDesktopMapping
-            ? "• Full scan hid the personal private Issue content mapping"
-            : "✓ Full scan matched the personal private Issue content node ID"
-    );
+    const requiresDesktopMapping = scannedContentID !== expectedContentID;
+
+    let item = scannedItem;
+    if (requiresDesktopMapping) {
+        console.log("• Organization full scan hid the personal private Issue mapping");
+        const controlProject = await loadOrganizationProjectWithGH(organization, projectNumber);
+        item = controlProject.items.find((candidate) => candidate.id === expectedItemID) ?? null;
+        if (!item || item.content?.id !== expectedContentID || item.content.__typename !== "Issue") {
+            throw new ValidationError("Local gh could not resolve the webhook item to the personal private Issue");
+        }
+        console.log("✓ Local gh supplied the hidden Issue-to-Project-item mapping and original Status");
+    } else {
+        console.log("✓ Organization full scan matched the personal private Issue content node ID");
+    }
 
     const originalStatusOptionID = item.fieldValueByName?.optionId ?? null;
     const configuredTargetStatusOptionID = process.env.GB_TARGET_STATUS_OPTION_ID?.trim();
