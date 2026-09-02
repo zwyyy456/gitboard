@@ -5,6 +5,7 @@ import { GraphQLStatusWriter } from "./graphql-status-writer";
 import { OAuthCredentialProvider } from "./oauth-credential-provider";
 import { PersonalProjectGateway } from "./personal-project-gateway";
 import { RepositoryTruthReader } from "./repository-truth-reader";
+import { handleSetupRequest } from "./setup-api";
 import { receiveGitHubWebhook, WebhookRequestError } from "./webhook-receiver";
 
 export interface Env {
@@ -15,8 +16,10 @@ export interface Env {
     GITHUB_APP_PRIVATE_KEY: string;
     GITHUB_OAUTH_CLIENT_ID: string;
     GITHUB_OAUTH_CLIENT_SECRET: string;
+    GITHUB_APP_SLUG: string;
     GITHUB_WEBHOOK_SECRET: string;
     OAUTH_TOKEN_ENCRYPTION_KEY: string;
+    PUBLIC_BASE_URL: string;
 }
 
 export interface AutomationMessage {
@@ -42,6 +45,14 @@ export default {
                 }
                 return Response.json({ error: "WEBHOOK_UNAVAILABLE" }, { status: 503 });
             }
+        }
+        if (url.pathname.startsWith("/api/setup/")
+            || url.pathname === "/api/setup/sessions"
+            || /^\/setup\/[^/]+\/oauth$/.test(url.pathname)
+            || url.pathname === "/oauth/callback"
+            || url.pathname === "/setup/github-app"
+            || url.pathname === "/api/management/token") {
+            return handleSetupRequest(request, env);
         }
         return new Response("Not found", { status: 404 });
     },

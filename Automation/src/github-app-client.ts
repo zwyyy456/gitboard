@@ -5,6 +5,12 @@ export interface InstallationRepository {
     nameWithOwner: string;
 }
 
+export interface GitHubInstallation {
+    id: number;
+    accountID: number;
+    accountType: string;
+}
+
 export class GitHubAppRequestError extends Error {
     constructor(
         readonly status: number,
@@ -54,6 +60,34 @@ export class GitHubAppClient implements InstallationTokenProvider {
             throw new GitHubAppRequestError(502);
         }
         return body.token;
+    }
+
+    async getInstallation(installationID: number): Promise<GitHubInstallation> {
+        const jwt = await createAppJWT(this.appID, this.privateKey);
+        const response = await fetch(`${githubAPI}/app/installations/${installationID}`, {
+            headers: this.headers(jwt),
+        });
+        if (!response.ok) {
+            throw new GitHubAppRequestError(response.status, isRateLimited(response.headers));
+        }
+        let body: unknown;
+        try {
+            body = await response.json();
+        } catch {
+            throw new GitHubAppRequestError(502);
+        }
+        if (!isRecord(body)
+            || !isPositiveInteger(body.id)
+            || !isRecord(body.account)
+            || !isPositiveInteger(body.account.id)
+            || typeof body.account.type !== "string") {
+            throw new GitHubAppRequestError(502);
+        }
+        return {
+            id: body.id,
+            accountID: body.account.id,
+            accountType: body.account.type,
+        };
     }
 
     async listInstallationRepositories(installationID: number): Promise<InstallationRepository[]> {
