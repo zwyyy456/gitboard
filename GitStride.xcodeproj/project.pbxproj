@@ -57,6 +57,7 @@
 		A0000055 /* AutomationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000055 /* AutomationSettingsView.swift */; };
 		A0000056 /* AutomationConfigurationForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000056 /* AutomationConfigurationForm.swift */; };
 		A0000057 /* StatusOptionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000057 /* StatusOptionPicker.swift */; };
+		A0000058 /* AutomationConnectionList.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000058 /* AutomationConnectionList.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -123,6 +124,7 @@
 		A1000055 /* AutomationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationSettingsView.swift; sourceTree = "<group>"; };
 		A1000056 /* AutomationConfigurationForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationConfigurationForm.swift; sourceTree = "<group>"; };
 		A1000057 /* StatusOptionPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusOptionPicker.swift; sourceTree = "<group>"; };
+		A1000058 /* AutomationConnectionList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationConnectionList.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -282,6 +284,7 @@
 		A3000011 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				A1000058 /* AutomationConnectionList.swift */,
 				A1000056 /* AutomationConfigurationForm.swift */,
 				A1000055 /* AutomationSettingsView.swift */,
 				A1000019 /* SettingsView.swift */,
@@ -419,6 +422,7 @@
 				A0000055 /* AutomationSettingsView.swift in Sources */,
 				A0000056 /* AutomationConfigurationForm.swift in Sources */,
 				A0000057 /* StatusOptionPicker.swift in Sources */,
+				A0000058 /* AutomationConnectionList.swift in Sources */,
 				A0000044 /* WorkspaceCommandContext.swift in Sources */,
 				A0000033 /* Monitoring.swift in Sources */,
 				A0000035 /* QuickCreate.swift in Sources */,
