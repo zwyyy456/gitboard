@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "gitboard-automation",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-02",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gitboard-automation",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "GITHUB_API_VERSION": "2026-03-10"
+  },
+  "secrets": {
+    "required": [
+      "GITHUB_APP_ID",
+      "GITHUB_APP_PRIVATE_KEY",
+      "GITHUB_OAUTH_CLIENT_ID",
+      "GITHUB_OAUTH_CLIENT_SECRET",
+      "GITHUB_WEBHOOK_SECRET",
+      "OAUTH_TOKEN_ENCRYPTION_KEY"
+    ]
+  }
+}

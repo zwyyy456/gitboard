@@ -1,8 +1,34 @@
 # GitBoard Automation
 
-The automation service is implemented in stages. Before the Worker is built, the
-personal-account authorization boundary must be verified against a real private
-repository and personal Project.
+The automation service is a Cloudflare Worker backed by D1. It uses a GitHub App
+to read repository truth and a separate OAuth App to update a personal Project.
+
+## Worker development
+
+Install the pinned toolchain and validate the local schema from `Automation/`:
+
+```bash
+npm install
+cp .dev.vars.example .dev.vars
+npm run db:migrate:local
+npm run typecheck
+npm run build
+```
+
+Keep local and deployed secret values out of Wrangler variables. Local values
+belong in the ignored `.dev.vars`; deployed values are configured as Worker
+secrets. `wrangler.jsonc` declares every required secret so development and
+deployment fail clearly when one is missing.
+
+The D1 binding intentionally omits a checked-in database ID. Current Wrangler
+can provision the resource on first deployment and write the assigned ID back
+to the configuration. Review that generated change before committing it. D1
+migrations remain the only source of schema changes.
+
+## Authorization boundary validation
+
+Before deployment, the personal-account authorization boundary must be verified
+against a real private repository and personal Project.
 
 ## Phase 0: personal authorization validation
 
