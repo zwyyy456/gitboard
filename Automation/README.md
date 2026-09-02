@@ -20,10 +20,9 @@ belong in the ignored `.dev.vars`; deployed values are configured as Worker
 secrets. `wrangler.jsonc` declares every required secret so development and
 deployment fail clearly when one is missing.
 
-The D1 binding intentionally omits a checked-in database ID. Current Wrangler
-can provision the resource on first deployment and write the assigned ID back
-to the configuration. Review that generated change before committing it. D1
-migrations remain the only source of schema changes.
+The D1 binding intentionally omits an account-specific database ID until the
+production resource is created. D1 migrations remain the only source of schema
+changes.
 
 GitHub App webhooks are accepted at `POST /webhooks/github`. The receiver
 verifies `X-Hub-Signature-256` before decoding, ignores unrelated events and
@@ -70,6 +69,121 @@ batch sequentially. Every attempt reloads repository truth; completed or failed
 delivery IDs are acknowledged without another GitHub call. Stable failures are
 recorded and acknowledged, while network, rate-limit, and 5xx failures are
 retried with a bounded delay. Status writes remain idempotent across redelivery.
+
+## Production release
+
+Use a dedicated GitHub App, OAuth App, private test repository, and personal
+Project. Do not reuse production user data for the release probes below.
+
+### 1. Register GitHub applications
+
+Choose the Worker's final HTTPS origin before registration. The OAuth App
+callback URL is:
+
+```text
+https://WORKER_ORIGIN/oauth/callback
+```
+
+The GitHub App uses these URLs:
+
+```text
+Setup URL:   https://WORKER_ORIGIN/setup/github-app
+Webhook URL: https://WORKER_ORIGIN/webhooks/github
+```
+
+Grant the GitHub App only repository Metadata read, Issues read, and Pull
+requests read. Subscribe it to pull request, installation, and installation
+repositories events. Keep the webhook inactive until the Worker is deployed.
+The separate OAuth App must request `project offline_access`; the Worker rejects
+an authorization whose effective ordinary scope does not include `project`.
+
+### 2. Prepare release configuration
+
+Copy `.dev.vars.example` to the ignored `.dev.vars.production`, replace every
+value, and keep the file outside source control. `PUBLIC_BASE_URL` is the HTTPS
+origin with no path. Generate independent high-entropy values for the webhook
+secret and the 32-byte OAuth encryption key, for example:
+
+```bash
+openssl rand -hex 32
+openssl rand -base64 32
+```
+
+Validate names and formats without printing secret values. `config:check`
+automatically loads `.dev.vars.production` when it exists:
+
+```bash
+cd Automation
+npm run config:check
+```
+
+### 3. Provision Cloudflare resources
+
+Authenticate Wrangler, create the D1 database and both Queues, then put the
+returned D1 `database_id` in the `DB` entry of `wrangler.jsonc`:
+
+```bash
+cd Automation
+npx wrangler login
+npx wrangler whoami
+npx wrangler d1 create gitboard-automation
+npx wrangler queues create gitboard-automation
+npx wrangler queues create gitboard-automation-dlq
+```
+
+Apply the schema before serving setup or webhook traffic. Cloudflare records a
+backup when applying remote D1 migrations:
+
+```bash
+npx wrangler d1 migrations apply gitboard-automation --remote
+```
+
+Run the complete local release check, deploy the secrets and code together, and
+verify the unauthenticated health endpoint:
+
+```bash
+npm run release:check
+npx wrangler deploy --secrets-file .dev.vars.production
+curl --fail --silent --show-error https://WORKER_ORIGIN/health
+```
+
+The expected health response is `{"status":"ok"}`. Enable the GitHub App
+webhook only after this succeeds. Build the release app with
+`GITBOARD_AUTOMATION_BASE_URL` set to the same origin; an empty setting
+deliberately makes Automation unavailable rather than selecting an implicit
+server.
+
+Cloudflare's current command references cover
+[D1 resource and migration commands](https://developers.cloudflare.com/d1/wrangler-commands/),
+[Queue creation](https://developers.cloudflare.com/queues/get-started/), and
+[deploying a dotenv secrets file](https://developers.cloudflare.com/workers/configuration/secrets/).
+
+### 4. Release gates
+
+All gates use disposable data and must finish without a complete GitHub payload
+or credential appearing in logs. A mutation gate is complete only after the
+original Status is restored.
+
+| Gate | Disposable setup and action | Required result |
+| --- | --- | --- |
+| Repository narrowing | Link at least two Issues from different installed repositories to multiple Project items, then deliver a pull request event for one repository | Only exact Issue node IDs from the event's repository are selected and updated |
+| REST pagination | Place the target private Issue after the first Project item page and trigger its pull request | The Link chain is fully followed and the target item is found |
+| REST-to-GraphQL identity | Run `validate-personal-auth.mjs --device-flow --gh-mapping` | REST `item.node_id` is accepted by the status mutation and the original Status is restored |
+| Refresh path | Add `--rotate-refresh-token` to the personal validator | Refresh succeeds, the REST lookup and mutation succeed, and the original Status is restored |
+| OAuth loss | Revoke the disposable OAuth authorization or remove its `project` grant, then trigger a delivery and refresh Automation settings | No mutation occurs; health reports reauthorization or missing scope with a stable delivery error |
+| Invalid selection | Submit a setup selection with an unknown Status field or option ID | Setup rejects it and no automation row is created |
+| Repository removal | Remove the configured repository from the disposable GitHub App installation, then wait for `installation_repositories` delivery | The repository is reconciled out of D1 and its automation is disabled before another mutation |
+
+The deterministic suite covers reducer priority, cross-repository grouping,
+REST Link pagination, exact node matching, opaque item rejection, one 401
+refresh, missing scope, rate-limited 403, and deleted Project items. Those tests
+do not replace the real private-repository gates.
+
+After all gates pass, perform one setup from the release GitBoard build and
+confirm settings can pause, resume, reauthorize, and delete its automation.
+Deleting must remove the automation from the management response; shared user,
+installation, and credential rows are retained only while another automation
+uses them.
 
 ## Authorization boundary validation
 

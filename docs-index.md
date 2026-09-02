@@ -3,7 +3,7 @@
 - 权威性：Index（不定义规则）
 - 加载方式：需要定位工程规范、代码入口或验证命令时读取
 - 状态：Active
-- 最后更新：2026-08-26
+- 最后更新：2026-09-03
 
 本文只负责文档分类、任务路由和命令入口。所有路径均相对于仓库根目录。
 
@@ -46,4 +46,21 @@ xcodebuild -project GitBoard.xcodeproj -scheme GitBoard -destination 'platform=m
 
 ```bash
 xcodebuild -project GitBoard.xcodeproj -scheme GitBoard -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
+```
+
+Automation Worker 本地验证：
+
+```bash
+cd Automation
+npm run typecheck
+npm test
+npm run build
+```
+
+Automation 生产配置与发布步骤见 `Automation/README.md` 的
+“Production release”一节。配置完整时运行：
+
+```bash
+cd Automation
+npm run release:check
 ```

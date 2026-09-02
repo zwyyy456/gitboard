@@ -18,6 +18,7 @@
 | Models 或 GraphQL selection set | `architecture.md` | macOS app build；用受影响真实响应检查解码边界；若未来已有 model tests，运行对应定点测试 |
 | 通知 | `architecture.md` | macOS app build；按改动风险检查授权、拒绝和状态变化通知，不重复请求或发送 |
 | Sparkle 更新代码 | `architecture.md` 的依赖方向 | macOS app build；检查设置中的 updater 状态和手动检查入口；发布签名与 appcast 不属于本文范围 |
+| Automation Worker、D1、Queue 或 GitHub 集成 | `architecture.md` | 在 `Automation/` 运行 TypeScript typecheck、Vitest 和 Wrangler dry-run build；涉及 schema 时应用本地 D1 migrations；真实远程 mutation 仅按 `Automation/README.md` 的 disposable 数据 gate 执行并恢复原状态 |
 
 ## 当前自动化边界
 
@@ -26,6 +27,7 @@
 - `GitBoardTests` 只为确定性的解析、输入建模、状态转换、远程响应解码和已确认回归提供少量定点测试。
 - 不为了测试数量给简单 accessor、临时 View 结构或系统框架行为补测试。
 - UI test target 只有在用户明确要求时才运行。
+- Automation 生产配置检查只验证必需字段与密钥格式，不替代真实 GitHub API release gates。
 
 ## 交接记录
 
