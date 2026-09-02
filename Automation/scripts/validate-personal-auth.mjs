@@ -243,7 +243,8 @@ async function loadProject(token, owner, number) {
     return { ...project, statusField };
 }
 
-async function findProjectItem(token, owner, projectNumber, issueIDs) {
+async function loadProjectItems(token, owner, projectNumber) {
+    const result = [];
     let cursor = null;
     do {
         const data = await graphQL(
@@ -270,10 +271,42 @@ async function findProjectItem(token, owner, projectNumber, issueIDs) {
         if (!items) {
             throw new ValidationError("OAuth token could not enumerate personal Project items");
         }
-        const item = items.nodes.find((candidate) => issueIDs.has(candidate.content?.id));
-        if (item) return item;
+        result.push(...items.nodes);
         cursor = items.pageInfo.hasNextPage ? items.pageInfo.endCursor : null;
     } while (cursor);
+    return result;
+}
+
+async function findProjectItem(token, owner, projectNumber, issueIDs) {
+    const items = await loadProjectItems(token, owner, projectNumber);
+    return items.find((candidate) => issueIDs.has(candidate.content?.id)) ?? null;
+}
+
+async function findProjectItemViaInstallation(token, issueIDs, projectItemIDs) {
+    for (const issueID of issueIDs) {
+        let cursor = null;
+        do {
+            const data = await graphQL(
+                token,
+                `query IssueProjectItems($issue: ID!, $cursor: String) {
+                  node(id: $issue) {
+                    ... on Issue {
+                      projectItems(first: 100, after: $cursor) {
+                        nodes { id }
+                        pageInfo { hasNextPage endCursor }
+                      }
+                    }
+                  }
+                }`,
+                { issue: issueID, cursor }
+            );
+            const items = data.node?.projectItems;
+            if (!items) break;
+            const item = items.nodes.find((candidate) => projectItemIDs.has(candidate.id));
+            if (item) return item.id;
+            cursor = items.pageInfo.hasNextPage ? items.pageInfo.endCursor : null;
+        } while (cursor);
+    }
     return null;
 }
 
@@ -411,17 +444,41 @@ async function main() {
 
     const project = await loadProject(oauthToken, projectOwner, projectNumber);
     const closingIssueIDs = new Set(closingIssueResult.issues.map((issue) => issue.id));
-    const item = await findProjectItem(
-        oauthToken,
-        projectOwner,
-        projectNumber,
-        closingIssueIDs
-    );
+    const oauthProjectItems = await loadProjectItems(oauthToken, projectOwner, projectNumber);
+    let item = oauthProjectItems.find(
+        (candidate) => closingIssueIDs.has(candidate.content?.id)
+    ) ?? null;
+    let installationLookupError;
+    if (!item) {
+        let installationItemID;
+        try {
+            installationItemID = await findProjectItemViaInstallation(
+                installationToken,
+                closingIssueIDs,
+                new Set(oauthProjectItems.map((candidate) => candidate.id))
+            );
+        } catch (error) {
+            installationLookupError = error;
+        }
+        if (installationItemID) {
+            item = oauthProjectItems.find((candidate) => candidate.id === installationItemID);
+            if (!item) {
+                throw new ValidationError(
+                    "installation token found the Project item, but OAuth could not read it by item ID"
+                );
+            }
+            console.log("✓ Installation token located the private Issue's Project item");
+            console.log("✓ OAuth project-only token read the known Project item by ID");
+        }
+    }
     if (!item && argumentsSet.has("--gh-control")) {
         const controlItem = await findProjectItemWithGH(projectOwner, projectNumber, closingIssueIDs);
         if (controlItem) {
+            const installationDetail = installationLookupError instanceof Error
+                ? `; installation lookup failed: ${installationLookupError.message}`
+                : "";
             throw new ValidationError(
-                "project-only OAuth could not see a Project item that the local gh repo+project token can see"
+                `neither minimal token could locate a Project item that the local gh repo+project token can see${installationDetail}`
             );
         }
         throw new ValidationError(
@@ -429,9 +486,12 @@ async function main() {
         );
     }
     if (!item) {
-        throw new ValidationError("OAuth token could not locate a closing Issue's personal Project item");
+        if (installationLookupError) throw installationLookupError;
+        throw new ValidationError("Neither minimal token could locate the closing Issue's personal Project item");
     }
-    console.log("✓ OAuth project-only token located the private Issue's Project item");
+    if (!installationLookupError && item.content?.id) {
+        console.log("✓ OAuth project-only token located the private Issue's Project item");
+    }
 
     const originalStatusOptionID = item.fieldValueByName?.optionId ?? null;
     const configuredTargetStatusOptionID = process.env.GB_TARGET_STATUS_OPTION_ID?.trim();
