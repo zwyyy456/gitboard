@@ -31,6 +31,12 @@ actions, and places only delivery, installation, repository, pull request, and
 action identifiers on the Queue. The D1 delivery row is the deduplication
 record; complete webhook payloads are neither queued nor stored.
 
+The same signed endpoint handles GitHub App installation lifecycle events.
+Installation authentication uses a short-lived RS256 App JWT and an ephemeral
+installation token. Repository access is reconciled from GitHub into D1;
+suspension, deletion, or source repository removal disables the affected
+automation. Neither token is written to D1 or logs.
+
 ## Authorization boundary validation
 
 Before deployment, the personal-account authorization boundary must be verified
