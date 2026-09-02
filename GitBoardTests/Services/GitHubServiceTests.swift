@@ -468,7 +468,7 @@ struct ProjectStoreTests {
             avatarUrl: "https://example.invalid/avatar",
             name: nil
         )
-        await store.addAssignee(to: item, in: project.id, user: assignee)
+        try await store.addAssignee(to: item, in: project.id, user: assignee)
         await runner.release("status-move")
         #expect(await moveTask.value == false)
 

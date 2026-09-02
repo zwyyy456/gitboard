@@ -178,44 +178,37 @@ final class ProjectStore {
         refreshingItemReferences.contains(reference)
     }
 
-    func refreshItem(_ reference: ItemInspectorReference) async {
+    func refreshItem(_ reference: ItemInspectorReference) async throws {
         guard refreshingItemReferences.contains(reference) == false,
               let project = project(id: reference.projectID) else { return }
 
         refreshingItemReferences.insert(reference)
-        operationErrorMessage = nil
         defer { refreshingItemReferences.remove(reference) }
 
-        do {
-            let refreshedProject = try await gitHubService.fetchProjectWithItems(
-                id: project.id,
-                owner: project.owner
-            )
-            try Task.checkCancellation()
+        let refreshedProject = try await gitHubService.fetchProjectWithItems(
+            id: project.id,
+            owner: project.owner
+        )
+        try Task.checkCancellation()
 
-            replaceProject(refreshedProject)
-            lastUpdated = Date()
+        replaceProject(refreshedProject)
+        lastUpdated = Date()
 
-            if let refreshedItem = item(for: reference) {
-                await loadItemDetail(for: refreshedItem, forceRefresh: true)
+        if let refreshedItem = item(for: reference) {
+            await loadItemDetail(for: refreshedItem, forceRefresh: true)
 
-                if case .loaded(let detail) = itemDetailState(for: refreshedItem),
-                   let metadata = detail.issueMetadata,
-                   metadata.viewerCanSetMilestone {
-                    await loadMilestones(
-                        repository: metadata.repository,
-                        forceRefresh: true
-                    )
-                }
+            if case .loaded(let detail) = itemDetailState(for: refreshedItem),
+               let metadata = detail.issueMetadata,
+               metadata.viewerCanSetMilestone {
+                await loadMilestones(
+                    repository: metadata.repository,
+                    forceRefresh: true
+                )
             }
-
-            guard Task.isCancelled == false else { return }
-            await persistCache()
-        } catch is CancellationError {
-            return
-        } catch {
-            operationErrorMessage = "Item refresh failed: \(error.localizedDescription)"
         }
+
+        try Task.checkCancellation()
+        await persistCache()
     }
 
     func milestoneState(for repository: String) -> RepositoryMilestonesState {
@@ -287,95 +280,68 @@ final class ProjectStore {
         }
     }
 
-    func setMilestone(_ milestone: RepositoryMilestone?, on item: ProjectItem) async -> Bool {
+    func setMilestone(_ milestone: RepositoryMilestone?, on item: ProjectItem) async throws {
         guard let contentID = item.contentId,
               case .loaded(let detail) = itemDetailState(for: item),
-              detail.issueMetadata?.viewerCanSetMilestone == true else { return false }
-        operationErrorMessage = nil
+              detail.issueMetadata?.viewerCanSetMilestone == true else { return }
 
-        do {
-            try await gitHubService.updateIssueMilestone(
-                issueID: contentID,
-                milestoneID: milestone?.id
-            )
-            await loadItemDetail(for: item, forceRefresh: true)
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return false
-        }
+        try await gitHubService.updateIssueMilestone(
+            issueID: contentID,
+            milestoneID: milestone?.id
+        )
+        await loadItemDetail(for: item, forceRefresh: true)
     }
 
     func addRelation(
         _ kind: IssueRelationKind,
         target: GitHubItemCandidate,
         on item: ProjectItem
-    ) async -> Bool {
+    ) async throws {
         guard target.contentType == .issue,
               let issueID = item.contentId,
               case .loaded(let detail) = itemDetailState(for: item),
-              detail.issueMetadata?.viewerCanUpdate == true else { return false }
-        operationErrorMessage = nil
+              detail.issueMetadata?.viewerCanUpdate == true else { return }
         let endpoints = kind.endpoints(issueID: issueID, relatedIssueID: target.id)
 
-        do {
-            switch kind {
-            case .parent, .subIssue:
-                try await gitHubService.addSubIssue(
-                    parentIssueID: endpoints.issueID,
-                    subIssueID: endpoints.relatedIssueID,
-                    replacingParent: kind == .parent
-                )
-            case .blockedBy, .blocking:
-                try await gitHubService.addBlockedBy(
-                    issueID: endpoints.issueID,
-                    blockingIssueID: endpoints.relatedIssueID
-                )
-            }
-            await loadItemDetail(for: item, forceRefresh: true)
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return false
+        switch kind {
+        case .parent, .subIssue:
+            try await gitHubService.addSubIssue(
+                parentIssueID: endpoints.issueID,
+                subIssueID: endpoints.relatedIssueID,
+                replacingParent: kind == .parent
+            )
+        case .blockedBy, .blocking:
+            try await gitHubService.addBlockedBy(
+                issueID: endpoints.issueID,
+                blockingIssueID: endpoints.relatedIssueID
+            )
         }
+        await loadItemDetail(for: item, forceRefresh: true)
     }
 
     func removeRelation(
         _ kind: IssueRelationKind,
         relatedIssue: IssueReference,
         from item: ProjectItem
-    ) async -> Bool {
+    ) async throws {
         guard let issueID = item.contentId,
               case .loaded(let detail) = itemDetailState(for: item),
-              detail.issueMetadata?.viewerCanUpdate == true else { return false }
-        operationErrorMessage = nil
+              detail.issueMetadata?.viewerCanUpdate == true else { return }
         let endpoints = kind.endpoints(issueID: issueID, relatedIssueID: relatedIssue.id)
 
-        do {
-            switch kind {
-            case .parent, .subIssue:
-                try await gitHubService.removeSubIssue(
-                    parentIssueID: endpoints.issueID,
-                    subIssueID: endpoints.relatedIssueID
-                )
-            case .blockedBy, .blocking:
-                try await gitHubService.removeBlockedBy(
-                    issueID: endpoints.issueID,
-                    blockingIssueID: endpoints.relatedIssueID
-                )
-            }
-            await loadItemDetail(for: item, forceRefresh: true)
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return false
+        switch kind {
+        case .parent, .subIssue:
+            try await gitHubService.removeSubIssue(
+                parentIssueID: endpoints.issueID,
+                subIssueID: endpoints.relatedIssueID
+            )
+        case .blockedBy, .blocking:
+            try await gitHubService.removeBlockedBy(
+                issueID: endpoints.issueID,
+                blockingIssueID: endpoints.relatedIssueID
+            )
         }
+        await loadItemDetail(for: item, forceRefresh: true)
     }
 
     var filteredItems: [ProjectItem] {
@@ -1058,19 +1024,14 @@ final class ProjectStore {
         }
     }
 
-    func searchUsers(query: String) async -> [Assignee] {
-        operationErrorMessage = nil
-        do {
-            return try await gitHubService.searchUsers(query: query)
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return []
-        }
+    func searchUsers(query: String) async throws -> [Assignee] {
+        try await gitHubService.searchUsers(query: query)
     }
 
-    func addAssignee(to item: ProjectItem, in projectID: String, user: Assignee) async {
+    func addAssignee(to item: ProjectItem, in projectID: String, user: Assignee) async throws {
         guard let url = item.url,
-              let project = editableProject(id: projectID),
+              let project = project(id: projectID),
+              canEditProject(id: projectID),
               let currentItem = project.items.first(where: { $0.id == item.id }),
               currentItem.assignees.contains(where: { $0.login == user.login }) == false else { return }
         let mutationKey = ItemMutationKey(
@@ -1093,7 +1054,7 @@ final class ProjectStore {
             updateItem(projectID: projectID, itemID: item.id) { item in
                 item.assignees.removeAll { $0.login == user.login }
             }
-            operationErrorMessage = error.localizedDescription
+            throw error
         }
     }
 
@@ -1131,43 +1092,25 @@ final class ProjectStore {
         }
     }
 
-    func addLabel(to item: ProjectItem, in projectID: String, name: String) async -> Bool {
-        guard let url = item.url, editableProject(id: projectID) != nil else { return false }
-        operationErrorMessage = nil
+    func addLabel(to item: ProjectItem, in projectID: String, name: String) async throws {
+        guard let url = item.url, canEditProject(id: projectID) else { return }
 
-        do {
-            try await gitHubService.addLabel(issueUrl: url, label: name)
-            if selectedProjectId == projectID {
-                await loadProjectDetails(id: projectID)
-            } else {
-                await refreshProjectSnapshot(id: projectID)
-            }
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return false
+        try await gitHubService.addLabel(issueUrl: url, label: name)
+        if selectedProjectId == projectID {
+            await loadProjectDetails(id: projectID)
+        } else {
+            await refreshProjectSnapshot(id: projectID)
         }
     }
 
-    func removeLabel(from item: ProjectItem, in projectID: String, name: String) async -> Bool {
-        guard let url = item.url, editableProject(id: projectID) != nil else { return false }
-        operationErrorMessage = nil
+    func removeLabel(from item: ProjectItem, in projectID: String, name: String) async throws {
+        guard let url = item.url, canEditProject(id: projectID) else { return }
 
-        do {
-            try await gitHubService.removeLabel(issueUrl: url, label: name)
-            if selectedProjectId == projectID {
-                await loadProjectDetails(id: projectID)
-            } else {
-                await refreshProjectSnapshot(id: projectID)
-            }
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return false
+        try await gitHubService.removeLabel(issueUrl: url, label: name)
+        if selectedProjectId == projectID {
+            await loadProjectDetails(id: projectID)
+        } else {
+            await refreshProjectSnapshot(id: projectID)
         }
     }
 
@@ -1257,16 +1200,8 @@ final class ProjectStore {
         }
     }
 
-    func searchItems(query: String) async -> [GitHubItemCandidate] {
-        operationErrorMessage = nil
-        do {
-            return try await gitHubService.searchItems(query: query)
-        } catch is CancellationError {
-            return []
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return []
-        }
+    func searchItems(query: String) async throws -> [GitHubItemCandidate] {
+        try await gitHubService.searchItems(query: query)
     }
 
     func addExistingItem(url: String) async -> Bool {
