@@ -47,6 +47,12 @@ repository ID is present in the same installation's D1 repository set.
 draft → all closed-unmerged; a closed Issue without a merged closing pull request
 and an Issue without closing pull requests are left unchanged.
 
+`OAuthCredentialProvider` is the only runtime boundary that decrypts personal
+Project OAuth tokens. It refreshes near-expiry tokens, checks the refreshed
+identity and actual `project` scope, saves each replacement token pair with an
+optimistic credential version, and performs one refresh/retry after a 401.
+Tokens use versioned AES-GCM envelopes and are never included in errors.
+
 ## Authorization boundary validation
 
 Before deployment, the personal-account authorization boundary must be verified
