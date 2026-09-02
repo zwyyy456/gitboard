@@ -168,8 +168,8 @@ final class GitBoardModel {
         on item: MyWorkItem,
         field: ProjectField,
         value: ProjectFieldValue?
-    ) async {
-        _ = await projectStore.updateField(
+    ) async throws {
+        try await projectStore.updateField(
             on: item.item,
             in: item.project.id,
             field: field,
@@ -177,8 +177,8 @@ final class GitBoardModel {
         )
     }
 
-    func archiveMyWorkItem(_ item: MyWorkItem) async {
-        _ = await projectStore.archiveItem(item.item, in: item.project.id)
+    func archiveMyWorkItem(_ item: MyWorkItem) async throws {
+        try await projectStore.archiveItem(item.item, in: item.project.id)
     }
 
     func handleNotificationAction(_ action: ProjectNotificationAction) async -> URL? {
@@ -192,12 +192,18 @@ final class GitBoardModel {
                 monitoringStatus = "This Project has no recognizable Done status."
                 return nil
             }
-            _ = await projectStore.moveItemToStatus(
-                projectID: action.projectID,
-                itemID: action.itemID,
-                fieldID: fieldID,
-                optionID: optionID
-            )
+            do {
+                try await projectStore.moveItemToStatus(
+                    projectID: action.projectID,
+                    itemID: action.itemID,
+                    fieldID: fieldID,
+                    optionID: optionID
+                )
+            } catch is CancellationError {
+                return nil
+            } catch {
+                monitoringStatus = error.localizedDescription
+            }
         case .snooze:
             snoozedItems[key] = Date().addingTimeInterval(60 * 60)
             saveSnoozedItems()

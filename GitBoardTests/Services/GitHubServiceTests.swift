@@ -460,7 +460,7 @@ struct ProjectStoreTests {
         let project = try #require(store.selectedProject)
         let item = try #require(project.items.first)
         let review = try #require(project.statusOptions.first { $0.id == "REVIEW" })
-        let moveTask = Task { await store.moveItem(item, toStatus: review, in: project.id) }
+        let moveTask = Task { try await store.moveItem(item, toStatus: review, in: project.id) }
         await runner.waitUntilSuspended("status-move")
 
         let assignee = Assignee(
@@ -470,7 +470,10 @@ struct ProjectStoreTests {
         )
         try await store.addAssignee(to: item, in: project.id, user: assignee)
         await runner.release("status-move")
-        #expect(await moveTask.value == false)
+        do {
+            try await moveTask.value
+            Issue.record("Expected the status move to fail.")
+        } catch {}
 
         let updatedItem = try #require(store.project(id: project.id)?.items.first)
         #expect(updatedItem.status == "Todo")
@@ -491,16 +494,15 @@ struct ProjectStoreTests {
         let project = try #require(store.selectedProject)
         let item = try #require(project.items.first)
         let review = try #require(project.statusOptions.first { $0.id == "REVIEW" })
-        let firstMove = Task { await store.moveItem(item, toStatus: review, in: project.id) }
+        let firstMove = Task { try await store.moveItem(item, toStatus: review, in: project.id) }
         await runner.waitUntilSuspended("status-move")
         let callCount = await runner.recordedCallCount()
 
-        let secondMoveSucceeded = await store.moveItem(item, toStatus: review, in: project.id)
+        try await store.moveItem(item, toStatus: review, in: project.id)
 
-        #expect(secondMoveSucceeded == false)
         #expect(await runner.recordedCallCount() == callCount)
         await runner.release("status-move")
-        #expect(await firstMove.value)
+        try await firstMove.value
         #expect(store.project(id: project.id)?.items.first?.status == "Review")
     }
 

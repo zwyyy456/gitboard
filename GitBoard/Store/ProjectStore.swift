@@ -18,6 +18,29 @@ enum SelectedProjectContentState: Equatable {
     case failed(Project, String)
 }
 
+enum ProjectStoreError: LocalizedError {
+    case noProjectSelected
+    case readOnlyProject
+    case itemUnavailable
+    case missingFieldOption(field: String, option: String)
+    case createdIssueUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .noProjectSelected:
+            "No project is selected."
+        case .readOnlyProject:
+            "This project is read-only."
+        case .itemUnavailable:
+            "This item is no longer available."
+        case .missingFieldOption(let field, let option):
+            "\(field) has no option named \(option)."
+        case .createdIssueUnavailable:
+            "The issue was added, but GitBoard could not apply its Project fields."
+        }
+    }
+}
+
 private struct ItemDetailEntry {
     let sourceUpdatedAt: String?
     let state: ItemDetailState
@@ -800,21 +823,15 @@ final class ProjectStore {
         }
     }
 
-    private func refreshProjectSnapshot(id: String) async {
+    private func refreshProjectSnapshot(id: String) async throws {
         guard let project = project(id: id) else { return }
-        do {
-            let detailedProject = try await gitHubService.fetchProjectWithItems(
-                id: project.id,
-                owner: project.owner
-            )
-            replaceProject(detailedProject)
-            lastUpdated = Date()
-            await persistCache()
-        } catch is CancellationError {
-            return
-        } catch {
-            operationErrorMessage = error.localizedDescription
-        }
+        let detailedProject = try await gitHubService.fetchProjectWithItems(
+            id: project.id,
+            owner: project.owner
+        )
+        replaceProject(detailedProject)
+        lastUpdated = Date()
+        await persistCache()
     }
 
     private func replaceProject(_ project: Project) {
@@ -886,16 +903,18 @@ final class ProjectStore {
         _ item: ProjectItem,
         toStatus status: StatusOption,
         in projectID: String
-    ) async -> Bool {
-        guard let project = editableProject(id: projectID),
-              let fieldId = project.statusField?.id,
-              let currentItem = project.items.first(where: { $0.id == item.id }) else { return false }
+    ) async throws {
+        let project = try editableProject(id: projectID)
+        guard let fieldId = project.statusField?.id,
+              let currentItem = project.items.first(where: { $0.id == item.id }) else {
+            throw ProjectStoreError.itemUnavailable
+        }
         let mutationKey = ItemMutationKey(
             projectID: projectID,
             itemID: item.id,
             aspect: .status
         )
-        guard pendingItemMutations.insert(mutationKey).inserted else { return false }
+        guard pendingItemMutations.insert(mutationKey).inserted else { return }
         defer { pendingItemMutations.remove(mutationKey) }
 
         let originalStatus = currentItem.status
@@ -916,53 +935,36 @@ final class ProjectStore {
             )
             lastUpdated = Date()
             await persistCache()
-            return true
         } catch {
             updateItem(projectID: projectID, itemID: item.id) { item in
                 item.status = originalStatus
                 item.statusOptionId = originalStatusOptionId
                 item.fieldValues[fieldId] = originalFieldValue
             }
-            operationErrorMessage = error.localizedDescription
-            return false
+            throw error
         }
     }
 
-    func deleteItem(_ item: ProjectItem, from projectID: String) async {
-        guard let project = editableProject(id: projectID) else { return }
-
-        do {
-            try await gitHubService.deleteItem(projectId: project.id, itemId: item.id)
-            var updatedProject = project
-            updatedProject.items.removeAll { $0.id == item.id }
-            replaceProject(updatedProject)
-            removeItemDetail(for: item)
-            lastUpdated = Date()
-            await persistCache()
-        } catch {
-            operationErrorMessage = error.localizedDescription
-        }
+    func deleteItem(_ item: ProjectItem, from projectID: String) async throws {
+        let project = try editableProject(id: projectID)
+        try await gitHubService.deleteItem(projectId: project.id, itemId: item.id)
+        var updatedProject = project
+        updatedProject.items.removeAll { $0.id == item.id }
+        replaceProject(updatedProject)
+        removeItemDetail(for: item)
+        lastUpdated = Date()
+        await persistCache()
     }
 
-    func archiveItem(_ item: ProjectItem, in projectID: String) async -> Bool {
-        guard let project = editableProject(id: projectID) else { return false }
-        operationErrorMessage = nil
-
-        do {
-            try await gitHubService.archiveItem(projectId: project.id, itemId: item.id)
-            var updatedProject = project
-            updatedProject.items.removeAll { $0.id == item.id }
-            replaceProject(updatedProject)
-            removeItemDetail(for: item)
-            lastUpdated = Date()
-            await persistCache()
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return false
-        }
+    func archiveItem(_ item: ProjectItem, in projectID: String) async throws {
+        let project = try editableProject(id: projectID)
+        try await gitHubService.archiveItem(projectId: project.id, itemId: item.id)
+        var updatedProject = project
+        updatedProject.items.removeAll { $0.id == item.id }
+        replaceProject(updatedProject)
+        removeItemDetail(for: item)
+        lastUpdated = Date()
+        await persistCache()
     }
 
     func updateField(
@@ -970,28 +972,18 @@ final class ProjectStore {
         in projectID: String,
         field: ProjectField,
         value: ProjectFieldValue?
-    ) async -> Bool {
-        guard let project = editableProject(id: projectID) else { return false }
-        operationErrorMessage = nil
-
-        do {
-            try await gitHubService.updateItemField(
-                projectId: project.id,
-                itemId: item.id,
-                fieldId: field.id,
-                value: value
-            )
-            if selectedProjectId == project.id {
-                await loadProjectDetails(id: project.id)
-            } else {
-                await refreshProjectSnapshot(id: project.id)
-            }
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return false
+    ) async throws {
+        let project = try editableProject(id: projectID)
+        try await gitHubService.updateItemField(
+            projectId: project.id,
+            itemId: item.id,
+            fieldId: field.id,
+            value: value
+        )
+        if selectedProjectId == project.id {
+            await loadProjectDetails(id: project.id)
+        } else {
+            try await refreshProjectSnapshot(id: project.id)
         }
     }
 
@@ -1000,27 +992,29 @@ final class ProjectStore {
         itemID: String,
         fieldID: String,
         optionID: String
-    ) async -> Bool {
+    ) async throws {
         guard let project = project(id: projectID),
               project.statusField?.id == fieldID,
               let option = project.statusOptions.first(where: { $0.id == optionID }),
-              let item = project.items.first(where: { $0.id == itemID }) else { return false }
-        return await moveItem(item, toStatus: option, in: projectID)
+              let item = project.items.first(where: { $0.id == itemID }) else {
+            throw ProjectStoreError.itemUnavailable
+        }
+        try await moveItem(item, toStatus: option, in: projectID)
     }
 
     func moveItems(
         _ items: [ProjectItem],
         to status: StatusOption,
         in projectID: String
-    ) async {
+    ) async throws {
         for item in items where item.status != status.name {
-            _ = await moveItem(item, toStatus: status, in: projectID)
+            try await moveItem(item, toStatus: status, in: projectID)
         }
     }
 
-    func archiveItems(_ items: [ProjectItem], in projectID: String) async {
+    func archiveItems(_ items: [ProjectItem], in projectID: String) async throws {
         for item in items {
-            _ = await archiveItem(item, in: projectID)
+            try await archiveItem(item, in: projectID)
         }
     }
 
@@ -1058,9 +1052,10 @@ final class ProjectStore {
         }
     }
 
-    func removeAssignee(from item: ProjectItem, in projectID: String, user: Assignee) async {
+    func removeAssignee(from item: ProjectItem, in projectID: String, user: Assignee) async throws {
         guard let url = item.url,
-              let project = editableProject(id: projectID),
+              let project = project(id: projectID),
+              canEditProject(id: projectID),
               let currentItem = project.items.first(where: { $0.id == item.id }),
               let originalIndex = currentItem.assignees.firstIndex(where: {
                   $0.login == user.login
@@ -1088,7 +1083,7 @@ final class ProjectStore {
                 }
                 item.assignees.insert(user, at: min(originalIndex, item.assignees.count))
             }
-            operationErrorMessage = error.localizedDescription
+            throw error
         }
     }
 
@@ -1099,7 +1094,7 @@ final class ProjectStore {
         if selectedProjectId == projectID {
             await loadProjectDetails(id: projectID)
         } else {
-            await refreshProjectSnapshot(id: projectID)
+            try await refreshProjectSnapshot(id: projectID)
         }
     }
 
@@ -1110,7 +1105,7 @@ final class ProjectStore {
         if selectedProjectId == projectID {
             await loadProjectDetails(id: projectID)
         } else {
-            await refreshProjectSnapshot(id: projectID)
+            try await refreshProjectSnapshot(id: projectID)
         }
     }
 
@@ -1122,9 +1117,8 @@ final class ProjectStore {
         assignees: [String],
         status: String? = nil,
         priority: String? = nil
-    ) async -> Bool {
-        guard let project = editableSelectedProject() else { return false }
-        operationErrorMessage = nil
+    ) async throws {
+        let project = try editableSelectedProject()
 
         let requestedFields = [("Status", status), ("Priority", priority)].compactMap { name, value in
             value.map { (name, $0) }
@@ -1136,122 +1130,78 @@ final class ProjectStore {
             }), let option = field.options.first(where: {
                 $0.name.caseInsensitiveCompare(value) == .orderedSame
             }) else {
-                operationErrorMessage = "\(name) has no option named \(value)."
-                return false
+                throw ProjectStoreError.missingFieldOption(field: name, option: value)
             }
             resolvedFields.append((field, option))
         }
 
-        do {
-            let issueURL = try await gitHubService.createIssueAndAdd(
-                projectId: project.id,
-                repository: repository,
-                title: title,
-                body: body,
-                labels: labels,
-                assignees: assignees
-            )
-            await refresh()
-            guard resolvedFields.isEmpty || selectedProject?.items.contains(where: {
-                $0.url == issueURL
-            }) == true else {
-                operationErrorMessage = "The issue was added, but GitBoard could not apply its Project fields."
-                return false
+        let issueURL = try await gitHubService.createIssueAndAdd(
+            projectId: project.id,
+            repository: repository,
+            title: title,
+            body: body,
+            labels: labels,
+            assignees: assignees
+        )
+        await refresh()
+        guard resolvedFields.isEmpty || selectedProject?.items.contains(where: {
+            $0.url == issueURL
+        }) == true else {
+            throw ProjectStoreError.createdIssueUnavailable
+        }
+        if let item = selectedProject?.items.first(where: { $0.url == issueURL }) {
+            for (field, option) in resolvedFields {
+                try await gitHubService.updateItemField(
+                    projectId: project.id,
+                    itemId: item.id,
+                    fieldId: field.id,
+                    value: .singleSelect(optionId: option.id, name: option.name)
+                )
             }
-            if let item = selectedProject?.items.first(where: { $0.url == issueURL }) {
-                for (field, option) in resolvedFields {
-                    try await gitHubService.updateItemField(
-                        projectId: project.id,
-                        itemId: item.id,
-                        fieldId: field.id,
-                        value: .singleSelect(optionId: option.id, name: option.name)
-                    )
-                }
-                if resolvedFields.isEmpty == false {
-                    await refresh()
-                }
+            if resolvedFields.isEmpty == false {
+                await refresh()
             }
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return false
         }
     }
 
-    func createDraftIssue(title: String, body: String) async -> Bool {
-        guard let project = editableSelectedProject() else { return false }
-        operationErrorMessage = nil
-
-        do {
-            _ = try await gitHubService.createDraftIssue(
-                projectId: project.id,
-                title: title,
-                body: body
-            )
-            await refresh()
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return false
-        }
+    func createDraftIssue(title: String, body: String) async throws {
+        let project = try editableSelectedProject()
+        _ = try await gitHubService.createDraftIssue(
+            projectId: project.id,
+            title: title,
+            body: body
+        )
+        await refresh()
     }
 
     func searchItems(query: String) async throws -> [GitHubItemCandidate] {
         try await gitHubService.searchItems(query: query)
     }
 
-    func addExistingItem(url: String) async -> Bool {
-        guard let project = editableSelectedProject() else { return false }
-        operationErrorMessage = nil
-
-        do {
-            try await gitHubService.addExistingItem(projectId: project.id, url: url)
-            await refresh()
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return false
-        }
+    func addExistingItem(url: String) async throws {
+        let project = try editableSelectedProject()
+        try await gitHubService.addExistingItem(projectId: project.id, url: url)
+        await refresh()
     }
 
-    func addExistingItem(_ candidate: GitHubItemCandidate) async -> Bool {
-        guard let project = editableSelectedProject() else { return false }
-        operationErrorMessage = nil
-
-        do {
-            try await gitHubService.addExistingItem(projectId: project.id, candidate: candidate)
-            await refresh()
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            operationErrorMessage = error.localizedDescription
-            return false
-        }
+    func addExistingItem(_ candidate: GitHubItemCandidate) async throws {
+        let project = try editableSelectedProject()
+        try await gitHubService.addExistingItem(projectId: project.id, candidate: candidate)
+        await refresh()
     }
 
     func clearOperationError() {
         operationErrorMessage = nil
     }
 
-    private func editableSelectedProject() -> Project? {
-        guard let selectedProjectId else {
-            operationErrorMessage = "No project is selected."
-            return nil
-        }
-        return editableProject(id: selectedProjectId)
+    private func editableSelectedProject() throws -> Project {
+        guard let selectedProjectId else { throw ProjectStoreError.noProjectSelected }
+        return try editableProject(id: selectedProjectId)
     }
 
-    private func editableProject(id: String) -> Project? {
+    private func editableProject(id: String) throws -> Project {
         guard let project = project(id: id), canEditProject(id: id) else {
-            operationErrorMessage = "This project is read-only."
-            return nil
+            throw ProjectStoreError.readOnlyProject
         }
         return project
     }

@@ -236,10 +236,16 @@ struct ItemDetailView: View {
     private func archiveItem() {
         guard let item, isArchiving == false else { return }
         isArchiving = true
+        operationErrorMessage = nil
         Task {
-            let succeeded = await store.archiveItem(item, in: reference.projectID)
+            do {
+                try await store.archiveItem(item, in: reference.projectID)
+                dismiss()
+            } catch is CancellationError {
+            } catch {
+                operationErrorMessage = error.localizedDescription
+            }
             isArchiving = false
-            if succeeded { dismiss() }
         }
     }
 }

@@ -39,15 +39,6 @@ struct ItemPropertiesView: View {
 
                     signalsSection(item)
 
-                    if operationErrorMessage == nil,
-                       let message = store.operationErrorMessage {
-                        Label(message, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                    }
-
                 }
                 .padding(20)
             }
@@ -82,12 +73,16 @@ struct ItemPropertiesView: View {
                 ) { value in
                     isWorking = true
                     operationErrorMessage = nil
-                    _ = await store.updateField(
-                        on: item,
-                        in: reference.projectID,
-                        field: field,
-                        value: value
-                    )
+                    do {
+                        try await store.updateField(
+                            on: item,
+                            in: reference.projectID,
+                            field: field,
+                            value: value
+                        )
+                    } catch {
+                        report(error)
+                    }
                     isWorking = false
                 }
             }
@@ -406,11 +401,15 @@ struct ItemPropertiesView: View {
                             Button {
                                 operationErrorMessage = nil
                                 Task {
-                                    await store.removeAssignee(
-                                        from: item,
-                                        in: reference.projectID,
-                                        user: assignee
-                                    )
+                                    do {
+                                        try await store.removeAssignee(
+                                            from: item,
+                                            in: reference.projectID,
+                                            user: assignee
+                                        )
+                                    } catch {
+                                        report(error)
+                                    }
                                 }
                             } label: {
                                 Image(systemName: "xmark")

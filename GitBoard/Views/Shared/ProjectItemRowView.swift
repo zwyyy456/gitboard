@@ -1,10 +1,11 @@
 import SwiftUI
 
 struct OperationErrorBanner: View {
-    @Bindable var store: ProjectStore
+    let message: String?
+    let dismiss: () -> Void
 
     var body: some View {
-        if let message = store.operationErrorMessage {
+        if let message {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
@@ -12,9 +13,7 @@ struct OperationErrorBanner: View {
                     .font(.caption)
                     .textSelection(.enabled)
                 Spacer()
-                Button {
-                    store.clearOperationError()
-                } label: {
+                Button(action: dismiss) {
                     Image(systemName: "xmark")
                 }
                 .buttonStyle(.borderless)

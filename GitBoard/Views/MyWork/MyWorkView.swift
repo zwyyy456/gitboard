@@ -5,6 +5,7 @@ struct MyWorkView: View {
     let filter: MyWorkFilter
     let showItemDetail: (ItemInspectorReference) -> Void
     let didOpenProject: () -> Void
+    @State private var operationErrorMessage: String?
 
     private var items: [MyWorkItem] {
         model.myWorkItems(for: filter)
@@ -12,7 +13,7 @@ struct MyWorkView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let errorMessage = model.myWorkErrorMessage {
+            if let errorMessage = operationErrorMessage ?? model.myWorkErrorMessage {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -45,7 +46,8 @@ struct MyWorkView: View {
                         workItem: workItem,
                         model: model,
                         showDetails: { showDetails(workItem) },
-                        openProject: { openProject(workItem.project) }
+                        openProject: { openProject(workItem.project) },
+                        reportError: report
                     )
                 }
                 .listStyle(.inset)
@@ -140,6 +142,11 @@ struct MyWorkView: View {
             )
         )
     }
+
+    private func report(_ error: Error) {
+        guard (error is CancellationError) == false else { return }
+        operationErrorMessage = error.localizedDescription
+    }
 }
 
 private struct MyWorkRow: View {
@@ -147,6 +154,7 @@ private struct MyWorkRow: View {
     @Bindable var model: GitBoardModel
     let showDetails: () -> Void
     let openProject: () -> Void
+    let reportError: (Error) -> Void
 
     var body: some View {
         Button(action: showDetails) {
@@ -209,11 +217,15 @@ private struct MyWorkRow: View {
                         ForEach(statusField.options) { option in
                             Button(option.name) {
                                 Task {
-                                    await model.updateMyWorkField(
-                                        on: workItem,
-                                        field: statusField,
-                                        value: .singleSelect(optionId: option.id, name: option.name)
-                                    )
+                                    do {
+                                        try await model.updateMyWorkField(
+                                            on: workItem,
+                                            field: statusField,
+                                            value: .singleSelect(optionId: option.id, name: option.name)
+                                        )
+                                    } catch {
+                                        reportError(error)
+                                    }
                                 }
                             }
                         }
@@ -227,11 +239,15 @@ private struct MyWorkRow: View {
                         ForEach(priorityField.options) { option in
                             Button(option.name) {
                                 Task {
-                                    await model.updateMyWorkField(
-                                        on: workItem,
-                                        field: priorityField,
-                                        value: .singleSelect(optionId: option.id, name: option.name)
-                                    )
+                                    do {
+                                        try await model.updateMyWorkField(
+                                            on: workItem,
+                                            field: priorityField,
+                                            value: .singleSelect(optionId: option.id, name: option.name)
+                                        )
+                                    } catch {
+                                        reportError(error)
+                                    }
                                 }
                             }
                         }
@@ -241,7 +257,13 @@ private struct MyWorkRow: View {
                 Divider()
 
                 Button("Archive from Project", systemImage: "archivebox") {
-                    Task { await model.archiveMyWorkItem(workItem) }
+                    Task {
+                        do {
+                            try await model.archiveMyWorkItem(workItem)
+                        } catch {
+                            reportError(error)
+                        }
+                    }
                 }
             }
         }

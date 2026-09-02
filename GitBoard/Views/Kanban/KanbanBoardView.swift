@@ -11,6 +11,7 @@ struct KanbanBoardView: View {
     @State private var showsStatusFilter = false
     @State private var selectedItemIDs: Set<String> = []
     @State private var isBulkWorking = false
+    @State private var operationErrorMessage: String?
 
     private static let minimumColumnWidth: CGFloat = 260
     private static let idealOverflowColumnWidth: CGFloat = 280
@@ -84,7 +85,10 @@ struct KanbanBoardView: View {
 
     private var boardSurface: some View {
         VStack(spacing: 0) {
-            OperationErrorBanner(store: store)
+            OperationErrorBanner(
+                message: operationErrorMessage ?? store.operationErrorMessage,
+                dismiss: dismissOperationError
+            )
 
             if store.isLoading && store.projects.isEmpty {
                 loadingView
@@ -442,7 +446,8 @@ struct KanbanBoardView: View {
                             store: store,
                             isSelecting: isSelecting,
                             selectedItemIDs: $selectedItemIDs,
-                            showInspector: showItemDetail
+                            showInspector: showItemDetail,
+                            reportError: report
                         )
                         .frame(width: columnWidth, height: geometry.size.height - 32)
                     }
@@ -458,7 +463,8 @@ struct KanbanBoardView: View {
                             store: store,
                             isSelecting: isSelecting,
                             selectedItemIDs: $selectedItemIDs,
-                            showInspector: showItemDetail
+                            showInspector: showItemDetail,
+                            reportError: report
                         )
                         .frame(width: columnWidth, height: geometry.size.height - 32)
                     }
@@ -513,9 +519,14 @@ struct KanbanBoardView: View {
         let items = selectedItems
         guard items.isEmpty == false, let projectID = store.selectedProjectId else { return }
         isBulkWorking = true
+        operationErrorMessage = nil
         Task {
-            await store.moveItems(items, to: status, in: projectID)
-            selectedItemIDs.removeAll()
+            do {
+                try await store.moveItems(items, to: status, in: projectID)
+                selectedItemIDs.removeAll()
+            } catch {
+                report(error)
+            }
             isBulkWorking = false
         }
     }
@@ -524,10 +535,28 @@ struct KanbanBoardView: View {
         let items = selectedItems
         guard items.isEmpty == false, let projectID = store.selectedProjectId else { return }
         isBulkWorking = true
+        operationErrorMessage = nil
         Task {
-            await store.archiveItems(items, in: projectID)
-            selectedItemIDs.removeAll()
+            do {
+                try await store.archiveItems(items, in: projectID)
+                selectedItemIDs.removeAll()
+            } catch {
+                report(error)
+            }
             isBulkWorking = false
+        }
+    }
+
+    private func report(_ error: Error) {
+        guard (error is CancellationError) == false else { return }
+        operationErrorMessage = error.localizedDescription
+    }
+
+    private func dismissOperationError() {
+        if operationErrorMessage != nil {
+            operationErrorMessage = nil
+        } else {
+            store.clearOperationError()
         }
     }
 }
@@ -544,6 +573,7 @@ struct KanbanColumn: View {
     let isSelecting: Bool
     @Binding var selectedItemIDs: Set<String>
     let showInspector: (ItemInspectorReference) -> Void
+    let reportError: (Error) -> Void
 
     @State private var isTargeted = false
 
@@ -604,7 +634,7 @@ struct KanbanColumn: View {
                                     showInspector(
                                         ItemInspectorReference(projectID: projectID, itemID: item.id)
                                     )
-                                }
+                                } reportError: { reportError($0) }
                             } else {
                                 KanbanCard(
                                     projectID: projectID,
@@ -618,7 +648,8 @@ struct KanbanColumn: View {
                                         showInspector(
                                             ItemInspectorReference(projectID: projectID, itemID: item.id)
                                         )
-                                    }
+                                    },
+                                    reportError: reportError
                                 )
                                 .draggable(item.id) {
                                     KanbanCardPreview(item: item)
@@ -647,7 +678,11 @@ struct KanbanColumn: View {
                 // Only move if status is different
                 if item.status != targetStatus.name {
                     Task {
-                        await store.moveItem(item, toStatus: targetStatus, in: projectID)
+                        do {
+                            try await store.moveItem(item, toStatus: targetStatus, in: projectID)
+                        } catch {
+                            reportError(error)
+                        }
                     }
                 }
             }
@@ -677,6 +712,7 @@ struct KanbanCard: View {
     let isSelected: Bool
     let onSelect: () -> Void
     let showInspector: () -> Void
+    let reportError: (Error) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
@@ -711,7 +747,8 @@ struct KanbanCard: View {
                 allStatuses: allStatuses,
                 store: store,
                 showDeleteConfirmation: $showDeleteConfirmation,
-                showInspector: showInspector
+                showInspector: showInspector,
+                reportError: reportError
             )
         }
         .confirmationDialog(
@@ -720,7 +757,13 @@ struct KanbanCard: View {
             titleVisibility: .visible
         ) {
             Button("Remove", role: .destructive) {
-                Task { await store.deleteItem(item, from: projectID) }
+                Task {
+                    do {
+                        try await store.deleteItem(item, from: projectID)
+                    } catch {
+                        reportError(error)
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
