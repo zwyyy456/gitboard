@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "wrangler deploy --dry-run",
+    "config:check": "node --env-file-if-exists=.dev.vars.production scripts/check-release-config.mjs",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "release:check": "npm run typecheck && npm test && npm run build && npm run config:check",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
