@@ -32,21 +32,25 @@ changes.
 
 GitHub App webhooks are accepted at `POST /webhooks/github`. The receiver
 verifies `X-Hub-Signature-256` before decoding, ignores unrelated events and
-actions, and places only delivery, installation, repository, pull request, and
-action identifiers on the Queue. The D1 delivery row is the deduplication
-record; complete webhook payloads are neither queued nor stored.
+actions, persists only the identifiers needed to recompute current truth, and
+places only the delivery ID on the Queue. The D1 delivery row is both the
+deduplication record and outbox; the scheduled handler retries delivery rows
+that have not reached the Queue. Complete webhook payloads are neither queued
+nor stored.
 
 The same signed endpoint handles GitHub App installation lifecycle events.
-Installation authentication uses a short-lived RS256 App JWT and an ephemeral
-installation token. Repository access is reconciled from GitHub into D1;
-suspension, deletion, or source repository removal disables the affected
-automation. Neither token is written to D1 or logs.
+Lifecycle events use the same outbox and are acknowledged before any GitHub API
+request. The consumer uses a short-lived RS256 App JWT and an ephemeral
+installation token to reconcile the installation's current status and complete
+repository set, so event delivery order does not become state truth. Suspension,
+deletion, or source repository removal disables the affected automation.
+Neither token is written to D1 or logs.
 
 For each queued pull request, `RepositoryTruthReader` uses an installation token
 to reload every currently visible closing Issue and every closing pull request
 for those Issues, including closed pull requests. Both connections are fully
-paginated. Cross-repository Issues are accepted only when their numeric
-repository ID is present in the same installation's D1 repository set.
+paginated. Repositories are queried and authorized by opaque GitHub node ID;
+names are retained only for display.
 
 `WorkflowReducer` is a pure function. Its priority is merged → open ready → open
 draft → all closed-unmerged; a closed Issue without a merged closing pull request
