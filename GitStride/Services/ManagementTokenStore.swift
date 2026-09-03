@@ -1,7 +1,13 @@
 import Foundation
 import Security
 
-struct ManagementTokenStore {
+protocol ManagementTokenStoring {
+    func load() throws -> String?
+    func save(_ token: String) throws
+    func delete() throws
+}
+
+struct ManagementTokenStore: ManagementTokenStoring {
     private let service = "com.gitstride.app.automation"
     private let account = "management-token"
 

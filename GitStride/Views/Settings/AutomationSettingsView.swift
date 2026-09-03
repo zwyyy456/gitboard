@@ -22,6 +22,16 @@ struct AutomationSettingsView: View {
                         systemImage: "link",
                         action: startSetup
                     )
+                case .loadingConnection:
+                    ProgressView("Loading automation status…")
+                case .connectionLoadFailed:
+                    Text("The saved automation connection could not be loaded.")
+                        .foregroundStyle(.secondary)
+                    Button(
+                        "Retry Loading",
+                        systemImage: "arrow.clockwise",
+                        action: retryConnectionLoad
+                    )
                 case .starting:
                     ProgressView("Starting secure setup…")
                 case .waitingForBrowser:
@@ -35,12 +45,18 @@ struct AutomationSettingsView: View {
                     ProgressView("Enabling automation…")
                 case .connectionStorageFailed:
                     Label("Automation is enabled, but the connection was not saved locally.", systemImage: "key")
-                    Button("Retry Saving to Keychain", action: setup.retryTokenStorage)
+                    Button("Retry Saving to Keychain", action: retryTokenStorage)
                 case .connected:
-                    if setup.automations.isEmpty && setup.errorMessage == nil {
-                        ProgressView("Loading automation status…")
-                    } else if setup.automations.isEmpty {
+                    if setup.automations.isEmpty && setup.errorMessage != nil {
                         Text("Connection status could not be loaded.")
+                            .foregroundStyle(.secondary)
+                        Button(
+                            "Retry Loading",
+                            systemImage: "arrow.clockwise",
+                            action: reloadAutomations
+                        )
+                    } else if setup.automations.isEmpty {
+                        Text("No automation connections were found.")
                             .foregroundStyle(.secondary)
                     } else {
                         AutomationConnectionList(setup: setup)
@@ -64,8 +80,8 @@ struct AutomationSettingsView: View {
         .task(id: setup.setupSessionID) {
             await setup.observeSetup()
         }
-        .task(id: setup.phase) {
-            await setup.loadAutomations()
+        .task {
+            await setup.loadConnection()
         }
     }
 
@@ -81,6 +97,18 @@ struct AutomationSettingsView: View {
         if let url = setup.browserURL() {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    private func retryConnectionLoad() {
+        Task { await setup.loadConnection() }
+    }
+
+    private func reloadAutomations() {
+        Task { await setup.loadAutomations() }
+    }
+
+    private func retryTokenStorage() {
+        Task { await setup.retryTokenStorage() }
     }
 
 }
