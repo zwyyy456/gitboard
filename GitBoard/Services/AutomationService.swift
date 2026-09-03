@@ -5,13 +5,10 @@ actor AutomationService {
         let id: String
         let setupToken: String
         let authorizationURL: URL
-        let expiresAt: Date
     }
 
     struct SessionStatus: Decodable, Sendable {
-        let id: String
         let state: String
-        let expiresAt: Date
     }
 
     struct Repository: Decodable, Identifiable, Sendable {
@@ -85,14 +82,11 @@ actor AutomationService {
 
     struct Automation: Decodable, Identifiable, Sendable {
         let id: String
-        let repositoryID: Int64
         let repositoryNameWithOwner: String
         let projectOwnerLogin: String
         let projectNumber: Int
-        let projectNodeID: String
         let enabled: Bool
         let healthState: String
-        let updatedAt: Date
         let lastDelivery: DeliveryStatus?
     }
 

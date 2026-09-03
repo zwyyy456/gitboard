@@ -9,7 +9,6 @@ export interface SourcePullRequest {
 }
 
 export interface ClosingPullRequestTruth {
-    nodeID: string;
     state: "OPEN" | "CLOSED" | "MERGED";
     isDraft: boolean;
 }
@@ -17,7 +16,6 @@ export interface ClosingPullRequestTruth {
 export interface IssueWorkflowTruth {
     issueNodeID: string;
     issueState: "OPEN" | "CLOSED";
-    issueRepositoryNodeID: string;
     issueRepositoryNameWithOwner: string;
     closingPullRequests: ClosingPullRequestTruth[];
 }

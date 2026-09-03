@@ -34,10 +34,15 @@ test("starts with the current D1 schema", async () => {
     const repositoryColumns = await testEnv.DB.prepare(
         "PRAGMA table_info(installation_repositories)"
     ).all<{ name: string }>();
+    const setupColumns = await testEnv.DB.prepare(
+        "PRAGMA table_info(setup_sessions)"
+    ).all<{ name: string }>();
 
     expect(tables.results.map((table) => table.name)).toContain("project_automations");
     expect(repositoryColumns.results.map((column) => column.name))
         .toContain("repository_node_id");
+    expect(setupColumns.results.map((column) => column.name))
+        .not.toContain("exchange_code_hash");
 });
 
 test("keeps a received delivery when Queue send fails and schedules it again", async () => {

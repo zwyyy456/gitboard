@@ -29,20 +29,18 @@ describe("RepositoryTruthReader", () => {
             {
                 issueNodeID: "ISSUE_1",
                 issueState: "OPEN",
-                issueRepositoryNodeID: "REPOSITORY_101",
                 issueRepositoryNameWithOwner: "owner/issues",
                 closingPullRequests: [
-                    { nodeID: "PR_1", state: "OPEN", isDraft: false },
-                    { nodeID: "PR_2", state: "CLOSED", isDraft: false },
+                    { state: "OPEN", isDraft: false },
+                    { state: "CLOSED", isDraft: false },
                 ],
             },
             {
                 issueNodeID: "ISSUE_2",
                 issueState: "OPEN",
-                issueRepositoryNodeID: "REPOSITORY_202",
                 issueRepositoryNameWithOwner: "owner/other",
                 closingPullRequests: [
-                    { nodeID: "PR_3", state: "MERGED", isDraft: false },
+                    { state: "MERGED", isDraft: false },
                 ],
             },
         ]);

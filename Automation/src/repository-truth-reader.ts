@@ -55,7 +55,6 @@ export class RepositoryTruthReader {
                 truth.push({
                     issueNodeID: issue.nodeID,
                     issueState: issue.state,
-                    issueRepositoryNodeID: issue.repositoryNodeID,
                     issueRepositoryNameWithOwner: issue.repositoryNameWithOwner,
                     closingPullRequests: await this.loadClosingPullRequests(token, issue.nodeID),
                 });
@@ -164,7 +163,7 @@ query ClosingPullRequests($issueNodeID: ID!, $cursor: String) {
         after: $cursor
         includeClosedPrs: true
       ) {
-        nodes { id state isDraft }
+        nodes { state isDraft }
         pageInfo { hasNextPage endCursor }
       }
     }
@@ -213,12 +212,11 @@ function readClosingIssue(value: unknown): ClosingIssue {
 
 function readClosingPullRequest(value: unknown): ClosingPullRequestTruth {
     if (!isRecord(value)
-        || typeof value.id !== "string"
         || (value.state !== "OPEN" && value.state !== "CLOSED" && value.state !== "MERGED")
         || typeof value.isDraft !== "boolean") {
         throw new RepositoryTruthError("GITHUB_RESPONSE_INVALID");
     }
-    return { nodeID: value.id, state: value.state, isDraft: value.isDraft };
+    return { state: value.state, isDraft: value.isDraft };
 }
 
 function nextCursor(value: unknown): string | null {

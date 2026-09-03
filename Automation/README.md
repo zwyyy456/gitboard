@@ -26,9 +26,7 @@ belong in the ignored `.dev.vars`; deployed values are configured as Worker
 secrets. `wrangler.jsonc` declares every required secret so development and
 deployment fail clearly when one is missing.
 
-The D1 binding intentionally omits an account-specific database ID until the
-production resource is created. D1 migrations remain the only source of schema
-changes.
+D1 migrations remain the only source of schema changes.
 
 GitHub App webhooks are accepted at `POST /webhooks/github`. The receiver
 verifies `X-Hub-Signature-256` before decoding, ignores unrelated events and
@@ -137,16 +135,16 @@ npm run config:check
 
 ### 3. Provision Cloudflare resources
 
-Authenticate Wrangler, create the D1 database and both Queues, then put the
-returned D1 `database_id` in the `DB` entry of `wrangler.jsonc`:
+The production D1 database and both Queues are already provisioned, and
+`wrangler.jsonc` contains the database binding. Authenticate Wrangler and verify
+that the configured resources are visible before release:
 
 ```bash
 cd Automation
 npx wrangler login
 npx wrangler whoami
-npx wrangler d1 create gitboard-automation
-npx wrangler queues create gitboard-automation
-npx wrangler queues create gitboard-automation-dlq
+npx wrangler d1 info gitboard-automation
+npx wrangler queues list
 ```
 
 Apply the schema before serving setup or webhook traffic. Cloudflare records a
@@ -290,48 +288,14 @@ authorization or node-resolution error at the mutation step means a known item
 ID is insufficient for project-only OAuth and the local-mapping design cannot be
 used for that private item.
 
-### Add-existing-item resolution boundary
+### REST project-filter boundary
 
-The preferred Worker design has one additional boundary to validate: whether a
-project-only OAuth token can pass a private repository Issue node ID to
-`addProjectV2ItemById` and receive the ID of the Project item that already
-contains that Issue.
+The runtime narrows personal Project items with
+`GET /users/{owner}/projectsV2/{number}/items?q=...`. This read-only probe checks
+that the filter exposes the expected private Issue item to the project-only
+OAuth token.
 
-Use the same disposable setup. The Issue must already be present in the
-configured Project, and the locally authenticated `gh` token must be able to
-read both the private repository and the personal Project. Run:
-
-```bash
-node Automation/scripts/validate-personal-auth.mjs \
-  --device-flow \
-  --add-item-probe
-```
-
-Before calling the mutation, the script uses the local `gh` token for a
-read-only preflight that confirms a closing Issue already exists in the Project
-and records its existing item ID. If that preflight fails, the script stops and
-does not call `addProjectV2ItemById`, preventing the probe from adding a missing
-Issue. The mutation runs only with the project-only OAuth token. Its returned ID
-must equal the existing ID recorded by `gh`; the script then changes the item's
-Status and restores the original value.
-
-Success ends with `Boundary 2 add-item resolution validation passed`. A GraphQL
-authorization or node-resolution error from `addProjectV2ItemById` means the
-project-only OAuth token cannot use the private Issue node ID to resolve the
-existing Project item. Tokens and complete GitHub responses are never printed
-or persisted.
-
-### Project-side filter boundaries
-
-If both minimal-token association lookups and the add-item resolution boundary
-fail, test whether server-side Project filtering exposes the existing private
-Issue item. This mode makes two read-only requests with the project-only OAuth
-token:
-
-- GraphQL `ProjectV2.items(query:)`
-- REST `GET /users/{owner}/projectsV2/{number}/items?q=...`
-
-Both requests use `repo:OWNER/REPOSITORY is:issue`, derived from
+The request uses `repo:OWNER/REPOSITORY is:issue`, derived from
 `GB_REPOSITORY`. The local `gh` token first supplies the expected item and
 content IDs strictly as a control. Run:
 
@@ -341,7 +305,7 @@ node Automation/scripts/validate-personal-auth.mjs \
   --project-filter-probe
 ```
 
-Each result reports only the filtered item count and one of these target
+The result reports only the filtered item count and one of these target
 classifications:
 
 - `complete`: the expected item and its private Issue content ID were returned.
@@ -349,10 +313,8 @@ classifications:
   hidden.
 - `missing`: the expected item ID was not returned by the filter.
 
-Success ends with `Boundary 3 project-side filter probes completed`. This means
-both API requests completed; the classifications determine whether either path
-is usable. An API authorization or schema error is reported without printing
-the token or response payload.
+Success ends with `REST project filter probe completed`. An API authorization
+or schema error is reported without printing the token or response payload.
 
 For an already-issued token pair, the direct-token form remains available:
 
