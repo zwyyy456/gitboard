@@ -1,4 +1,5 @@
-import type { AutomationMessage, Env } from "./index";
+import { queueDelivery } from "./delivery-outbox";
+import type { Env } from "./index";
 import { receiveInstallationWebhook } from "./installation-lifecycle";
 
 const pullRequestActions = new Set([
@@ -71,10 +72,20 @@ export async function receiveGitHubWebhook(request: Request, env: Env): Promise<
     const now = new Date().toISOString();
     const insertion = await env.DB.prepare(
         `INSERT OR IGNORE INTO webhook_deliveries (
-            delivery_id, automation_id, event_name, event_action,
-            processing_state, attempt_count, received_at
-         ) VALUES (?, ?, 'pull_request', ?, 'RECEIVED', 0, ?)`
-    ).bind(deliveryID, automation.id, payload.action, now).run();
+            delivery_id, automation_id, installation_id, repository_id,
+            pull_request_number, event_name, event_action, processing_state,
+            attempt_count, received_at, state_updated_at
+         ) VALUES (?, ?, ?, ?, ?, 'pull_request', ?, 'RECEIVED', 0, ?, ?)`
+    ).bind(
+        deliveryID,
+        automation.id,
+        payload.installation.id,
+        payload.repository.id,
+        payload.pull_request.number,
+        payload.action,
+        now,
+        now
+    ).run();
 
     if (insertion.meta.changes === 0) {
         const existing = await env.DB.prepare(
@@ -85,21 +96,11 @@ export async function receiveGitHubWebhook(request: Request, env: Env): Promise<
         }
     }
 
-    const message: AutomationMessage = {
-        deliveryID,
-        installationID: payload.installation.id,
-        repositoryID: payload.repository.id,
-        pullRequestNumber: payload.pull_request.number,
-        eventAction: payload.action,
-    };
-    await env.AUTOMATION_QUEUE.send(message);
-    await env.DB.prepare(
-        "UPDATE webhook_deliveries SET processing_state = 'QUEUED' WHERE delivery_id = ?"
-    ).bind(deliveryID).run();
-    console.info("automation_delivery_queued", {
+    const queued = await queueDelivery(env.DB, env.AUTOMATION_QUEUE, deliveryID);
+    console.info("automation_delivery_persisted", {
         deliveryID,
         automationID: automation.id,
-        eventAction: payload.action,
+        queued,
     });
 
     return Response.json({ accepted: true }, { status: 202 });

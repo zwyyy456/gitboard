@@ -1,4 +1,4 @@
-import type { AutomationMessage } from "./index";
+import type { DeliveryMessage } from "./index";
 import type { OAuthCredentialError } from "./oauth-credential-provider";
 import type {
     IssueStatusAssignment,
@@ -48,6 +48,7 @@ interface AutomationRecord {
     installation_id: number;
     installation_status: string;
     repository_node_id: string;
+    pull_request_number: number;
     project_owner_login: string;
     project_number: number;
     project_node_id: string;
@@ -71,7 +72,7 @@ export class AutomationRunner {
         private readonly projectGateway: StatusGateway
     ) {}
 
-    async run(message: AutomationMessage, attempt: number): Promise<RunnerDecision> {
+    async run(message: DeliveryMessage, attempt: number): Promise<RunnerDecision> {
         const automation = await this.loadAutomation(message);
         if (!automation || terminalDeliveryStates.has(automation.processing_state)) {
             return { action: "ack" };
@@ -81,11 +82,15 @@ export class AutomationRunner {
             return { action: "ack" };
         }
 
-        await this.database.prepare(
+        const started = await this.database.prepare(
             `UPDATE webhook_deliveries
-             SET processing_state = 'PROCESSING', attempt_count = attempt_count + 1
-             WHERE delivery_id = ?`
-        ).bind(message.deliveryID).run();
+             SET processing_state = 'PROCESSING',
+                 attempt_count = attempt_count + 1,
+                 state_updated_at = ?
+             WHERE delivery_id = ?
+               AND processing_state NOT IN ('COMPLETED', 'FAILED', 'IGNORED')`
+        ).bind(new Date().toISOString(), message.deliveryID).run();
+        if (started.meta.changes !== 1) return { action: "ack" };
 
         try {
             const repositoryNodeIDs = await this.loadInstallationRepositoryNodeIDs(
@@ -95,7 +100,7 @@ export class AutomationRunner {
                 { id: automation.installation_id, repositoryNodeIDs },
                 {
                     repositoryNodeID: automation.repository_node_id,
-                    number: message.pullRequestNumber,
+                    number: automation.pull_request_number,
                 }
             );
             const assignments = truths.flatMap<IssueStatusAssignment>((truth) => {
@@ -135,7 +140,7 @@ export class AutomationRunner {
         }
     }
 
-    private async loadAutomation(message: AutomationMessage): Promise<AutomationRecord | null> {
+    private async loadAutomation(message: DeliveryMessage): Promise<AutomationRecord | null> {
         return this.database.prepare(
             `SELECT delivery.processing_state,
                     automation.id AS automation_id,
@@ -143,6 +148,7 @@ export class AutomationRunner {
                     automation.installation_id,
                     installation.status AS installation_status,
                     repository.repository_node_id,
+                    delivery.pull_request_number,
                     automation.project_owner_login,
                     automation.project_number,
                     automation.project_node_id,
@@ -159,13 +165,8 @@ export class AutomationRunner {
                ON repository.installation_id = automation.installation_id
               AND repository.repository_id = automation.repository_id
              WHERE delivery.delivery_id = ?
-               AND automation.installation_id = ?
-               AND automation.repository_id = ?`
-        ).bind(
-            message.deliveryID,
-            message.installationID,
-            message.repositoryID
-        ).first<AutomationRecord>();
+               AND delivery.event_name = 'pull_request'`
+        ).bind(message.deliveryID).first<AutomationRecord>();
     }
 
     private async loadInstallationRepositoryNodeIDs(
@@ -187,9 +188,10 @@ export class AutomationRunner {
         if (code === "TRANSIENT_GITHUB_FAILURE") {
             await this.database.prepare(
                 `UPDATE webhook_deliveries
-                 SET processing_state = 'RETRYING', error_code = ?
-                 WHERE delivery_id = ?`
-            ).bind(code, deliveryID).run();
+                 SET processing_state = 'RETRYING', error_code = ?, state_updated_at = ?
+                 WHERE delivery_id = ?
+                   AND processing_state NOT IN ('COMPLETED', 'FAILED', 'IGNORED')`
+            ).bind(code, new Date().toISOString(), deliveryID).run();
             console.info("automation_delivery_retrying", {
                 deliveryID,
                 automationID: automation.automation_id,
@@ -229,11 +231,13 @@ export class AutomationRunner {
         state: "COMPLETED" | "FAILED" | "IGNORED",
         errorCode: AutomationErrorCode | null
     ): Promise<void> {
+        const now = new Date().toISOString();
         await this.database.prepare(
             `UPDATE webhook_deliveries
-             SET processing_state = ?, error_code = ?, completed_at = ?
-             WHERE delivery_id = ?`
-        ).bind(state, errorCode, new Date().toISOString(), deliveryID).run();
+             SET processing_state = ?, error_code = ?, completed_at = ?, state_updated_at = ?
+             WHERE delivery_id = ?
+               AND processing_state NOT IN ('COMPLETED', 'FAILED', 'IGNORED')`
+        ).bind(state, errorCode, now, now, deliveryID).run();
     }
 }
 

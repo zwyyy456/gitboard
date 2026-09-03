@@ -1,4 +1,5 @@
 import { AutomationRunner } from "./automation-runner";
+import { flushDeliveryOutbox } from "./delivery-outbox";
 import { GitHubAppClient } from "./github-app-client";
 import { GitHubGraphQLClient } from "./github-graphql";
 import { GraphQLStatusWriter } from "./graphql-status-writer";
@@ -11,7 +12,7 @@ import { receiveGitHubWebhook, WebhookRequestError } from "./webhook-receiver";
 
 export interface Env {
     DB: D1Database;
-    AUTOMATION_QUEUE: Queue<AutomationMessage>;
+    AUTOMATION_QUEUE: Queue<DeliveryMessage>;
     GITHUB_API_VERSION: string;
     GITHUB_APP_ID: string;
     GITHUB_APP_PRIVATE_KEY: string;
@@ -23,12 +24,8 @@ export interface Env {
     PUBLIC_BASE_URL: string;
 }
 
-export interface AutomationMessage {
+export interface DeliveryMessage {
     deliveryID: string;
-    installationID: number;
-    repositoryID: number;
-    pullRequestNumber: number;
-    eventAction: string;
 }
 
 export default {
@@ -84,7 +81,7 @@ export default {
         );
 
         for (const message of batch.messages) {
-            if (!isAutomationMessage(message.body)) {
+            if (!isDeliveryMessage(message.body)) {
                 message.ack();
                 continue;
             }
@@ -100,23 +97,14 @@ export default {
             }
         }
     },
+    async scheduled(_controller, env): Promise<void> {
+        await flushDeliveryOutbox(env.DB, env.AUTOMATION_QUEUE);
+    },
 } satisfies ExportedHandler<Env>;
 
-function isAutomationMessage(value: unknown): value is AutomationMessage {
+function isDeliveryMessage(value: unknown): value is DeliveryMessage {
     return typeof value === "object"
         && value !== null
         && "deliveryID" in value
-        && typeof value.deliveryID === "string"
-        && "installationID" in value
-        && isPositiveInteger(value.installationID)
-        && "repositoryID" in value
-        && isPositiveInteger(value.repositoryID)
-        && "pullRequestNumber" in value
-        && isPositiveInteger(value.pullRequestNumber)
-        && "eventAction" in value
-        && typeof value.eventAction === "string";
-}
-
-function isPositiveInteger(value: unknown): value is number {
-    return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+        && typeof value.deliveryID === "string";
 }
