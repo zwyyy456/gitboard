@@ -61,7 +61,6 @@ function issue(
     return {
         issueNodeID: "ISSUE",
         issueState,
-        issueRepositoryNodeID: "REPOSITORY",
         issueRepositoryNameWithOwner: "owner/repository",
         closingPullRequests,
     };
@@ -71,5 +70,5 @@ function pr(
     state: ClosingPullRequestTruth["state"],
     isDraft: boolean
 ): ClosingPullRequestTruth {
-    return { nodeID: `${state}-${isDraft}`, state, isDraft };
+    return { state, isDraft };
 }

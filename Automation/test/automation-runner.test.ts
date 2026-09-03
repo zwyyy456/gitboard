@@ -166,8 +166,7 @@ function issueTruth(): IssueWorkflowTruth {
     return {
         issueNodeID: "ISSUE",
         issueState: "OPEN",
-        issueRepositoryNodeID: "ISSUE_REPOSITORY",
         issueRepositoryNameWithOwner: "owner/issues",
-        closingPullRequests: [{ nodeID: "PR", state: "OPEN", isDraft: false }],
+        closingPullRequests: [{ state: "OPEN", isDraft: false }],
     };
 }

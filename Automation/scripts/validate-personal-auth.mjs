@@ -277,45 +277,6 @@ async function loadProjectItems(token, owner, projectNumber) {
     return result;
 }
 
-async function loadFilteredProjectItems(token, owner, projectNumber, filter) {
-    const result = [];
-    let cursor = null;
-    do {
-        const data = await graphQL(
-            token,
-            `query FilteredPersonalProjectItems(
-              $owner: String!
-              $number: Int!
-              $cursor: String
-              $filter: String!
-            ) {
-              user(login: $owner) {
-                projectV2(number: $number) {
-                  items(first: 100, after: $cursor, query: $filter) {
-                    nodes {
-                      id
-                      content {
-                        __typename
-                        ... on Issue { id }
-                      }
-                    }
-                    pageInfo { hasNextPage endCursor }
-                  }
-                }
-              }
-            }`,
-            { owner, number: projectNumber, cursor, filter }
-        );
-        const items = data.user?.projectV2?.items;
-        if (!items) {
-            throw new ValidationError("OAuth token could not query filtered personal Project items");
-        }
-        result.push(...items.nodes);
-        cursor = items.pageInfo.hasNextPage ? items.pageInfo.endCursor : null;
-    } while (cursor);
-    return result;
-}
-
 function nextPageURL(linkHeader) {
     if (!linkHeader) return null;
     for (const value of linkHeader.split(",")) {
@@ -398,24 +359,6 @@ async function findProjectItemWithGH(owner, projectNumber, issueIDs) {
     return findProjectItem(token, owner, projectNumber, issueIDs);
 }
 
-async function resolveProjectItemViaAddMutation(token, projectID, contentID) {
-    const data = await graphQL(
-        token,
-        `mutation ResolveProjectItem($project: ID!, $content: ID!) {
-          addProjectV2ItemById(input: {
-            projectId: $project
-            contentId: $content
-          }) { item { id } }
-        }`,
-        { project: projectID, content: contentID }
-    );
-    const itemID = data.addProjectV2ItemById?.item?.id;
-    if (!itemID) {
-        throw new ValidationError("addProjectV2ItemById did not return a Project item ID");
-    }
-    return itemID;
-}
-
 async function updateStatus(token, projectID, itemID, fieldID, optionID) {
     await graphQL(
         token,
@@ -446,7 +389,7 @@ async function clearStatus(token, projectID, itemID, fieldID) {
 }
 
 function printUsage() {
-    console.log(`Usage: node Automation/scripts/validate-personal-auth.mjs [--device-flow] [--rotate-refresh-token] [--gh-control | --gh-mapping | --add-item-probe | --project-filter-probe]
+    console.log(`Usage: node Automation/scripts/validate-personal-auth.mjs [--device-flow] [--rotate-refresh-token] [--gh-control | --gh-mapping | --project-filter-probe]
 
 Required environment:
   GB_REPOSITORY                 owner/repository
@@ -484,7 +427,6 @@ async function main() {
         "--rotate-refresh-token",
         "--gh-control",
         "--gh-mapping",
-        "--add-item-probe",
         "--project-filter-probe",
     ]);
     const unknownArguments = [...argumentsSet].filter((argument) => !allowedArguments.has(argument));
@@ -494,7 +436,6 @@ async function main() {
     const boundaryModes = [
         "--gh-control",
         "--gh-mapping",
-        "--add-item-probe",
         "--project-filter-probe",
     ]
         .filter((argument) => argumentsSet.has(argument));
@@ -568,88 +509,28 @@ async function main() {
         console.log("✓ Local gh supplied the expected Project item for filter comparison");
 
         const filter = `repo:${repositoryOwner}/${repositoryName} is:issue`;
-        let graphQLItems;
-        let graphQLError;
-        try {
-            graphQLItems = await loadFilteredProjectItems(
-                oauthToken,
-                projectOwner,
-                projectNumber,
-                filter
-            );
-        } catch (error) {
-            graphQLError = error;
-        }
-        if (graphQLItems) {
-            const classification = classifyFilteredItem(
-                graphQLItems,
-                controlItem.id,
-                controlItem.content.id,
-                (item) => item.id,
-                (item) => item.content?.id
-            );
-            console.log(
-                `GraphQL ProjectV2.items(query:) returned ${graphQLItems.length} item(s); target is ${classification}`
-            );
-        } else {
-            console.log(`GraphQL ProjectV2.items(query:) failed: ${graphQLError.message}`);
-        }
-
-        let restItems;
-        let restError;
-        try {
-            restItems = await loadFilteredProjectItemsViaREST(
-                oauthToken,
-                projectOwner,
-                projectNumber,
-                filter
-            );
-        } catch (error) {
-            restError = error;
-        }
-        if (restItems) {
-            const classification = classifyFilteredItem(
-                restItems,
-                controlItem.id,
-                controlItem.content.id,
-                (item) => item.node_id,
-                (item) => item.content?.node_id
-            );
-            console.log(
-                `REST personal Project items q filter returned ${restItems.length} item(s); target is ${classification}`
-            );
-        } else {
-            console.log(`REST personal Project items q filter failed: ${restError.message}`);
-        }
-
-        if (graphQLError || restError) {
-            throw new ValidationError("Project-side filter probe could not complete every request");
-        }
-        console.log("Boundary 3 project-side filter probes completed");
+        const items = await loadFilteredProjectItemsViaREST(
+            oauthToken,
+            projectOwner,
+            projectNumber,
+            filter
+        );
+        const classification = classifyFilteredItem(
+            items,
+            controlItem.id,
+            controlItem.content.id,
+            (item) => item.node_id,
+            (item) => item.content?.node_id
+        );
+        console.log(
+            `REST personal Project items q filter returned ${items.length} item(s); target is ${classification}`
+        );
+        console.log("REST project filter probe completed");
         return;
     }
 
     let item;
-    if (argumentsSet.has("--add-item-probe")) {
-        item = await findProjectItemWithGH(projectOwner, projectNumber, closingIssueIDs);
-        if (!item?.content?.id || !closingIssueIDs.has(item.content.id)) {
-            throw new ValidationError(
-                "Safety check failed: local gh could not confirm that a closing Issue already exists in the configured Project; addProjectV2ItemById was not called"
-            );
-        }
-        console.log("✓ Local gh confirmed the closing Issue already exists in the Project");
-        const resolvedItemID = await resolveProjectItemViaAddMutation(
-            oauthToken,
-            project.id,
-            item.content.id
-        );
-        if (resolvedItemID !== item.id) {
-            throw new ValidationError(
-                "addProjectV2ItemById returned a different Project item ID than the existing item confirmed by local gh"
-            );
-        }
-        console.log("✓ OAuth project-only token resolved the existing Project item via addProjectV2ItemById");
-    } else if (argumentsSet.has("--gh-mapping")) {
+    if (argumentsSet.has("--gh-mapping")) {
         item = await findProjectItemWithGH(projectOwner, projectNumber, closingIssueIDs);
         if (!item) {
             throw new ValidationError("Local gh could not locate a closing Issue's personal Project item");
@@ -749,9 +630,7 @@ async function main() {
         }
     }
 
-    if (argumentsSet.has("--add-item-probe")) {
-        console.log("Boundary 2 add-item resolution validation passed");
-    } else if (argumentsSet.has("--gh-mapping")) {
+    if (argumentsSet.has("--gh-mapping")) {
         console.log("Boundary 1 known-item mutation validation passed");
     } else {
         console.log("Phase 0 personal authorization validation passed");
