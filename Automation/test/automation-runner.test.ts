@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { AutomationRunner } from "../src/automation-runner";
-import type { AutomationMessage } from "../src/index";
+import type { DeliveryMessage } from "../src/index";
 import { PersonalProjectError } from "../src/personal-project-gateway";
 import type { IssueWorkflowTruth } from "../src/workflow-models";
 
@@ -69,12 +69,8 @@ describe("AutomationRunner", () => {
     });
 });
 
-const message: AutomationMessage = {
+const message: DeliveryMessage = {
     deliveryID: "delivery",
-    installationID: 7,
-    repositoryID: 11,
-    pullRequestNumber: 42,
-    eventAction: "ready_for_review",
 };
 
 class StubTruthReader {
@@ -119,6 +115,7 @@ class RunnerDatabase {
             installation_id: 7,
             installation_status: "ACTIVE",
             repository_node_id: "SOURCE_REPOSITORY",
+            pull_request_number: 42,
             project_owner_login: "owner",
             project_number: 1,
             project_node_id: "PROJECT",
