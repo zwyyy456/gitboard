@@ -34,10 +34,7 @@ export class RepositoryTruthReader {
         installation: InstallationContext,
         sourcePullRequest: SourcePullRequest
     ): Promise<IssueWorkflowTruth[]> {
-        const [owner, repository, extra] = sourcePullRequest.repositoryNameWithOwner.split("/");
-        if (!owner
-            || !repository
-            || extra
+        if (!sourcePullRequest.repositoryNodeID
             || !Number.isSafeInteger(sourcePullRequest.number)
             || sourcePullRequest.number < 1) {
             throw new RepositoryTruthError("GITHUB_RESPONSE_INVALID");
@@ -47,19 +44,18 @@ export class RepositoryTruthReader {
             const token = await this.appClient.createInstallationAccessToken(installation.id);
             const issues = await this.loadClosingIssues(
                 token,
-                owner,
-                repository,
+                sourcePullRequest.repositoryNodeID,
                 sourcePullRequest.number
             );
             const truth: IssueWorkflowTruth[] = [];
             for (const issue of issues) {
-                if (!installation.repositoryIDs.has(issue.repositoryID)) {
+                if (!installation.repositoryNodeIDs.has(issue.repositoryNodeID)) {
                     throw new RepositoryTruthError("ISSUE_REPOSITORY_NOT_ACCESSIBLE");
                 }
                 truth.push({
                     issueNodeID: issue.nodeID,
                     issueState: issue.state,
-                    issueRepositoryID: issue.repositoryID,
+                    issueRepositoryNodeID: issue.repositoryNodeID,
                     issueRepositoryNameWithOwner: issue.repositoryNameWithOwner,
                     closingPullRequests: await this.loadClosingPullRequests(token, issue.nodeID),
                 });
@@ -83,8 +79,7 @@ export class RepositoryTruthReader {
 
     private async loadClosingIssues(
         token: string,
-        owner: string,
-        repository: string,
+        repositoryNodeID: string,
         pullRequestNumber: number
     ): Promise<ClosingIssue[]> {
         const issues: ClosingIssue[] = [];
@@ -93,9 +88,9 @@ export class RepositoryTruthReader {
             const data: unknown = await this.graphQL.request(
                 token,
                 closingIssuesQuery,
-                { owner, repository, pullRequestNumber, cursor }
+                { repositoryNodeID, pullRequestNumber, cursor }
             );
-            const connection = readConnection(data, ["repository", "pullRequest", "closingIssuesReferences"]);
+            const connection = readConnection(data, ["node", "pullRequest", "closingIssuesReferences"]);
             for (const node of connection.nodes) {
                 issues.push(readClosingIssue(node));
             }
@@ -129,7 +124,7 @@ export class RepositoryTruthReader {
 interface ClosingIssue {
     nodeID: string;
     state: "OPEN" | "CLOSED";
-    repositoryID: number;
+    repositoryNodeID: string;
     repositoryNameWithOwner: string;
 }
 
@@ -140,20 +135,21 @@ interface Connection {
 
 const closingIssuesQuery = `
 query ClosingIssues(
-  $owner: String!
-  $repository: String!
+  $repositoryNodeID: ID!
   $pullRequestNumber: Int!
   $cursor: String
 ) {
-  repository(owner: $owner, name: $repository) {
-    pullRequest(number: $pullRequestNumber) {
-      closingIssuesReferences(first: 100, after: $cursor) {
-        nodes {
-          id
-          state
-          repository { databaseId nameWithOwner }
+  node(id: $repositoryNodeID) {
+    ... on Repository {
+      pullRequest(number: $pullRequestNumber) {
+        closingIssuesReferences(first: 100, after: $cursor) {
+          nodes {
+            id
+            state
+            repository { id nameWithOwner }
+          }
+          pageInfo { hasNextPage endCursor }
         }
-        pageInfo { hasNextPage endCursor }
       }
     }
   }
@@ -186,7 +182,7 @@ function readConnection(value: unknown, path: string[]): Connection {
         }
         current = current[component];
         if (current == null) {
-            if (component === "repository" || component === "pullRequest") {
+            if (component === "node" || component === "pullRequest") {
                 throw new RepositoryTruthError("SOURCE_PULL_REQUEST_NOT_FOUND");
             }
             throw new RepositoryTruthError("GITHUB_RESPONSE_INVALID");
@@ -203,14 +199,14 @@ function readClosingIssue(value: unknown): ClosingIssue {
         || typeof value.id !== "string"
         || (value.state !== "OPEN" && value.state !== "CLOSED")
         || !isRecord(value.repository)
-        || !isPositiveInteger(value.repository.databaseId)
+        || typeof value.repository.id !== "string"
         || typeof value.repository.nameWithOwner !== "string") {
         throw new RepositoryTruthError("GITHUB_RESPONSE_INVALID");
     }
     return {
         nodeID: value.id,
         state: value.state,
-        repositoryID: value.repository.databaseId,
+        repositoryNodeID: value.repository.id,
         repositoryNameWithOwner: value.repository.nameWithOwner,
     };
 }

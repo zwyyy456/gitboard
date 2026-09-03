@@ -6,8 +6,8 @@ import { RepositoryTruthReader } from "../src/repository-truth-reader";
 describe("RepositoryTruthReader", () => {
     test("loads every page of closing Issues and their current closing PRs", async () => {
         const graphQL = new StubGraphQL([
-            closingIssues([issue("ISSUE_1", 101, "owner/issues")], true, "issues-next"),
-            closingIssues([issue("ISSUE_2", 202, "owner/other")], false, null),
+            closingIssues([issue("ISSUE_1", "REPOSITORY_101", "owner/issues")], true, "issues-next"),
+            closingIssues([issue("ISSUE_2", "REPOSITORY_202", "owner/other")], false, null),
             closingPullRequests([
                 pullRequest("PR_1", "OPEN", false),
             ], true, "prs-next"),
@@ -21,15 +21,15 @@ describe("RepositoryTruthReader", () => {
         const reader = new RepositoryTruthReader(new StubTokenProvider(), graphQL);
 
         const result = await reader.loadWorkflowTruth(
-            { id: 7, repositoryIDs: new Set([101, 202]) },
-            { repositoryNameWithOwner: "owner/source", number: 42 }
+            { id: 7, repositoryNodeIDs: new Set(["REPOSITORY_101", "REPOSITORY_202"]) },
+            { repositoryNodeID: "SOURCE_REPOSITORY", number: 42 }
         );
 
         expect(result).toEqual([
             {
                 issueNodeID: "ISSUE_1",
                 issueState: "OPEN",
-                issueRepositoryID: 101,
+                issueRepositoryNodeID: "REPOSITORY_101",
                 issueRepositoryNameWithOwner: "owner/issues",
                 closingPullRequests: [
                     { nodeID: "PR_1", state: "OPEN", isDraft: false },
@@ -39,7 +39,7 @@ describe("RepositoryTruthReader", () => {
             {
                 issueNodeID: "ISSUE_2",
                 issueState: "OPEN",
-                issueRepositoryID: 202,
+                issueRepositoryNodeID: "REPOSITORY_202",
                 issueRepositoryNameWithOwner: "owner/other",
                 closingPullRequests: [
                     { nodeID: "PR_3", state: "MERGED", isDraft: false },
@@ -53,19 +53,20 @@ describe("RepositoryTruthReader", () => {
             "prs-next",
             null,
         ]);
+        expect(graphQL.variables[0].repositoryNodeID).toBe("SOURCE_REPOSITORY");
     });
 
     test("rejects a returned Issue outside the installation repository set", async () => {
         const reader = new RepositoryTruthReader(
             new StubTokenProvider(),
             new StubGraphQL([
-                closingIssues([issue("ISSUE_1", 999, "other/private")], false, null),
+                closingIssues([issue("ISSUE_1", "REPOSITORY_999", "other/private")], false, null),
             ])
         );
 
         await expect(reader.loadWorkflowTruth(
-            { id: 7, repositoryIDs: new Set([101]) },
-            { repositoryNameWithOwner: "owner/source", number: 42 }
+            { id: 7, repositoryNodeIDs: new Set(["REPOSITORY_101"]) },
+            { repositoryNodeID: "SOURCE_REPOSITORY", number: 42 }
         )).rejects.toMatchObject({
             code: "ISSUE_REPOSITORY_NOT_ACCESSIBLE",
         });
@@ -95,11 +96,11 @@ class StubGraphQL implements GraphQLRequester {
     }
 }
 
-function issue(id: string, repositoryID: number, nameWithOwner: string): object {
+function issue(id: string, repositoryNodeID: string, nameWithOwner: string): object {
     return {
         id,
         state: "OPEN",
-        repository: { databaseId: repositoryID, nameWithOwner },
+        repository: { id: repositoryNodeID, nameWithOwner },
     };
 }
 
@@ -109,7 +110,7 @@ function pullRequest(id: string, state: string, isDraft: boolean): object {
 
 function closingIssues(nodes: object[], hasNextPage: boolean, endCursor: string | null): object {
     return {
-        repository: {
+        node: {
             pullRequest: {
                 closingIssuesReferences: { nodes, pageInfo: { hasNextPage, endCursor } },
             },
