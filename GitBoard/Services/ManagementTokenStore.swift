@@ -11,6 +11,18 @@ struct ManagementTokenStore: ManagementTokenStoring {
     private let service = "com.gitboard.app.automation"
     private let account = "management-token"
 
+    static func makeToken() throws -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        guard status == errSecSuccess else {
+            throw ManagementTokenStoreError.keychain(status)
+        }
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "=", with: "")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+    }
+
     func load() throws -> String? {
         var query = baseQuery
         query[kSecReturnData as String] = true

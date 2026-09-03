@@ -8,13 +8,17 @@ import {
 } from "./oauth-credential-provider";
 import { SetupProjectClient, SetupProjectError } from "./setup-project-client";
 import type { Env } from "./index";
+import {
+    authenticateManagementRequest,
+    ManagementAuthenticationError,
+} from "./management-auth";
 
 const setupLifetimeMilliseconds = 30 * 60 * 1000;
 const githubOAuthEndpoint = "https://github.com/login/oauth";
 const githubAPI = "https://api.github.com";
 const setupCookieName = "gb_setup";
 
-type SetupState = "OAUTH_PENDING" | "INSTALLATION_PENDING" | "CONFIGURATION_PENDING" | "COMPLETE" | "EXCHANGED";
+type SetupState = "OAUTH_PENDING" | "INSTALLATION_PENDING" | "CONFIGURATION_PENDING" | "COMPLETE";
 
 interface SetupSessionRecord {
     id: string;
@@ -24,8 +28,9 @@ interface SetupSessionRecord {
     installation_id: number | null;
     state: SetupState;
     expires_at: string;
-    purpose?: "INITIAL" | "REAUTHORIZE";
+    purpose?: "INITIAL" | "ADD" | "REAUTHORIZE";
     automation_id?: string | null;
+    management_token_id?: string | null;
     github_user_database_id?: number;
     github_login?: string;
 }
@@ -58,7 +63,7 @@ export async function handleSetupRequest(request: Request, env: Env): Promise<Re
     try {
         const url = new URL(request.url);
         if (request.method === "POST" && url.pathname === "/api/setup/sessions") {
-            return createSetupSession(env);
+            return createSetupSession(request, env);
         }
         if (request.method === "GET" && /^\/setup\/[^/]+\/oauth$/.test(url.pathname)) {
             return beginOAuth(url.pathname.split("/")[2], env);
@@ -85,9 +90,6 @@ export async function handleSetupRequest(request: Request, env: Env): Promise<Re
                 return completeSetup(request, session, env);
             }
         }
-        if (request.method === "POST" && url.pathname === "/api/management/token") {
-            return exchangeManagementToken(request, env.DB);
-        }
         return new Response("Not found", { status: 404 });
     } catch (error) {
         const setupError = classifySetupError(error);
@@ -95,16 +97,42 @@ export async function handleSetupRequest(request: Request, env: Env): Promise<Re
     }
 }
 
-async function createSetupSession(env: Env): Promise<Response> {
+async function createSetupSession(request: Request, env: Env): Promise<Response> {
+    let userID: string | null = null;
+    let managementTokenID: string | null = null;
+    let purpose: "INITIAL" | "ADD" = "INITIAL";
+    if (request.headers.has("Authorization")) {
+        try {
+            const identity = await authenticateManagementRequest(request, env.DB);
+            userID = identity.userID;
+            managementTokenID = identity.tokenID;
+            purpose = "ADD";
+        } catch (error) {
+            if (error instanceof ManagementAuthenticationError) {
+                throw new SetupRequestError(401, "MANAGEMENT_AUTH_REQUIRED");
+            }
+            throw error;
+        }
+    }
     const id = crypto.randomUUID();
     const setupToken = randomToken();
     const now = new Date();
     const expiresAt = new Date(now.getTime() + setupLifetimeMilliseconds).toISOString();
     await env.DB.prepare(
         `INSERT INTO setup_sessions (
-            id, setup_token_hash, state, expires_at, created_at, updated_at
-         ) VALUES (?, ?, 'OAUTH_PENDING', ?, ?, ?)`
-    ).bind(id, await hashToken(setupToken), expiresAt, now.toISOString(), now.toISOString()).run();
+            id, setup_token_hash, user_id, management_token_id, purpose,
+            state, expires_at, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, 'OAUTH_PENDING', ?, ?, ?)`
+    ).bind(
+        id,
+        await hashToken(setupToken),
+        userID,
+        managementTokenID,
+        purpose,
+        expiresAt,
+        now.toISOString(),
+        now.toISOString()
+    ).run();
     return Response.json({
         id,
         setupToken,
@@ -167,7 +195,7 @@ async function finishOAuth(url: URL, env: Env): Promise<Response> {
 
     const session = await env.DB.prepare(
         `SELECT id, setup_token_hash, user_id, oauth_credential_id, installation_id,
-                state, expires_at, purpose, automation_id
+                state, expires_at, purpose, automation_id, management_token_id
          FROM setup_sessions
          WHERE oauth_state_hash = ?`
     ).bind(await hashToken(state)).first<SetupSessionRecord>();
@@ -182,10 +210,21 @@ async function finishOAuth(url: URL, env: Env): Promise<Response> {
     if (session.purpose === "REAUTHORIZE") {
         return finishReauthorizationOAuth(session, token, user, env);
     }
+    if (session.purpose === "ADD") {
+        if (!session.user_id) throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+        const expectedUser = await env.DB.prepare(
+            "SELECT github_user_database_id FROM users WHERE id = ?"
+        ).bind(session.user_id).first<{ github_user_database_id: number }>();
+        if (!expectedUser || expectedUser.github_user_database_id !== user.databaseID) {
+            throw new SetupRequestError(403, "OAUTH_ACCOUNT_MISMATCH");
+        }
+    }
     const existingUser = await env.DB.prepare(
         "SELECT id FROM users WHERE github_user_database_id = ?"
     ).bind(user.databaseID).first<{ id: string }>();
-    const userID = existingUser?.id ?? crypto.randomUUID();
+    const userID = session.purpose === "ADD"
+        ? session.user_id!
+        : existingUser?.id ?? crypto.randomUUID();
     const credentialID = crypto.randomUUID();
     const now = new Date().toISOString();
     const encryptedAccessToken = await encryptCredentialToken(
@@ -395,8 +434,22 @@ async function completeSetup(
     session: SetupSessionRecord,
     env: Env
 ): Promise<Response> {
+    const body = await readJSONObject(request);
+    const selection = parseSelection(body);
+    const managementToken = secretToken(body.managementToken);
+    if (session.purpose === "INITIAL" && !managementToken) {
+        throw new SetupRequestError(400, "MANAGEMENT_TOKEN_REQUIRED");
+    }
+    if (session.purpose !== "INITIAL" && session.purpose !== "ADD") {
+        throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+    }
+    if (session.state === "COMPLETE") {
+        const automationID = await requireMatchingCompletion(
+            env.DB, session, selection, managementToken
+        );
+        return Response.json({ automationID });
+    }
     requireState(session, "CONFIGURATION_PENDING");
-    const selection = parseSelection(await readJSONObject(request));
     const context = requireConfigurationContext(session);
     const repository = await env.DB.prepare(
         `SELECT name_with_owner FROM installation_repositories
@@ -404,14 +457,6 @@ async function completeSetup(
     ).bind(context.installationID, selection.sourceRepositoryID)
         .first<{ name_with_owner: string }>();
     if (!repository) throw new SetupRequestError(400, "INVALID_SOURCE_REPOSITORY");
-    const existingAutomation = await env.DB.prepare(
-        `SELECT id FROM project_automations
-         WHERE installation_id = ? AND repository_id = ?`
-    ).bind(context.installationID, selection.sourceRepositoryID).first<{ id: string }>();
-    if (existingAutomation) {
-        throw new SetupRequestError(409, "SOURCE_REPOSITORY_ALREADY_CONFIGURED");
-    }
-
     const installationToken = await appClient(env).createInstallationAccessToken(
         context.installationID
     );
@@ -439,76 +484,171 @@ async function completeSetup(
         return { ownerLogin: login, visibility };
     });
 
+    const automationID = await persistSetupCompletion(env.DB, {
+        session,
+        selection,
+        managementToken,
+        repositoryNameWithOwner: repository.name_with_owner,
+        projectOwnerLogin: configuration.ownerLogin,
+        healthState: configuration.visibility === "VERIFIED"
+            ? "ACTIVE"
+            : "CONTENT_VISIBILITY_UNVERIFIED",
+    });
+    return Response.json({ automationID });
+}
+
+interface CompletionInput {
+    session: SetupSessionRecord;
+    selection: SetupSelection;
+    managementToken: string | null;
+    repositoryNameWithOwner: string;
+    projectOwnerLogin: string;
+    healthState: "ACTIVE" | "CONTENT_VISIBILITY_UNVERIFIED";
+}
+
+interface CompletedSetupRecord {
+    state: SetupState;
+    automation_id: string | null;
+    management_token_id: string | null;
+    token_hash: string | null;
+    installation_id: number | null;
+    repository_id: number | null;
+    project_node_id: string | null;
+    project_number: number | null;
+    status_field_node_id: string | null;
+    in_progress_option_id: string | null;
+    in_review_option_id: string | null;
+    done_option_id: string | null;
+}
+
+export async function persistSetupCompletion(
+    database: D1Database,
+    input: CompletionInput
+): Promise<string> {
+    const context = requireConfigurationContext(input.session);
     const automationID = crypto.randomUUID();
-    const completionCode = randomToken();
+    const managementTokenID = input.session.purpose === "INITIAL"
+        ? crypto.randomUUID()
+        : input.session.management_token_id;
+    if (!managementTokenID) throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+    const managementTokenHash = input.managementToken
+        ? await hashToken(input.managementToken)
+        : null;
+    if (input.session.purpose === "INITIAL" && !managementTokenHash) {
+        throw new SetupRequestError(400, "MANAGEMENT_TOKEN_REQUIRED");
+    }
     const now = new Date().toISOString();
-    const results = await env.DB.batch([
-        env.DB.prepare(
+    const statements: D1PreparedStatement[] = [];
+    if (input.session.purpose === "INITIAL") {
+        statements.push(database.prepare(
+            `INSERT INTO management_tokens (id, user_id, token_hash, created_at)
+             SELECT ?, user_id, ?, ?
+             FROM setup_sessions
+             WHERE id = ? AND state = 'CONFIGURATION_PENDING' AND purpose = 'INITIAL'`
+        ).bind(managementTokenID, managementTokenHash, now, input.session.id));
+    }
+    statements.push(
+        database.prepare(
             `INSERT INTO project_automations (
                 id, user_id, oauth_credential_id, installation_id,
                 repository_id, repository_name_with_owner,
                 project_owner_login, project_number, project_node_id,
                 status_field_node_id, in_progress_option_id, in_review_option_id,
                 done_option_id, enabled, health_state, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
-        ).bind(
-            automationID, context.userID, context.credentialID, context.installationID,
-            selection.sourceRepositoryID, repository.name_with_owner,
-            configuration.ownerLogin, selection.projectNumber, selection.projectNodeID,
-            selection.statusFieldNodeID, selection.inProgressOptionID,
-            selection.inReviewOptionID, selection.doneOptionID,
-            configuration.visibility === "VERIFIED"
-                ? "ACTIVE"
-                : "CONTENT_VISIBILITY_UNVERIFIED",
-            now, now
-        ),
-        env.DB.prepare(
-            `UPDATE setup_sessions
-             SET exchange_code_hash = ?, state = 'COMPLETE', updated_at = ?
+             )
+             SELECT ?, user_id, oauth_credential_id, installation_id,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?
+             FROM setup_sessions
              WHERE id = ? AND state = 'CONFIGURATION_PENDING'`
-        ).bind(await hashToken(completionCode), now, session.id),
-    ]);
-    if (results[1].meta.changes !== 1) {
-        throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+        ).bind(
+            automationID,
+            input.selection.sourceRepositoryID, input.repositoryNameWithOwner,
+            input.projectOwnerLogin, input.selection.projectNumber,
+            input.selection.projectNodeID, input.selection.statusFieldNodeID,
+            input.selection.inProgressOptionID, input.selection.inReviewOptionID,
+            input.selection.doneOptionID, input.healthState, now, now,
+            input.session.id
+        ),
+        database.prepare(
+            `UPDATE setup_sessions
+             SET automation_id = ?, management_token_id = ?, state = 'COMPLETE', updated_at = ?
+             WHERE id = ? AND state = 'CONFIGURATION_PENDING'`
+        ).bind(automationID, managementTokenID, now, input.session.id)
+    );
+
+    try {
+        await database.batch(statements);
+    } catch (error) {
+        const completed = await matchingCompletion(
+            database, input.session, input.selection, managementTokenHash
+        );
+        if (completed) return completed;
+        const source = await database.prepare(
+            `SELECT id FROM project_automations
+             WHERE installation_id = ? AND repository_id = ?`
+        ).bind(context.installationID, input.selection.sourceRepositoryID)
+            .first<{ id: string }>();
+        if (source) {
+            throw new SetupRequestError(409, "SOURCE_REPOSITORY_ALREADY_CONFIGURED");
+        }
+        throw error;
     }
-    return Response.json({ completionCode, automationID });
+
+    const completed = await matchingCompletion(
+        database, input.session, input.selection, managementTokenHash
+    );
+    if (!completed) throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+    return completed;
 }
 
-async function exchangeManagementToken(request: Request, database: D1Database): Promise<Response> {
-    const body = await readJSONObject(request);
-    const sessionID = nonEmptyString(body.sessionID);
-    const completionCode = nonEmptyString(body.completionCode);
-    if (!sessionID || !completionCode) throw new SetupRequestError(400, "INVALID_COMPLETION_CODE");
-    const session = await database.prepare(
-        `SELECT id, setup_token_hash, user_id, oauth_credential_id, installation_id, state, expires_at
-         FROM setup_sessions
-         WHERE id = ? AND exchange_code_hash = ?`
-    ).bind(sessionID, await hashToken(completionCode)).first<SetupSessionRecord>();
-    if (!session) throw new SetupRequestError(401, "INVALID_COMPLETION_CODE");
-    requireState(session, "COMPLETE");
-    if (!session.user_id) throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+async function requireMatchingCompletion(
+    database: D1Database,
+    session: SetupSessionRecord,
+    selection: SetupSelection,
+    managementToken: string | null
+): Promise<string> {
+    const tokenHash = managementToken ? await hashToken(managementToken) : null;
+    const automationID = await matchingCompletion(database, session, selection, tokenHash);
+    if (!automationID) throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+    return automationID;
+}
 
-    const managementToken = randomToken();
-    const now = new Date().toISOString();
-    const results = await database.batch([
-        database.prepare(
-            `INSERT INTO management_tokens (id, user_id, token_hash, created_at)
-             SELECT ?, user_id, ?, ?
-             FROM setup_sessions
-             WHERE id = ? AND state = 'COMPLETE'`
-        ).bind(
-            crypto.randomUUID(), await hashToken(managementToken), now, session.id
-        ),
-        database.prepare(
-            `UPDATE setup_sessions
-             SET exchange_code_hash = NULL, state = 'EXCHANGED', updated_at = ?
-             WHERE id = ? AND state = 'COMPLETE'`
-        ).bind(now, session.id),
-    ]);
-    if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1) {
-        throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+async function matchingCompletion(
+    database: D1Database,
+    session: SetupSessionRecord,
+    selection: SetupSelection,
+    managementTokenHash: string | null
+): Promise<string | null> {
+    const completed = await database.prepare(
+        `SELECT session.state, session.automation_id, session.management_token_id,
+                token.token_hash, automation.installation_id, automation.repository_id,
+                automation.project_node_id, automation.project_number,
+                automation.status_field_node_id, automation.in_progress_option_id,
+                automation.in_review_option_id, automation.done_option_id
+         FROM setup_sessions session
+         LEFT JOIN project_automations automation ON automation.id = session.automation_id
+         LEFT JOIN management_tokens token ON token.id = session.management_token_id
+         WHERE session.id = ?`
+    ).bind(session.id).first<CompletedSetupRecord>();
+    if (!completed
+        || completed.state !== "COMPLETE"
+        || !completed.automation_id
+        || completed.installation_id !== session.installation_id
+        || completed.repository_id !== selection.sourceRepositoryID
+        || completed.project_node_id !== selection.projectNodeID
+        || completed.project_number !== selection.projectNumber
+        || completed.status_field_node_id !== selection.statusFieldNodeID
+        || completed.in_progress_option_id !== selection.inProgressOptionID
+        || completed.in_review_option_id !== selection.inReviewOptionID
+        || completed.done_option_id !== selection.doneOptionID) {
+        return null;
     }
-    return Response.json({ managementToken });
+    if (session.purpose === "INITIAL") {
+        if (!managementTokenHash || completed.token_hash !== managementTokenHash) return null;
+    } else if (completed.management_token_id !== session.management_token_id) {
+        return null;
+    }
+    return completed.automation_id;
 }
 
 async function authenticateSetupSession(
@@ -521,7 +661,9 @@ async function authenticateSetupSession(
     const session = await database.prepare(
         `SELECT session.id, session.setup_token_hash, session.user_id,
                 session.oauth_credential_id, session.installation_id,
-                session.state, session.expires_at, user.github_login
+                session.state, session.expires_at, session.purpose,
+                session.automation_id, session.management_token_id,
+                user.github_login
          FROM setup_sessions session
          LEFT JOIN users user ON user.id = session.user_id
          WHERE session.id = ? AND session.setup_token_hash = ?`
@@ -533,7 +675,8 @@ async function authenticateSetupSession(
 
 async function loadSession(database: D1Database, sessionID: string): Promise<SetupSessionRecord> {
     const session = await database.prepare(
-        `SELECT id, setup_token_hash, user_id, oauth_credential_id, installation_id, state, expires_at
+        `SELECT id, setup_token_hash, user_id, oauth_credential_id, installation_id,
+                state, expires_at, purpose, automation_id, management_token_id
          FROM setup_sessions WHERE id = ?`
     ).bind(sessionID).first<SetupSessionRecord>();
     if (!session) throw new SetupRequestError(404, "SETUP_NOT_FOUND");
@@ -776,6 +919,10 @@ function positiveInteger(value: unknown): number | null {
 
 function nonEmptyString(value: unknown): string | null {
     return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function secretToken(value: unknown): string | null {
+    return typeof value === "string" && /^[A-Za-z0-9_-]{43}$/.test(value) ? value : null;
 }
 
 function isPositiveInteger(value: unknown): value is number {

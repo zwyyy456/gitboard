@@ -13,6 +13,7 @@ import {
 } from "../../src/installation-lifecycle";
 import type { DeliveryMessage } from "../../src/index";
 import type { Env } from "../../src/index";
+import { handleSetupRequest, persistSetupCompletion } from "../../src/setup-api";
 
 interface TestEnvironment extends Env {
     TEST_MIGRATIONS: D1Migration[];
@@ -219,6 +220,108 @@ test("fails every nonterminal DLQ state without overwriting terminal deliveries"
     });
 });
 
+test("completes one setup idempotently without duplicating its token or automation", async () => {
+    const setup = await seedConfigurableSetup("idempotent", 107);
+    const input = completionInput(setup, 1107, "management-idempotent");
+
+    const first = await persistSetupCompletion(testEnv.DB, input);
+    const second = await persistSetupCompletion(testEnv.DB, input);
+    const counts = await setupCompletionCounts("idempotent");
+
+    expect(second).toBe(first);
+    expect(counts).toEqual({ automations: 1, tokens: 1 });
+});
+
+test("binds an add-automation setup session to the existing management identity", async () => {
+    const now = new Date().toISOString();
+    await testEnv.DB.batch([
+        testEnv.DB.prepare(
+            `INSERT INTO users (
+                id, github_user_node_id, github_user_database_id, github_login,
+                created_at, updated_at
+             ) VALUES ('user-add-session', 'USER-ADD-SESSION', 110, 'owner', ?, ?)`
+        ).bind(now, now),
+        testEnv.DB.prepare(
+            `INSERT INTO management_tokens (id, user_id, token_hash, created_at)
+             VALUES ('token-add-session', 'user-add-session', ?, ?)`
+        ).bind(await tokenHash("management-add-session"), now),
+    ]);
+
+    const response = await handleSetupRequest(new Request(
+        "https://example.invalid/api/setup/sessions",
+        {
+            method: "POST",
+            headers: { Authorization: "Bearer management-add-session" },
+        }
+    ), environmentWith(queueThat(async () => {})));
+    const body = await response.json<{ id: string }>();
+    const session = await testEnv.DB.prepare(
+        `SELECT purpose, user_id, management_token_id
+         FROM setup_sessions WHERE id = ?`
+    ).bind(body.id).first<{
+        purpose: string;
+        user_id: string;
+        management_token_id: string;
+    }>();
+
+    expect(response.status).toBe(201);
+    expect(session).toEqual({
+        purpose: "ADD",
+        user_id: "user-add-session",
+        management_token_id: "token-add-session",
+    });
+});
+
+test("allows only one selection when the same setup is completed concurrently", async () => {
+    const setup = await seedConfigurableSetup("concurrent", 108);
+    const attempts = await Promise.allSettled([
+        persistSetupCompletion(
+            testEnv.DB,
+            completionInput(setup, 1108, "management-concurrent")
+        ),
+        persistSetupCompletion(
+            testEnv.DB,
+            completionInput(setup, 2108, "management-concurrent")
+        ),
+    ]);
+    const counts = await setupCompletionCounts("concurrent");
+
+    expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
+    expect(counts).toEqual({ automations: 1, tokens: 1 });
+});
+
+test("rolls back a management token when the source repository is already configured", async () => {
+    const setup = await seedConfigurableSetup("source-conflict", 109);
+    const now = new Date().toISOString();
+    await testEnv.DB.prepare(
+        `INSERT INTO project_automations (
+            id, user_id, oauth_credential_id, installation_id, repository_id,
+            repository_name_with_owner, project_owner_login, project_number,
+            project_node_id, status_field_node_id, in_progress_option_id,
+            in_review_option_id, done_option_id, enabled, health_state,
+            created_at, updated_at
+         ) VALUES (
+            'existing-source-conflict', 'user-source-conflict', 'credential-source-conflict',
+            109, 1109, 'owner/source-conflict-1109', 'owner', 1, 'OLD_PROJECT',
+            'OLD_FIELD', 'OLD_PROGRESS', 'OLD_REVIEW', 'OLD_DONE', 1, 'ACTIVE', ?, ?
+         )`
+    ).bind(now, now).run();
+
+    await expect(persistSetupCompletion(
+        testEnv.DB,
+        completionInput(setup, 1109, "management-source-conflict")
+    )).rejects.toThrow("SOURCE_REPOSITORY_ALREADY_CONFIGURED");
+    const token = await testEnv.DB.prepare(
+        "SELECT id FROM management_tokens WHERE user_id = 'user-source-conflict'"
+    ).first<{ id: string }>();
+    const session = await testEnv.DB.prepare(
+        "SELECT state FROM setup_sessions WHERE id = 'setup-source-conflict'"
+    ).first<{ state: string }>();
+
+    expect(token).toBeNull();
+    expect(session?.state).toBe("CONFIGURATION_PENDING");
+});
+
 function queueThat(
     send: (message: DeliveryMessage) => Promise<void>
 ): Queue<DeliveryMessage> {
@@ -308,4 +411,92 @@ function userInsertion(now: string): D1PreparedStatement {
             id, github_user_node_id, github_user_database_id, github_login, created_at, updated_at
          ) VALUES ('user', 'USER_NODE', 1, 'owner', ?, ?)`
     ).bind(now, now);
+}
+
+async function seedConfigurableSetup(suffix: string, installationID: number) {
+    const now = new Date().toISOString();
+    const userID = `user-${suffix}`;
+    const credentialID = `credential-${suffix}`;
+    const sessionID = `setup-${suffix}`;
+    await testEnv.DB.batch([
+        testEnv.DB.prepare(
+            `INSERT INTO users (
+                id, github_user_node_id, github_user_database_id, github_login,
+                created_at, updated_at
+             ) VALUES (?, ?, ?, 'owner', ?, ?)`
+        ).bind(userID, `USER-${suffix}`, installationID, now, now),
+        testEnv.DB.prepare(
+            `INSERT INTO oauth_credentials (
+                id, user_id, encrypted_access_token, encrypted_refresh_token,
+                access_token_expires_at, refresh_token_expires_at, granted_scopes,
+                credential_version, health_state, updated_at
+             ) VALUES (?, ?, 'access', 'refresh', ?, ?, '["project"]', 1, 'ACTIVE', ?)`
+        ).bind(credentialID, userID, now, now, now),
+        testEnv.DB.prepare(
+            `INSERT INTO installations (
+                installation_id, user_id, github_account_id, status, updated_at
+             ) VALUES (?, ?, ?, 'ACTIVE', ?)`
+        ).bind(installationID, userID, installationID, now),
+        testEnv.DB.prepare(
+            `INSERT INTO setup_sessions (
+                id, setup_token_hash, user_id, oauth_credential_id, installation_id,
+                state, expires_at, created_at, updated_at, purpose
+             ) VALUES (?, ?, ?, ?, ?, 'CONFIGURATION_PENDING', ?, ?, ?, 'INITIAL')`
+        ).bind(
+            sessionID, `setup-token-${suffix}`, userID, credentialID, installationID,
+            new Date(Date.now() + 60_000).toISOString(), now, now
+        ),
+    ]);
+    return {
+        id: sessionID,
+        setup_token_hash: `setup-token-${suffix}`,
+        user_id: userID,
+        oauth_credential_id: credentialID,
+        installation_id: installationID,
+        state: "CONFIGURATION_PENDING" as const,
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+        purpose: "INITIAL" as const,
+        management_token_id: null,
+    };
+}
+
+function completionInput(
+    session: Awaited<ReturnType<typeof seedConfigurableSetup>>,
+    repositoryID: number,
+    managementToken: string
+) {
+    return {
+        session,
+        selection: {
+            sourceRepositoryID: repositoryID,
+            projectNodeID: `PROJECT-${repositoryID}`,
+            projectNumber: repositoryID,
+            statusFieldNodeID: `FIELD-${repositoryID}`,
+            inProgressOptionID: `PROGRESS-${repositoryID}`,
+            inReviewOptionID: `REVIEW-${repositoryID}`,
+            doneOptionID: `DONE-${repositoryID}`,
+        },
+        managementToken,
+        repositoryNameWithOwner: `owner/repository-${repositoryID}`,
+        projectOwnerLogin: "owner",
+        healthState: "ACTIVE" as const,
+    };
+}
+
+async function setupCompletionCounts(suffix: string) {
+    const userID = `user-${suffix}`;
+    const result = await testEnv.DB.prepare(
+        `SELECT
+            (SELECT COUNT(*) FROM project_automations WHERE user_id = ?) AS automations,
+            (SELECT COUNT(*) FROM management_tokens WHERE user_id = ?) AS tokens`
+    ).bind(userID, userID).first<{ automations: number; tokens: number }>();
+    return result ?? { automations: 0, tokens: 0 };
+}
+
+async function tokenHash(value: string): Promise<string> {
+    const hash = new Uint8Array(await crypto.subtle.digest(
+        "SHA-256", new TextEncoder().encode(value)
+    ));
+    return btoa(String.fromCharCode(...hash))
+        .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }

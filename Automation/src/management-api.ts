@@ -1,10 +1,9 @@
 import type { Env } from "./index";
+import {
+    authenticateManagementRequest,
+    ManagementAuthenticationError,
+} from "./management-auth";
 import { createReauthorizationSession } from "./setup-api";
-
-interface ManagementIdentity {
-    token_id: string;
-    user_id: string;
-}
 
 interface AutomationRecord {
     id: string;
@@ -31,24 +30,26 @@ export async function handleManagementRequest(request: Request, env: Env): Promi
         const identity = await authenticateManagementRequest(request, env.DB);
         const url = new URL(request.url);
         if (request.method === "GET" && url.pathname === "/api/automations") {
-            return listAutomations(identity.user_id, env.DB);
+            return listAutomations(identity.userID, env.DB);
         }
         const match = url.pathname.match(/^\/api\/automations\/([^/]+)(?:\/(reauthorization))?$/);
         if (!match) return new Response("Not found", { status: 404 });
         if (request.method === "PATCH" && !match[2]) {
-            return updateAutomation(request, identity.user_id, match[1], env.DB);
+            return updateAutomation(request, identity.userID, match[1], env.DB);
         }
         if (request.method === "DELETE" && !match[2]) {
-            return deleteAutomation(identity.user_id, match[1], env.DB);
+            return deleteAutomation(identity.userID, match[1], env.DB);
         }
         if (request.method === "POST" && match[2] === "reauthorization") {
-            return beginReauthorization(identity.user_id, match[1], env);
+            return beginReauthorization(identity.userID, match[1], env);
         }
         return new Response("Not found", { status: 404 });
     } catch (error) {
         const managementError = error instanceof ManagementRequestError
             ? error
-            : new ManagementRequestError(500, "MANAGEMENT_UNAVAILABLE");
+            : error instanceof ManagementAuthenticationError
+                ? new ManagementRequestError(401, "MANAGEMENT_AUTH_REQUIRED")
+                : new ManagementRequestError(500, "MANAGEMENT_UNAVAILABLE");
         return Response.json(
             { error: managementError.code },
             { status: managementError.status }
@@ -177,24 +178,6 @@ async function beginReauthorization(
     );
 }
 
-async function authenticateManagementRequest(
-    request: Request,
-    database: D1Database
-): Promise<ManagementIdentity> {
-    const token = bearerToken(request.headers.get("Authorization"));
-    if (!token) throw new ManagementRequestError(401, "MANAGEMENT_AUTH_REQUIRED");
-    const identity = await database.prepare(
-        `SELECT id AS token_id, user_id
-         FROM management_tokens
-         WHERE token_hash = ? AND revoked_at IS NULL`
-    ).bind(await hashToken(token)).first<ManagementIdentity>();
-    if (!identity) throw new ManagementRequestError(401, "MANAGEMENT_AUTH_REQUIRED");
-    await database.prepare(
-        "UPDATE management_tokens SET last_used_at = ? WHERE id = ?"
-    ).bind(new Date().toISOString(), identity.token_id).run();
-    return identity;
-}
-
 async function loadAutomation(
     userID: string,
     automationID: string,
@@ -270,18 +253,6 @@ async function readJSONObject(request: Request): Promise<Record<string, unknown>
     } catch {
         throw new ManagementRequestError(400, "INVALID_JSON");
     }
-}
-
-function bearerToken(header: string | null): string | null {
-    return header?.match(/^Bearer ([A-Za-z0-9_-]+)$/)?.[1] ?? null;
-}
-
-async function hashToken(value: string): Promise<string> {
-    const hash = new Uint8Array(await crypto.subtle.digest(
-        "SHA-256", new TextEncoder().encode(value)
-    ));
-    return btoa(String.fromCharCode(...hash))
-        .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

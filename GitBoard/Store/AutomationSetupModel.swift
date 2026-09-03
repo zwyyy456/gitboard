@@ -18,6 +18,12 @@ final class AutomationSetupModel {
         case connected
     }
 
+    private enum SetupIntent {
+        case initial
+        case add
+        case reauthorize
+    }
+
     private(set) var phase: Phase
     private(set) var errorMessage: String?
     private(set) var setupSessionID: String?
@@ -36,19 +42,22 @@ final class AutomationSetupModel {
 
     private let service: AutomationService?
     private let tokenStore: any ManagementTokenStoring
+    private let makeManagementToken: () throws -> String
     private var setupToken: String?
     private var authorizationURL: URL?
     private var loadingProjectID: String?
     private var loadedProjectID: String?
     private var pendingManagementToken: String?
-    private var isReauthorization = false
+    private var setupIntent: SetupIntent?
 
     init(
         service: AutomationService? = AutomationService.configured(),
-        tokenStore: any ManagementTokenStoring = ManagementTokenStore()
+        tokenStore: any ManagementTokenStoring = ManagementTokenStore(),
+        makeManagementToken: @escaping () throws -> String = ManagementTokenStore.makeToken
     ) {
         self.service = service
         self.tokenStore = tokenStore
+        self.makeManagementToken = makeManagementToken
         guard service != nil else {
             phase = .unavailable
             return
@@ -81,7 +90,7 @@ final class AutomationSetupModel {
             return nil
         }
         phase = .starting
-        isReauthorization = false
+        setupIntent = .initial
         errorMessage = nil
         do {
             let session = try await service.createSetupSession()
@@ -95,6 +104,31 @@ final class AutomationSetupModel {
             return nil
         } catch {
             fail(error)
+            return nil
+        }
+    }
+
+    func startAddSetup() async -> URL? {
+        guard let service else { return nil }
+        phase = .starting
+        setupIntent = .add
+        errorMessage = nil
+        do {
+            let managementToken = try requireManagementToken()
+            let session = try await service.createSetupSession(
+                managementToken: managementToken
+            )
+            setupSessionID = session.id
+            setupToken = session.setupToken
+            authorizationURL = session.authorizationURL
+            phase = .waitingForBrowser
+            return session.authorizationURL
+        } catch is CancellationError {
+            phase = .connected
+            return nil
+        } catch {
+            phase = .connected
+            handleManagementFailure(error)
             return nil
         }
     }
@@ -121,14 +155,14 @@ final class AutomationSetupModel {
                         setupToken: setupToken
                     )
                     return
-                case "COMPLETE" where isReauthorization:
+                case "COMPLETE" where setupIntent == .reauthorize:
                     clearSetupSession()
                     errorMessage = nil
                     phase = .connected
                     await loadAutomations()
                     return
-                case "COMPLETE", "EXCHANGED":
-                    throw AutomationServiceError.server("SETUP_STATE_CHANGED")
+                case "COMPLETE":
+                    return
                 default:
                     throw AutomationServiceError.invalidResponse
                 }
@@ -137,7 +171,7 @@ final class AutomationSetupModel {
         } catch is CancellationError {
             return
         } catch {
-            fail(error)
+            fail(error, fallback: setupIntent == .initial ? .disconnected : .connected)
         }
     }
 
@@ -237,7 +271,7 @@ final class AutomationSetupModel {
             setupSessionID = session.id
             setupToken = session.setupToken
             authorizationURL = session.authorizationURL
-            isReauthorization = true
+            setupIntent = .reauthorize
             phase = .waitingForBrowser
             return session.authorizationURL
         } catch is CancellationError {
@@ -309,25 +343,33 @@ final class AutomationSetupModel {
         phase = .saving
         errorMessage = nil
         do {
-            let completionCode = try await service.completeSetup(
+            let selection = AutomationService.SetupSelection(
+                sourceRepositoryID: repositoryID,
+                projectNodeID: project.nodeID,
+                projectNumber: project.number,
+                statusFieldNodeID: statusFieldID,
+                inProgressOptionID: inProgressOptionID,
+                inReviewOptionID: inReviewOptionID,
+                doneOptionID: doneOptionID
+            )
+            let managementToken: String?
+            switch setupIntent {
+            case .initial:
+                let token = try pendingManagementToken ?? makeManagementToken()
+                pendingManagementToken = token
+                try tokenStore.save(token)
+                managementToken = token
+            case .add:
+                managementToken = nil
+            case .reauthorize, nil:
+                return
+            }
+            _ = try await service.completeSetup(
                 id: sessionID,
                 setupToken: setupToken,
-                selection: AutomationService.SetupSelection(
-                    sourceRepositoryID: repositoryID,
-                    projectNodeID: project.nodeID,
-                    projectNumber: project.number,
-                    statusFieldNodeID: statusFieldID,
-                    inProgressOptionID: inProgressOptionID,
-                    inReviewOptionID: inReviewOptionID,
-                    doneOptionID: doneOptionID
-                )
+                selection: selection,
+                managementToken: managementToken
             )
-            let managementToken = try await service.exchangeManagementToken(
-                sessionID: sessionID,
-                completionCode: completionCode
-            )
-            pendingManagementToken = managementToken
-            try tokenStore.save(managementToken)
             pendingManagementToken = nil
             clearSetupSession()
             phase = .connected
@@ -343,16 +385,21 @@ final class AutomationSetupModel {
     }
 
     func retryTokenStorage() async {
-        guard let pendingManagementToken else { return }
-        do {
-            try tokenStore.save(pendingManagementToken)
-            self.pendingManagementToken = nil
-            clearSetupSession()
-            errorMessage = nil
-            phase = .connected
-            await loadAutomations()
-        } catch {
-            errorMessage = "GitBoard could not save the connection in Keychain."
+        guard pendingManagementToken != nil else { return }
+        await completeSetup()
+    }
+
+    func cancelSetup() async {
+        let intent = setupIntent
+        let shouldReconcile = intent == .initial && pendingManagementToken != nil
+        pendingManagementToken = nil
+        clearSetupSession()
+        errorMessage = nil
+        if shouldReconcile {
+            phase = .loadingConnection
+            await loadConnection()
+        } else {
+            phase = intent == .initial ? .disconnected : .connected
         }
     }
 
@@ -385,7 +432,7 @@ final class AutomationSetupModel {
         statusFields = []
         loadingProjectID = nil
         loadedProjectID = nil
-        isReauthorization = false
+        setupIntent = nil
         selectedRepositoryID = nil
         selectedProjectID = nil
         selectedStatusFieldID = nil

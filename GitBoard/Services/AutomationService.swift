@@ -55,6 +55,28 @@ actor AutomationService {
         let doneOptionID: String
     }
 
+    private struct CompletionRequest: Encodable {
+        let sourceRepositoryID: Int64
+        let projectNodeID: String
+        let projectNumber: Int
+        let statusFieldNodeID: String
+        let inProgressOptionID: String
+        let inReviewOptionID: String
+        let doneOptionID: String
+        let managementToken: String?
+
+        init(selection: SetupSelection, managementToken: String?) {
+            sourceRepositoryID = selection.sourceRepositoryID
+            projectNodeID = selection.projectNodeID
+            projectNumber = selection.projectNumber
+            statusFieldNodeID = selection.statusFieldNodeID
+            inProgressOptionID = selection.inProgressOptionID
+            inReviewOptionID = selection.inReviewOptionID
+            doneOptionID = selection.doneOptionID
+            self.managementToken = managementToken
+        }
+    }
+
     struct DeliveryStatus: Decodable, Sendable {
         let state: String
         let errorCode: String?
@@ -84,16 +106,7 @@ actor AutomationService {
     }
 
     private struct CompletionResponse: Decodable {
-        let completionCode: String
-    }
-
-    private struct ManagementTokenRequest: Encodable {
-        let sessionID: String
-        let completionCode: String
-    }
-
-    private struct ManagementTokenResponse: Decodable {
-        let managementToken: String
+        let automationID: String
     }
 
     private struct AutomationListResponse: Decodable {
@@ -136,8 +149,12 @@ actor AutomationService {
         return AutomationService(baseURL: url)
     }
 
-    func createSetupSession() async throws -> SetupSession {
-        try await send(path: "api/setup/sessions", method: "POST")
+    func createSetupSession(managementToken: String? = nil) async throws -> SetupSession {
+        try await send(
+            path: "api/setup/sessions",
+            method: "POST",
+            bearerToken: managementToken
+        )
     }
 
     func sessionStatus(id: String, setupToken: String) async throws -> SessionStatus {
@@ -168,27 +185,16 @@ actor AutomationService {
     func completeSetup(
         id: String,
         setupToken: String,
-        selection: SetupSelection
+        selection: SetupSelection,
+        managementToken: String?
     ) async throws -> String {
         let response: CompletionResponse = try await send(
             path: "api/setup/sessions/\(id)/complete",
             method: "POST",
             bearerToken: setupToken,
-            body: selection
+            body: CompletionRequest(selection: selection, managementToken: managementToken)
         )
-        return response.completionCode
-    }
-
-    func exchangeManagementToken(sessionID: String, completionCode: String) async throws -> String {
-        let response: ManagementTokenResponse = try await send(
-            path: "api/management/token",
-            method: "POST",
-            body: ManagementTokenRequest(
-                sessionID: sessionID,
-                completionCode: completionCode
-            )
-        )
-        return response.managementToken
+        return response.automationID
     }
 
     func automations(managementToken: String) async throws -> [Automation] {
