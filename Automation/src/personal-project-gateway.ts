@@ -1,7 +1,10 @@
 import type { AccessTokenProvider } from "./oauth-credential-provider";
+import {
+    GitHubProjectsRESTClient,
+    GitHubProjectsRESTError,
+    githubProjectsURL,
+} from "./github-projects-rest";
 import type { DesiredStatus } from "./workflow-models";
-
-const githubAPI = "https://api.github.com";
 
 export interface PersonalProjectConfiguration {
     oauthCredentialID: string;
@@ -58,11 +61,15 @@ interface ResolvedItem {
 }
 
 export class PersonalProjectGateway {
+    private readonly projectsREST: GitHubProjectsRESTClient;
+
     constructor(
         private readonly accessTokens: AccessTokenProvider,
         private readonly statusWriter: ProjectStatusWriter,
-        private readonly apiVersion: string
-    ) {}
+        apiVersion: string
+    ) {
+        this.projectsREST = new GitHubProjectsRESTClient(apiVersion);
+    }
 
     async applyStatuses(
         project: PersonalProjectConfiguration,
@@ -204,52 +211,26 @@ export class PersonalProjectGateway {
         items: Array<{ itemNodeID: string | null; contentNodeID: string | null }>;
         nextPage: string | null;
     }> {
-        let response: Response;
         try {
-            response = await fetch(url, {
-                headers: {
-                    Accept: "application/vnd.github+json",
-                    Authorization: `Bearer ${accessToken}`,
-                    "User-Agent": "GitBoard-Automation",
-                    "X-GitHub-Api-Version": this.apiVersion,
-                },
+            const page = await this.projectsREST.requestPage(url, accessToken);
+            const items = page.body.map((value) => {
+                if (!isRecord(value)) {
+                    throw new PersonalProjectError("PROJECT_API_INCOMPATIBLE", 502);
+                }
+                return {
+                    itemNodeID: typeof value.node_id === "string" ? value.node_id : null,
+                    contentNodeID: isRecord(value.content) && typeof value.content.node_id === "string"
+                        ? value.content.node_id
+                        : null,
+                };
             });
-        } catch {
-            throw new PersonalProjectError("TRANSIENT_GITHUB_FAILURE");
-        }
-        if (!response.ok) {
-            if (response.status === 403
-                && !isRateLimited(response.headers)
-                && !hasProjectScope(response.headers.get("X-OAuth-Scopes"))) {
-                throw new PersonalProjectError("OAUTH_SCOPE_MISSING", response.status);
+            return { items, nextPage: page.nextPage };
+        } catch (error) {
+            if (error instanceof GitHubProjectsRESTError) {
+                throw mapRESTError(error);
             }
-            throw classifyRESTFailure(response);
+            throw error;
         }
-        if (!hasProjectScope(response.headers.get("X-OAuth-Scopes"))) {
-            throw new PersonalProjectError("OAUTH_SCOPE_MISSING", response.status);
-        }
-
-        let body: unknown;
-        try {
-            body = await response.json();
-        } catch {
-            throw new PersonalProjectError("PROJECT_API_INCOMPATIBLE", 502);
-        }
-        if (!Array.isArray(body)) {
-            throw new PersonalProjectError("PROJECT_API_INCOMPATIBLE", 502);
-        }
-        const items = body.map((value) => {
-            if (!isRecord(value)) {
-                throw new PersonalProjectError("PROJECT_API_INCOMPATIBLE", 502);
-            }
-            return {
-                itemNodeID: typeof value.node_id === "string" ? value.node_id : null,
-                contentNodeID: isRecord(value.content) && typeof value.content.node_id === "string"
-                    ? value.content.node_id
-                    : null,
-            };
-        });
-        return { items, nextPage: readNextPage(response.headers.get("Link")) };
     }
 }
 
@@ -257,9 +238,8 @@ function projectItemsURL(
     project: PersonalProjectConfiguration,
     issueRepositoryNameWithOwner: string
 ): string {
-    const url = new URL(
-        `/users/${encodeURIComponent(project.ownerLogin)}/projectsV2/${project.number}/items`,
-        githubAPI
+    const url = githubProjectsURL(
+        `/users/${encodeURIComponent(project.ownerLogin)}/projectsV2/${project.number}/items`
     );
     url.searchParams.set("q", `repo:${issueRepositoryNameWithOwner} is:issue`);
     url.searchParams.set("per_page", "100");
@@ -278,53 +258,20 @@ function groupByRepository(
     return groups;
 }
 
-function readNextPage(linkHeader: string | null): string | null {
-    if (!linkHeader) return null;
-    for (const value of linkHeader.split(",")) {
-        const match = value.match(/<([^>]+)>;\s*rel="next"/);
-        if (!match) {
-            if (value.includes("rel=\"next\"")) {
-                throw new PersonalProjectError("PROJECT_API_INCOMPATIBLE", 502);
-            }
-            continue;
-        }
-        let url: URL;
-        try {
-            url = new URL(match[1]);
-        } catch {
-            throw new PersonalProjectError("PROJECT_API_INCOMPATIBLE", 502);
-        }
-        if (url.origin !== githubAPI) {
-            throw new PersonalProjectError("PROJECT_API_INCOMPATIBLE", 502);
-        }
-        return url.toString();
+function mapRESTError(error: GitHubProjectsRESTError): PersonalProjectError {
+    switch (error.code) {
+    case "AUTH_REQUIRED":
+        return new PersonalProjectError("OAUTH_REAUTH_REQUIRED", error.status);
+    case "SCOPE_MISSING":
+        return new PersonalProjectError("OAUTH_SCOPE_MISSING", error.status);
+    case "FORBIDDEN":
+    case "NOT_FOUND":
+        return new PersonalProjectError("PROJECT_CONFIGURATION_INVALID", error.status);
+    case "TRANSIENT":
+        return new PersonalProjectError("TRANSIENT_GITHUB_FAILURE", error.status);
+    case "INCOMPATIBLE":
+        return new PersonalProjectError("PROJECT_API_INCOMPATIBLE", error.status);
     }
-    return null;
-}
-
-function hasProjectScope(value: string | null): boolean {
-    return (value ?? "")
-        .split(",")
-        .map((scope) => scope.trim())
-        .includes("project");
-}
-
-function classifyRESTFailure(response: Response): PersonalProjectError {
-    const status = response.status;
-    if (status === 401) return new PersonalProjectError("OAUTH_REAUTH_REQUIRED", status);
-    if (status === 403 && isRateLimited(response.headers)) {
-        return new PersonalProjectError("TRANSIENT_GITHUB_FAILURE", status);
-    }
-    if (status === 403) return new PersonalProjectError("PROJECT_CONFIGURATION_INVALID", status);
-    if (status === 404) return new PersonalProjectError("PROJECT_CONFIGURATION_INVALID", status);
-    if (status === 429 || status >= 500) {
-        return new PersonalProjectError("TRANSIENT_GITHUB_FAILURE", status);
-    }
-    return new PersonalProjectError("PROJECT_API_INCOMPATIBLE", status);
-}
-
-function isRateLimited(headers: Headers): boolean {
-    return headers.has("Retry-After") || headers.get("X-RateLimit-Remaining") === "0";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,6 +1,9 @@
 import type { GraphQLRequester } from "./github-graphql";
-
-const githubAPI = "https://api.github.com";
+import {
+    GitHubProjectsRESTClient,
+    GitHubProjectsRESTError,
+    githubProjectsURL,
+} from "./github-projects-rest";
 
 export interface SetupProject {
     nodeID: string;
@@ -30,16 +33,19 @@ export class SetupProjectError extends Error {
 }
 
 export class SetupProjectClient {
+    private readonly projectsREST: GitHubProjectsRESTClient;
+
     constructor(
         private readonly graphQL: GraphQLRequester,
-        private readonly apiVersion: string
-    ) {}
+        apiVersion: string
+    ) {
+        this.projectsREST = new GitHubProjectsRESTClient(apiVersion);
+    }
 
     async listProjects(accessToken: string, ownerLogin: string): Promise<SetupProject[]> {
         const projects: SetupProject[] = [];
-        let url: string | null = new URL(
-            `/users/${encodeURIComponent(ownerLogin)}/projectsV2?per_page=100`,
-            githubAPI
+        let url: string | null = githubProjectsURL(
+            `/users/${encodeURIComponent(ownerLogin)}/projectsV2?per_page=100`
         ).toString();
 
         while (url) {
@@ -70,9 +76,8 @@ export class SetupProjectClient {
         projectNumber: number
     ): Promise<SetupStatusField[]> {
         const fields: SetupStatusField[] = [];
-        let url: string | null = new URL(
-            `/users/${encodeURIComponent(ownerLogin)}/projectsV2/${projectNumber}/fields?per_page=100`,
-            githubAPI
+        let url: string | null = githubProjectsURL(
+            `/users/${encodeURIComponent(ownerLogin)}/projectsV2/${projectNumber}/fields?per_page=100`
         ).toString();
 
         while (url) {
@@ -128,9 +133,8 @@ export class SetupProjectClient {
         repositoryNameWithOwner: string
     ): Promise<ContentVisibilityProbe> {
         const issueNodeIDs: string[] = [];
-        const itemsURL = new URL(
-            `/users/${encodeURIComponent(ownerLogin)}/projectsV2/${projectNumber}/items`,
-            githubAPI
+        const itemsURL = githubProjectsURL(
+            `/users/${encodeURIComponent(ownerLogin)}/projectsV2/${projectNumber}/items`
         );
         itemsURL.searchParams.set("q", `repo:${repositoryNameWithOwner} is:issue`);
         itemsURL.searchParams.set("per_page", "100");
@@ -178,73 +182,31 @@ export class SetupProjectClient {
         url: string,
         accessToken: string
     ): Promise<{ body: unknown[]; nextPage: string | null }> {
-        let response: Response;
         try {
-            response = await fetch(url, {
-                headers: {
-                    Accept: "application/vnd.github+json",
-                    Authorization: `Bearer ${accessToken}`,
-                    "User-Agent": "GitBoard-Automation",
-                    "X-GitHub-Api-Version": this.apiVersion,
-                },
-            });
-        } catch {
-            throw new SetupProjectError("TRANSIENT_GITHUB_FAILURE");
-        }
-        if (!response.ok) {
-            if (response.status === 403
-                && !isRateLimited(response.headers)
-                && !hasProjectScope(response.headers.get("X-OAuth-Scopes"))) {
-                throw new SetupProjectError("OAUTH_SCOPE_MISSING", response.status);
+            return await this.projectsREST.requestPage(url, accessToken);
+        } catch (error) {
+            if (error instanceof GitHubProjectsRESTError) {
+                throw mapRESTError(error);
             }
-            throw classifyFailure(response);
+            throw error;
         }
-        if (!hasProjectScope(response.headers.get("X-OAuth-Scopes"))) {
-            throw new SetupProjectError("OAUTH_SCOPE_MISSING", response.status);
-        }
-        let body: unknown;
-        try {
-            body = await response.json();
-        } catch {
-            throw new SetupProjectError("PROJECT_API_INCOMPATIBLE", 502);
-        }
-        if (!Array.isArray(body)) {
-            throw new SetupProjectError("PROJECT_API_INCOMPATIBLE", 502);
-        }
-        return { body, nextPage: readNextPage(response.headers.get("Link")) };
     }
 }
 
-function readNextPage(header: string | null): string | null {
-    if (!header) return null;
-    for (const value of header.split(",")) {
-        const match = value.match(/<([^>]+)>;\s*rel="next"/);
-        if (!match) continue;
-        const url = new URL(match[1]);
-        if (url.origin !== githubAPI) throw new SetupProjectError("PROJECT_API_INCOMPATIBLE");
-        return url.toString();
+function mapRESTError(error: GitHubProjectsRESTError): SetupProjectError {
+    switch (error.code) {
+    case "AUTH_REQUIRED":
+        return new SetupProjectError("OAUTH_REAUTH_REQUIRED", error.status);
+    case "SCOPE_MISSING":
+        return new SetupProjectError("OAUTH_SCOPE_MISSING", error.status);
+    case "FORBIDDEN":
+        return new SetupProjectError("PROJECT_WRITE_FORBIDDEN", error.status);
+    case "TRANSIENT":
+        return new SetupProjectError("TRANSIENT_GITHUB_FAILURE", error.status);
+    case "NOT_FOUND":
+    case "INCOMPATIBLE":
+        return new SetupProjectError("PROJECT_API_INCOMPATIBLE", error.status);
     }
-    return null;
-}
-
-function hasProjectScope(header: string | null): boolean {
-    return (header ?? "").split(",").map((value) => value.trim()).includes("project");
-}
-
-function classifyFailure(response: Response): SetupProjectError {
-    if (response.status === 401) return new SetupProjectError("OAUTH_REAUTH_REQUIRED", 401);
-    if (response.status === 403 && isRateLimited(response.headers)) {
-        return new SetupProjectError("TRANSIENT_GITHUB_FAILURE", 403);
-    }
-    if (response.status === 403) return new SetupProjectError("PROJECT_WRITE_FORBIDDEN", 403);
-    if (response.status === 429 || response.status >= 500) {
-        return new SetupProjectError("TRANSIENT_GITHUB_FAILURE", response.status);
-    }
-    return new SetupProjectError("PROJECT_API_INCOMPATIBLE", response.status);
-}
-
-function isRateLimited(headers: Headers): boolean {
-    return headers.has("Retry-After") || headers.get("X-RateLimit-Remaining") === "0";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
