@@ -76,9 +76,12 @@ ID is retried once. There is no REST PATCH writer and no unbounded retry.
 
 The Queue consumer runs with one global concurrent invocation and processes each
 batch sequentially. Every attempt reloads repository truth; completed or failed
-delivery IDs are acknowledged without another GitHub call. Stable failures are
-recorded and acknowledged, while network, rate-limit, and 5xx failures are
-retried with a bounded delay. Status writes remain idempotent across redelivery.
+or ignored delivery IDs are acknowledged without another GitHub call. Stable
+failures are recorded and acknowledged, while network, rate-limit, and 5xx
+failures are retried with a bounded delay. The same Worker consumes the dead
+letter queue and marks every exhausted nonterminal delivery failed without
+overwriting a terminal result. Status writes remain idempotent across
+redelivery.
 
 ## Production release
 
