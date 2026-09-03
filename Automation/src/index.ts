@@ -4,6 +4,7 @@ import { GitHubAppClient } from "./github-app-client";
 import { GitHubGraphQLClient } from "./github-graphql";
 import { GraphQLStatusWriter } from "./graphql-status-writer";
 import { InstallationLifecycleRunner } from "./installation-lifecycle";
+import { runMaintenance } from "./maintenance";
 import { OAuthCredentialProvider } from "./oauth-credential-provider";
 import { PersonalProjectGateway } from "./personal-project-gateway";
 import { RepositoryTruthReader } from "./repository-truth-reader";
@@ -118,8 +119,11 @@ export default {
             }
         }
     },
-    async scheduled(_controller, env): Promise<void> {
+    async scheduled(controller, env): Promise<void> {
         await flushDeliveryOutbox(env.DB, env.AUTOMATION_QUEUE);
+        if (controller.cron === "0 3 * * *") {
+            await runMaintenance(env.DB);
+        }
     },
 } satisfies ExportedHandler<Env>;
 

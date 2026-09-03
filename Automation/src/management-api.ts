@@ -132,6 +132,7 @@ async function deleteAutomation(
     database: D1Database
 ): Promise<Response> {
     const automation = await loadAutomation(userID, automationID, database);
+    const now = new Date().toISOString();
     const results = await database.batch([
         database.prepare(
             "DELETE FROM project_automations WHERE id = ? AND user_id = ?"
@@ -141,22 +142,44 @@ async function deleteAutomation(
              WHERE id = ?
                AND NOT EXISTS (
                    SELECT 1 FROM project_automations WHERE oauth_credential_id = ?
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM setup_sessions
+                   WHERE oauth_credential_id = ? AND expires_at > ?
                )`
-        ).bind(automation.oauth_credential_id, automation.oauth_credential_id),
+        ).bind(
+            automation.oauth_credential_id,
+            automation.oauth_credential_id,
+            automation.oauth_credential_id,
+            now
+        ),
         database.prepare(
             `DELETE FROM installations
              WHERE installation_id = ?
                AND NOT EXISTS (
                    SELECT 1 FROM project_automations WHERE installation_id = ?
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM setup_sessions
+                   WHERE installation_id = ? AND expires_at > ?
                )`
-        ).bind(automation.installation_id, automation.installation_id),
+        ).bind(
+            automation.installation_id,
+            automation.installation_id,
+            automation.installation_id,
+            now
+        ),
         database.prepare(
             `DELETE FROM users
              WHERE id = ?
                AND NOT EXISTS (
                    SELECT 1 FROM project_automations WHERE user_id = ?
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM setup_sessions
+                   WHERE user_id = ? AND expires_at > ?
                )`
-        ).bind(userID, userID),
+        ).bind(userID, userID, userID, now),
     ]);
     if (results[0].meta.changes !== 1) {
         throw new ManagementRequestError(404, "AUTOMATION_NOT_FOUND");
