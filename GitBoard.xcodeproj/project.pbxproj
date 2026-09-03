@@ -58,6 +58,7 @@
 		A0000056 /* AutomationConfigurationForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000056 /* AutomationConfigurationForm.swift */; };
 		A0000057 /* StatusOptionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000057 /* StatusOptionPicker.swift */; };
 		A0000058 /* AutomationConnectionList.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000058 /* AutomationConnectionList.swift */; };
+		A0000059 /* Store/AutomationSetupModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000059 /* Store/AutomationSetupModelTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -125,6 +126,7 @@
 		A1000056 /* AutomationConfigurationForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationConfigurationForm.swift; sourceTree = "<group>"; };
 		A1000057 /* StatusOptionPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusOptionPicker.swift; sourceTree = "<group>"; };
 		A1000058 /* AutomationConnectionList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationConnectionList.swift; sourceTree = "<group>"; };
+		A1000059 /* Store/AutomationSetupModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Store/AutomationSetupModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -297,6 +299,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000023 /* Services/GitHubServiceTests.swift */,
+				A1000059 /* Store/AutomationSetupModelTests.swift */,
 			);
 			path = GitBoardTests;
 			sourceTree = "<group>";
@@ -471,6 +474,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A0000023 /* Services/GitHubServiceTests.swift in Sources */,
+				A0000059 /* Store/AutomationSetupModelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

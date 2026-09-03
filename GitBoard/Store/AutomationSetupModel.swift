@@ -7,6 +7,8 @@ final class AutomationSetupModel {
     enum Phase: Equatable {
         case unavailable
         case disconnected
+        case loadingConnection
+        case connectionLoadFailed
         case starting
         case waitingForBrowser
         case loadingConfiguration
@@ -33,7 +35,7 @@ final class AutomationSetupModel {
     var doneOptionID: String?
 
     private let service: AutomationService?
-    private let tokenStore: ManagementTokenStore
+    private let tokenStore: any ManagementTokenStoring
     private var setupToken: String?
     private var authorizationURL: URL?
     private var loadingProjectID: String?
@@ -43,14 +45,19 @@ final class AutomationSetupModel {
 
     init(
         service: AutomationService? = AutomationService.configured(),
-        tokenStore: ManagementTokenStore = ManagementTokenStore()
+        tokenStore: any ManagementTokenStoring = ManagementTokenStore()
     ) {
         self.service = service
         self.tokenStore = tokenStore
-        if (try? tokenStore.load()) != nil {
-            phase = .connected
-        } else {
-            phase = service == nil ? .unavailable : .disconnected
+        guard service != nil else {
+            phase = .unavailable
+            return
+        }
+        do {
+            phase = try tokenStore.load() == nil ? .disconnected : .loadingConnection
+        } catch {
+            phase = .connectionLoadFailed
+            errorMessage = "GitBoard could not access the saved automation connection in Keychain."
         }
     }
 
@@ -118,6 +125,7 @@ final class AutomationSetupModel {
                     clearSetupSession()
                     errorMessage = nil
                     phase = .connected
+                    await loadAutomations()
                     return
                 case "COMPLETE", "EXCHANGED":
                     throw AutomationServiceError.server("SETUP_STATE_CHANGED")
@@ -137,6 +145,29 @@ final class AutomationSetupModel {
         authorizationURL
     }
 
+    func loadConnection() async {
+        guard phase == .loadingConnection || phase == .connectionLoadFailed,
+              let service else {
+            return
+        }
+        phase = .loadingConnection
+        errorMessage = nil
+        do {
+            let managementToken = try requireManagementToken()
+            automations = try await service.automations(managementToken: managementToken)
+            phase = .connected
+        } catch is CancellationError {
+            return
+        } catch {
+            if isManagementAuthFailure(error) {
+                handleManagementFailure(error)
+            } else {
+                phase = .connectionLoadFailed
+                errorMessage = message(for: error)
+            }
+        }
+    }
+
     func loadAutomations() async {
         guard phase == .connected, let service else {
             return
@@ -144,10 +175,6 @@ final class AutomationSetupModel {
         do {
             let managementToken = try requireManagementToken()
             automations = try await service.automations(managementToken: managementToken)
-            if automations.isEmpty {
-                try tokenStore.delete()
-                phase = .disconnected
-            }
         } catch is CancellationError {
             return
         } catch {
@@ -304,6 +331,7 @@ final class AutomationSetupModel {
             pendingManagementToken = nil
             clearSetupSession()
             phase = .connected
+            await loadAutomations()
         } catch is CancellationError {
             phase = .configuring
         } catch is ManagementTokenStoreError {
@@ -314,7 +342,7 @@ final class AutomationSetupModel {
         }
     }
 
-    func retryTokenStorage() {
+    func retryTokenStorage() async {
         guard let pendingManagementToken else { return }
         do {
             try tokenStore.save(pendingManagementToken)
@@ -322,6 +350,7 @@ final class AutomationSetupModel {
             clearSetupSession()
             errorMessage = nil
             phase = .connected
+            await loadAutomations()
         } catch {
             errorMessage = "GitBoard could not save the connection in Keychain."
         }
@@ -369,8 +398,7 @@ final class AutomationSetupModel {
     }
 
     private func handleManagementFailure(_ error: Error) {
-        if let serviceError = error as? AutomationServiceError,
-           case .server("MANAGEMENT_AUTH_REQUIRED") = serviceError {
+        if isManagementAuthFailure(error) {
             try? tokenStore.delete()
             automations = []
             phase = .disconnected
@@ -378,6 +406,14 @@ final class AutomationSetupModel {
             return
         }
         errorMessage = message(for: error)
+    }
+
+    private func isManagementAuthFailure(_ error: Error) -> Bool {
+        guard let serviceError = error as? AutomationServiceError,
+              case .server("MANAGEMENT_AUTH_REQUIRED") = serviceError else {
+            return false
+        }
+        return true
     }
 
     private func requireManagementToken() throws -> String {
