@@ -37,15 +37,19 @@ struct AutomationSettingsView: View {
                 case .waitingForBrowser:
                     Label("Finish authorization and app installation in your browser.", systemImage: "safari")
                     Button("Open Setup Page", systemImage: "arrow.up.forward.app", action: reopenBrowser)
+                    Button("Cancel Setup", role: .cancel, action: cancelSetup)
                 case .loadingConfiguration:
                     ProgressView("Loading repositories and Projects…")
+                    Button("Cancel Setup", role: .cancel, action: cancelSetup)
                 case .configuring:
                     AutomationConfigurationForm(setup: setup)
+                    Button("Cancel Setup", role: .cancel, action: cancelSetup)
                 case .saving:
                     ProgressView("Enabling automation…")
                 case .connectionStorageFailed:
-                    Label("Automation is enabled, but the connection was not saved locally.", systemImage: "key")
+                    Label("The connection could not be saved locally, so automation was not enabled.", systemImage: "key")
                     Button("Retry Saving to Keychain", action: retryTokenStorage)
+                    Button("Cancel Setup", role: .cancel, action: cancelSetup)
                 case .connected:
                     if setup.automations.isEmpty && setup.errorMessage != nil {
                         Text("Connection status could not be loaded.")
@@ -61,6 +65,11 @@ struct AutomationSettingsView: View {
                     } else {
                         AutomationConnectionList(setup: setup)
                     }
+                    Button(
+                        "Add Automation…",
+                        systemImage: "plus",
+                        action: startAddSetup
+                    )
                 }
 
                 if let errorMessage = setup.errorMessage {
@@ -93,6 +102,14 @@ struct AutomationSettingsView: View {
         }
     }
 
+    private func startAddSetup() {
+        Task {
+            if let url = await setup.startAddSetup() {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
     private func reopenBrowser() {
         if let url = setup.browserURL() {
             NSWorkspace.shared.open(url)
@@ -111,4 +128,7 @@ struct AutomationSettingsView: View {
         Task { await setup.retryTokenStorage() }
     }
 
+    private func cancelSetup() {
+        Task { await setup.cancelSetup() }
+    }
 }
