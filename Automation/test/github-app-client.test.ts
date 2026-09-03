@@ -44,6 +44,22 @@ describe("createAppJWT", () => {
 });
 
 describe("GitHubAppClient", () => {
+    test("reads the installation's current suspended state", async () => {
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
+            id: 9,
+            account: { id: 7, type: "User" },
+            suspended_at: "2026-09-03T00:00:00Z",
+        })));
+        const client = new GitHubAppClient("12345", pkcs1PrivateKey, "2026-03-10");
+
+        await expect(client.getInstallation(9)).resolves.toEqual({
+            id: 9,
+            accountID: 7,
+            accountType: "User",
+            status: "SUSPENDED",
+        });
+    });
+
     test("retains repository node identity from an installation", async () => {
         vi.stubGlobal("fetch", vi.fn()
             .mockResolvedValueOnce(Response.json({ token: "installation-token" }))

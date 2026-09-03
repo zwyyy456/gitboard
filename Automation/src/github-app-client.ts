@@ -10,6 +10,7 @@ export interface GitHubInstallation {
     id: number;
     accountID: number;
     accountType: string;
+    status: "ACTIVE" | "SUSPENDED";
 }
 
 export class GitHubAppRequestError extends Error {
@@ -49,7 +50,10 @@ export class GitHubAppClient implements InstallationTokenProvider {
             }
         );
         if (!response.ok) {
-            throw new GitHubAppRequestError(response.status, isRateLimited(response.headers));
+            throw new GitHubAppRequestError(
+                response.status,
+                isRetryable(response.status, response.headers)
+            );
         }
         let body: unknown;
         try {
@@ -69,7 +73,10 @@ export class GitHubAppClient implements InstallationTokenProvider {
             headers: this.headers(jwt),
         });
         if (!response.ok) {
-            throw new GitHubAppRequestError(response.status, isRateLimited(response.headers));
+            throw new GitHubAppRequestError(
+                response.status,
+                isRetryable(response.status, response.headers)
+            );
         }
         let body: unknown;
         try {
@@ -81,13 +88,15 @@ export class GitHubAppClient implements InstallationTokenProvider {
             || !isPositiveInteger(body.id)
             || !isRecord(body.account)
             || !isPositiveInteger(body.account.id)
-            || typeof body.account.type !== "string") {
+            || typeof body.account.type !== "string"
+            || (body.suspended_at !== null && typeof body.suspended_at !== "string")) {
             throw new GitHubAppRequestError(502);
         }
         return {
             id: body.id,
             accountID: body.account.id,
             accountType: body.account.type,
+            status: body.suspended_at === null ? "ACTIVE" : "SUSPENDED",
         };
     }
 
@@ -99,7 +108,10 @@ export class GitHubAppClient implements InstallationTokenProvider {
         while (url) {
             const response: Response = await fetch(url, { headers: this.headers(token) });
             if (!response.ok) {
-                throw new GitHubAppRequestError(response.status, isRateLimited(response.headers));
+                throw new GitHubAppRequestError(
+                    response.status,
+                    isRetryable(response.status, response.headers)
+                );
             }
             let body: unknown;
             try {
@@ -246,6 +258,9 @@ function isPositiveInteger(value: unknown): value is number {
     return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-function isRateLimited(headers: Headers): boolean {
-    return headers.has("Retry-After") || headers.get("X-RateLimit-Remaining") === "0";
+function isRetryable(status: number, headers: Headers): boolean {
+    return status === 429
+        || status >= 500
+        || headers.has("Retry-After")
+        || headers.get("X-RateLimit-Remaining") === "0";
 }

@@ -1,6 +1,14 @@
-import { GitHubAppClient, type InstallationRepository } from "./github-app-client";
+import type { RunnerDecision } from "./automation-runner";
+import { queueDelivery } from "./delivery-outbox";
+import {
+    GitHubAppRequestError,
+    type GitHubInstallation,
+    type InstallationRepository,
+} from "./github-app-client";
 import type { Env } from "./index";
 import { WebhookRequestError } from "./webhook-receiver";
+
+type InstallationEventName = "installation" | "installation_repositories";
 
 interface InstallationWebhook {
     action: string;
@@ -13,16 +21,31 @@ interface UserRecord {
     id: string;
 }
 
+interface DeliveryRecord {
+    processing_state: string;
+    installation_id: number;
+}
+
+interface InstallationClient {
+    getInstallation(installationID: number): Promise<GitHubInstallation>;
+    listInstallationRepositories(installationID: number): Promise<InstallationRepository[]>;
+}
+
 const activeActions = new Set(["created", "new_permissions_accepted", "unsuspend"]);
+const terminalDeliveryStates = new Set(["COMPLETED", "FAILED", "IGNORED"]);
 
 export async function receiveInstallationWebhook(
-    eventName: "installation" | "installation_repositories",
+    eventName: InstallationEventName,
+    deliveryID: string,
     body: ArrayBuffer,
     env: Env
 ): Promise<Response> {
     const event = parseInstallationWebhook(body);
     if (event.accountType !== "User") {
         return Response.json({ accepted: false, reason: "unsupported_account" }, { status: 202 });
+    }
+    if (!isSupportedAction(eventName, event.action)) {
+        return Response.json({ accepted: false, reason: "unsupported_action" }, { status: 202 });
     }
 
     const user = await env.DB.prepare(
@@ -32,36 +55,135 @@ export async function receiveInstallationWebhook(
         return Response.json({ accepted: false, reason: "setup_not_started" }, { status: 202 });
     }
 
-    if (eventName === "installation_repositories") {
-        if (event.action !== "added" && event.action !== "removed") {
-            return Response.json({ accepted: false, reason: "unsupported_action" }, { status: 202 });
+    const now = new Date().toISOString();
+    const insertion = await env.DB.prepare(
+        `INSERT OR IGNORE INTO webhook_deliveries (
+            delivery_id, installation_id, event_name, event_action,
+            processing_state, attempt_count, received_at, state_updated_at
+         ) VALUES (?, ?, ?, ?, 'RECEIVED', 0, ?, ?)`
+    ).bind(deliveryID, event.installationID, eventName, event.action, now, now).run();
+
+    if (insertion.meta.changes === 0) {
+        const existing = await env.DB.prepare(
+            "SELECT processing_state FROM webhook_deliveries WHERE delivery_id = ?"
+        ).bind(deliveryID).first<{ processing_state: string }>();
+        if (existing?.processing_state !== "RECEIVED") {
+            return Response.json({ accepted: true, duplicate: true }, { status: 202 });
         }
-        await reconcileRepositories(event.installationID, env);
-        return Response.json({ accepted: true }, { status: 202 });
     }
 
-    if (activeActions.has(event.action)) {
+    const queued = await queueDelivery(env.DB, env.AUTOMATION_QUEUE, deliveryID);
+    console.info("installation_delivery_persisted", { deliveryID, queued });
+    return Response.json({ accepted: true }, { status: 202 });
+}
+
+export class InstallationLifecycleRunner {
+    constructor(
+        private readonly database: D1Database,
+        private readonly client: InstallationClient
+    ) {}
+
+    async run(deliveryID: string, attempt: number): Promise<RunnerDecision> {
+        const delivery = await this.database.prepare(
+            `SELECT processing_state, installation_id
+             FROM webhook_deliveries
+             WHERE delivery_id = ?
+               AND event_name IN ('installation', 'installation_repositories')`
+        ).bind(deliveryID).first<DeliveryRecord>();
+        if (!delivery || terminalDeliveryStates.has(delivery.processing_state)) {
+            return { action: "ack" };
+        }
+
+        const started = await this.database.prepare(
+            `UPDATE webhook_deliveries
+             SET processing_state = 'PROCESSING',
+                 attempt_count = attempt_count + 1,
+                 state_updated_at = ?
+             WHERE delivery_id = ?
+               AND processing_state NOT IN ('COMPLETED', 'FAILED', 'IGNORED')`
+        ).bind(new Date().toISOString(), deliveryID).run();
+        if (started.meta.changes !== 1) return { action: "ack" };
+
+        try {
+            await this.reconcile(delivery.installation_id);
+            await this.finish(deliveryID, "COMPLETED", null);
+            return { action: "ack" };
+        } catch (error) {
+            if (!(error instanceof GitHubAppRequestError) || error.retryable) {
+                await this.retry(deliveryID);
+                return { action: "retry", delaySeconds: retryDelay(attempt) };
+            }
+            await this.finish(deliveryID, "FAILED", "INSTALLATION_RECONCILIATION_FAILED");
+            return { action: "ack" };
+        }
+    }
+
+    private async reconcile(installationID: number): Promise<void> {
+        let installation: GitHubInstallation;
+        try {
+            installation = await this.client.getInstallation(installationID);
+        } catch (error) {
+            if (error instanceof GitHubAppRequestError && error.status === 404) {
+                await deactivateInstallation(installationID, "DELETED", this.database);
+                return;
+            }
+            throw error;
+        }
+
+        if (installation.accountType !== "User") {
+            await deactivateInstallation(installationID, "ACCOUNT_UNSUPPORTED", this.database);
+            return;
+        }
+        const user = await this.database.prepare(
+            "SELECT id FROM users WHERE github_user_database_id = ?"
+        ).bind(installation.accountID).first<UserRecord>();
+        if (!user) {
+            await deactivateInstallation(installationID, "ACCOUNT_MISMATCH", this.database);
+            return;
+        }
+
+        await upsertInstallation(this.database, installation, user.id);
+        if (installation.status === "SUSPENDED") {
+            await deactivateInstallation(installationID, "SUSPENDED", this.database);
+            return;
+        }
+
+        try {
+            const repositories = await this.client.listInstallationRepositories(installationID);
+            await replaceRepositories(this.database, installationID, repositories);
+        } catch (error) {
+            if (error instanceof GitHubAppRequestError && error.status === 404) {
+                await deactivateInstallation(installationID, "DELETED", this.database);
+                return;
+            }
+            throw error;
+        }
+    }
+
+    private async retry(deliveryID: string): Promise<void> {
+        await this.database.prepare(
+            `UPDATE webhook_deliveries
+             SET processing_state = 'RETRYING',
+                 error_code = 'TRANSIENT_GITHUB_FAILURE',
+                 state_updated_at = ?
+             WHERE delivery_id = ?
+               AND processing_state NOT IN ('COMPLETED', 'FAILED', 'IGNORED')`
+        ).bind(new Date().toISOString(), deliveryID).run();
+    }
+
+    private async finish(
+        deliveryID: string,
+        state: "COMPLETED" | "FAILED",
+        errorCode: string | null
+    ): Promise<void> {
         const now = new Date().toISOString();
-        await env.DB.prepare(
-            `INSERT INTO installations (
-                installation_id, user_id, github_account_id, status, updated_at
-             ) VALUES (?, ?, ?, 'ACTIVE', ?)
-             ON CONFLICT(installation_id) DO UPDATE SET
-                user_id = excluded.user_id,
-                github_account_id = excluded.github_account_id,
-                status = 'ACTIVE',
-                updated_at = excluded.updated_at`
-        ).bind(event.installationID, user.id, event.accountID, now).run();
-        await reconcileRepositories(event.installationID, env);
-        return Response.json({ accepted: true }, { status: 202 });
+        await this.database.prepare(
+            `UPDATE webhook_deliveries
+             SET processing_state = ?, error_code = ?, completed_at = ?, state_updated_at = ?
+             WHERE delivery_id = ?
+               AND processing_state NOT IN ('COMPLETED', 'FAILED', 'IGNORED')`
+        ).bind(state, errorCode, now, now, deliveryID).run();
     }
-
-    if (event.action === "suspend" || event.action === "deleted") {
-        await deactivateInstallation(event.installationID, event.action.toUpperCase(), env.DB);
-        return Response.json({ accepted: true }, { status: 202 });
-    }
-
-    return Response.json({ accepted: false, reason: "unsupported_action" }, { status: 202 });
 }
 
 export function parseInstallationWebhook(body: ArrayBuffer): InstallationWebhook {
@@ -86,16 +208,6 @@ export function parseInstallationWebhook(body: ArrayBuffer): InstallationWebhook
         accountID: value.installation.account.id,
         accountType: value.installation.account.type,
     };
-}
-
-async function reconcileRepositories(installationID: number, env: Env): Promise<void> {
-    const client = new GitHubAppClient(
-        env.GITHUB_APP_ID,
-        env.GITHUB_APP_PRIVATE_KEY,
-        env.GITHUB_API_VERSION
-    );
-    const repositories = await client.listInstallationRepositories(installationID);
-    await replaceRepositories(env.DB, installationID, repositories);
 }
 
 export async function replaceRepositories(
@@ -140,6 +252,29 @@ export async function replaceRepositories(
     ]);
 }
 
+async function upsertInstallation(
+    database: D1Database,
+    installation: GitHubInstallation,
+    userID: string
+): Promise<void> {
+    await database.prepare(
+        `INSERT INTO installations (
+            installation_id, user_id, github_account_id, status, updated_at
+         ) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(installation_id) DO UPDATE SET
+            user_id = excluded.user_id,
+            github_account_id = excluded.github_account_id,
+            status = excluded.status,
+            updated_at = excluded.updated_at`
+    ).bind(
+        installation.id,
+        userID,
+        installation.accountID,
+        installation.status,
+        new Date().toISOString()
+    ).run();
+}
+
 async function deactivateInstallation(
     installationID: number,
     status: string,
@@ -159,6 +294,17 @@ async function deactivateInstallation(
              WHERE installation_id = ?`
         ).bind(`INSTALLATION_${status}`, now, installationID),
     ]);
+}
+
+function isSupportedAction(eventName: InstallationEventName, action: string): boolean {
+    if (eventName === "installation_repositories") {
+        return action === "added" || action === "removed";
+    }
+    return activeActions.has(action) || action === "suspend" || action === "deleted";
+}
+
+function retryDelay(attempt: number): number {
+    return Math.min(60 * 2 ** Math.max(0, attempt - 1), 3_600);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -3,6 +3,7 @@ import { flushDeliveryOutbox } from "./delivery-outbox";
 import { GitHubAppClient } from "./github-app-client";
 import { GitHubGraphQLClient } from "./github-graphql";
 import { GraphQLStatusWriter } from "./graphql-status-writer";
+import { InstallationLifecycleRunner } from "./installation-lifecycle";
 import { OAuthCredentialProvider } from "./oauth-credential-provider";
 import { PersonalProjectGateway } from "./personal-project-gateway";
 import { RepositoryTruthReader } from "./repository-truth-reader";
@@ -79,6 +80,7 @@ export default {
                 env.GITHUB_API_VERSION
             )
         );
+        const installationRunner = new InstallationLifecycleRunner(env.DB, appClient);
 
         for (const message of batch.messages) {
             if (!isDeliveryMessage(message.body)) {
@@ -86,7 +88,17 @@ export default {
                 continue;
             }
             try {
-                const decision = await runner.run(message.body, message.attempts);
+                const delivery = await env.DB.prepare(
+                    "SELECT event_name FROM webhook_deliveries WHERE delivery_id = ?"
+                ).bind(message.body.deliveryID).first<{ event_name: string }>();
+                if (!delivery) {
+                    message.ack();
+                    continue;
+                }
+                const decision = delivery.event_name === "installation"
+                    || delivery.event_name === "installation_repositories"
+                    ? await installationRunner.run(message.body.deliveryID, message.attempts)
+                    : await runner.run(message.body, message.attempts);
                 if (decision.action === "ack") {
                     message.ack();
                 } else {
