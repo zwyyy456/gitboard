@@ -11,6 +11,8 @@ import {
     InstallationLifecycleRunner,
     receiveInstallationWebhook,
 } from "../../src/installation-lifecycle";
+import { handleManagementRequest } from "../../src/management-api";
+import { runMaintenance } from "../../src/maintenance";
 import type { DeliveryMessage } from "../../src/index";
 import type { Env } from "../../src/index";
 import { handleSetupRequest, persistSetupCompletion } from "../../src/setup-api";
@@ -322,6 +324,92 @@ test("rolls back a management token when the source repository is already config
     expect(session?.state).toBe("CONFIGURATION_PENDING");
 });
 
+test("maintenance terminates stale work and preserves current setup references", async () => {
+    const now = new Date("2026-09-03T00:00:00.000Z");
+    const old = "2026-07-01T00:00:00.000Z";
+    const stale = "2026-08-01T00:00:00.000Z";
+    const recent = "2026-09-02T00:00:00.000Z";
+    await seedMaintenanceSetup("protected", 120, "2026-09-04T00:00:00.000Z");
+    await seedMaintenanceSetup("abandoned", 121, "2026-09-01T00:00:00.000Z");
+    await testEnv.DB.batch([
+        maintenanceDelivery("maintenance-completed", "COMPLETED", old, old),
+        maintenanceDelivery("maintenance-ignored", "IGNORED", old, old),
+        maintenanceDelivery("maintenance-stale", "RETRYING", stale, null),
+        maintenanceDelivery("maintenance-recent", "QUEUED", recent, null),
+    ]);
+
+    await runMaintenance(testEnv.DB, now);
+
+    const deliveries = await testEnv.DB.prepare(
+        `SELECT delivery_id, processing_state, error_code
+         FROM webhook_deliveries WHERE delivery_id LIKE 'maintenance-%'`
+    ).all<{ delivery_id: string; processing_state: string; error_code: string | null }>();
+    const deliveryStates = Object.fromEntries(deliveries.results.map((delivery) => [
+        delivery.delivery_id,
+        [delivery.processing_state, delivery.error_code],
+    ]));
+    const protectedCounts = await maintenanceObjectCounts("protected", 120);
+    const abandonedCounts = await maintenanceObjectCounts("abandoned", 121);
+
+    expect(deliveryStates).toEqual({
+        "maintenance-stale": ["FAILED", "DELIVERY_STALE"],
+        "maintenance-recent": ["QUEUED", null],
+    });
+    expect(protectedCounts).toEqual({ users: 1, credentials: 1, installations: 1, sessions: 1 });
+    expect(abandonedCounts).toEqual({ users: 0, credentials: 0, installations: 0, sessions: 0 });
+});
+
+test("deleting an automation preserves objects used by an unexpired setup", async () => {
+    const now = new Date().toISOString();
+    const token = "management-delete-reference";
+    await testEnv.DB.batch([
+        testEnv.DB.prepare(
+            `INSERT INTO users (
+                id, github_user_node_id, github_user_database_id, github_login,
+                created_at, updated_at
+             ) VALUES ('user-delete-reference', 'USER-DELETE-REFERENCE', 122, 'owner', ?, ?)`
+        ).bind(now, now),
+        credentialInsertion("credential-delete-reference", "user-delete-reference", now),
+        installationInsertion(122, "user-delete-reference", now),
+        testEnv.DB.prepare(
+            `INSERT INTO project_automations (
+                id, user_id, oauth_credential_id, installation_id, repository_id,
+                repository_name_with_owner, project_owner_login, project_number,
+                project_node_id, status_field_node_id, in_progress_option_id,
+                in_review_option_id, done_option_id, enabled, health_state,
+                created_at, updated_at
+             ) VALUES (
+                'automation-delete-reference', 'user-delete-reference',
+                'credential-delete-reference', 122, 1122, 'owner/repository', 'owner',
+                1, 'PROJECT', 'FIELD', 'PROGRESS', 'REVIEW', 'DONE', 1, 'ACTIVE', ?, ?
+             )`
+        ).bind(now, now),
+        testEnv.DB.prepare(
+            `INSERT INTO setup_sessions (
+                id, setup_token_hash, user_id, oauth_credential_id, installation_id,
+                state, expires_at, created_at, updated_at, purpose
+             ) VALUES (
+                'setup-delete-reference', 'setup-token-delete-reference',
+                'user-delete-reference', 'credential-delete-reference', 122,
+                'CONFIGURATION_PENDING', ?, ?, ?, 'ADD'
+             )`
+        ).bind(new Date(Date.now() + 60_000).toISOString(), now, now),
+        testEnv.DB.prepare(
+            `INSERT INTO management_tokens (id, user_id, token_hash, created_at)
+             VALUES ('token-delete-reference', 'user-delete-reference', ?, ?)`
+        ).bind(await tokenHash(token), now),
+    ]);
+
+    const response = await handleManagementRequest(new Request(
+        "https://example.invalid/api/automations/automation-delete-reference",
+        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
+    ), environmentWith(queueThat(async () => {})));
+    const counts = await maintenanceObjectCounts("delete-reference", 122);
+
+    expect(response.status).toBe(204);
+    expect(counts).toEqual({ users: 1, credentials: 1, installations: 1, sessions: 1 });
+});
+
 function queueThat(
     send: (message: DeliveryMessage) => Promise<void>
 ): Queue<DeliveryMessage> {
@@ -499,4 +587,88 @@ async function tokenHash(value: string): Promise<string> {
     ));
     return btoa(String.fromCharCode(...hash))
         .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+async function seedMaintenanceSetup(
+    suffix: string,
+    installationID: number,
+    expiresAt: string
+): Promise<void> {
+    const now = "2026-08-01T00:00:00.000Z";
+    await testEnv.DB.batch([
+        testEnv.DB.prepare(
+            `INSERT INTO users (
+                id, github_user_node_id, github_user_database_id, github_login,
+                created_at, updated_at
+             ) VALUES (?, ?, ?, 'owner', ?, ?)`
+        ).bind(`user-${suffix}`, `USER-${suffix}`, installationID, now, now),
+        credentialInsertion(`credential-${suffix}`, `user-${suffix}`, now),
+        installationInsertion(installationID, `user-${suffix}`, now),
+        testEnv.DB.prepare(
+            `INSERT INTO setup_sessions (
+                id, setup_token_hash, user_id, oauth_credential_id, installation_id,
+                state, expires_at, created_at, updated_at, purpose
+             ) VALUES (?, ?, ?, ?, ?, 'INSTALLATION_PENDING', ?, ?, ?, 'INITIAL')`
+        ).bind(
+            `setup-${suffix}`, `setup-token-${suffix}`, `user-${suffix}`,
+            `credential-${suffix}`, installationID, expiresAt, now, now
+        ),
+    ]);
+}
+
+function credentialInsertion(id: string, userID: string, now: string): D1PreparedStatement {
+    return testEnv.DB.prepare(
+        `INSERT INTO oauth_credentials (
+            id, user_id, encrypted_access_token, encrypted_refresh_token,
+            access_token_expires_at, refresh_token_expires_at, granted_scopes,
+            credential_version, health_state, updated_at
+         ) VALUES (?, ?, 'access', 'refresh', ?, ?, '["project"]', 1, 'ACTIVE', ?)`
+    ).bind(id, userID, now, now, now);
+}
+
+function installationInsertion(
+    installationID: number,
+    userID: string,
+    now: string
+): D1PreparedStatement {
+    return testEnv.DB.prepare(
+        `INSERT INTO installations (
+            installation_id, user_id, github_account_id, status, updated_at
+         ) VALUES (?, ?, ?, 'ACTIVE', ?)`
+    ).bind(installationID, userID, installationID, now);
+}
+
+function maintenanceDelivery(
+    id: string,
+    state: string,
+    stateUpdatedAt: string,
+    completedAt: string | null
+): D1PreparedStatement {
+    return testEnv.DB.prepare(
+        `INSERT INTO webhook_deliveries (
+            delivery_id, installation_id, event_name, event_action, processing_state,
+            received_at, state_updated_at, completed_at
+         ) VALUES (?, 999, 'installation', 'created', ?, ?, ?, ?)`
+    ).bind(id, state, stateUpdatedAt, stateUpdatedAt, completedAt);
+}
+
+async function maintenanceObjectCounts(suffix: string, installationID: number) {
+    const result = await testEnv.DB.prepare(
+        `SELECT
+            (SELECT COUNT(*) FROM users WHERE id = ?) AS users,
+            (SELECT COUNT(*) FROM oauth_credentials WHERE id = ?) AS credentials,
+            (SELECT COUNT(*) FROM installations WHERE installation_id = ?) AS installations,
+            (SELECT COUNT(*) FROM setup_sessions WHERE id = ?) AS sessions`
+    ).bind(
+        `user-${suffix}`,
+        `credential-${suffix}`,
+        installationID,
+        `setup-${suffix}`
+    ).first<{
+        users: number;
+        credentials: number;
+        installations: number;
+        sessions: number;
+    }>();
+    return result ?? { users: 0, credentials: 0, installations: 0, sessions: 0 };
 }

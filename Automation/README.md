@@ -83,6 +83,11 @@ letter queue and marks every exhausted nonterminal delivery failed without
 overwriting a terminal result. Status writes remain idempotent across
 redelivery.
 
+Daily maintenance marks delivery work that has made no progress for seven days
+as `DELIVERY_STALE`, removes terminal deliveries after 30 days, and reclaims
+setup sessions one day after expiry together with OAuth and installation data
+that no automation or remaining setup session still references.
+
 ## Production release
 
 Use a dedicated GitHub App, OAuth App, private test repository, and personal
