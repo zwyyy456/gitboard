@@ -1,10 +1,10 @@
 export interface InstallationContext {
     id: number;
-    repositoryIDs: ReadonlySet<number>;
+    repositoryNodeIDs: ReadonlySet<string>;
 }
 
 export interface SourcePullRequest {
-    repositoryNameWithOwner: string;
+    repositoryNodeID: string;
     number: number;
 }
 
@@ -17,7 +17,7 @@ export interface ClosingPullRequestTruth {
 export interface IssueWorkflowTruth {
     issueNodeID: string;
     issueState: "OPEN" | "CLOSED";
-    issueRepositoryID: number;
+    issueRepositoryNodeID: string;
     issueRepositoryNameWithOwner: string;
     closingPullRequests: ClosingPullRequestTruth[];
 }

@@ -47,7 +47,7 @@ interface AutomationRecord {
     oauth_credential_id: string;
     installation_id: number;
     installation_status: string;
-    repository_name_with_owner: string;
+    repository_node_id: string;
     project_owner_login: string;
     project_number: number;
     project_node_id: string;
@@ -59,7 +59,7 @@ interface AutomationRecord {
 }
 
 interface RepositoryRecord {
-    repository_id: number;
+    repository_node_id: string;
 }
 
 const terminalDeliveryStates = new Set(["COMPLETED", "FAILED", "IGNORED"]);
@@ -88,11 +88,13 @@ export class AutomationRunner {
         ).bind(message.deliveryID).run();
 
         try {
-            const repositoryIDs = await this.loadInstallationRepositoryIDs(automation.installation_id);
+            const repositoryNodeIDs = await this.loadInstallationRepositoryNodeIDs(
+                automation.installation_id
+            );
             const truths = await this.truthReader.loadWorkflowTruth(
-                { id: automation.installation_id, repositoryIDs },
+                { id: automation.installation_id, repositoryNodeIDs },
                 {
-                    repositoryNameWithOwner: automation.repository_name_with_owner,
+                    repositoryNodeID: automation.repository_node_id,
                     number: message.pullRequestNumber,
                 }
             );
@@ -140,7 +142,7 @@ export class AutomationRunner {
                     automation.oauth_credential_id,
                     automation.installation_id,
                     installation.status AS installation_status,
-                    automation.repository_name_with_owner,
+                    repository.repository_node_id,
                     automation.project_owner_login,
                     automation.project_number,
                     automation.project_node_id,
@@ -153,6 +155,9 @@ export class AutomationRunner {
              JOIN project_automations automation ON automation.id = delivery.automation_id
              JOIN installations installation
                ON installation.installation_id = automation.installation_id
+             JOIN installation_repositories repository
+               ON repository.installation_id = automation.installation_id
+              AND repository.repository_id = automation.repository_id
              WHERE delivery.delivery_id = ?
                AND automation.installation_id = ?
                AND automation.repository_id = ?`
@@ -163,11 +168,13 @@ export class AutomationRunner {
         ).first<AutomationRecord>();
     }
 
-    private async loadInstallationRepositoryIDs(installationID: number): Promise<Set<number>> {
+    private async loadInstallationRepositoryNodeIDs(
+        installationID: number
+    ): Promise<Set<string>> {
         const result = await this.database.prepare(
-            "SELECT repository_id FROM installation_repositories WHERE installation_id = ?"
+            "SELECT repository_node_id FROM installation_repositories WHERE installation_id = ?"
         ).bind(installationID).all<RepositoryRecord>();
-        return new Set(result.results.map((repository) => repository.repository_id));
+        return new Set(result.results.map((repository) => repository.repository_node_id));
     }
 
     private async handleFailure(

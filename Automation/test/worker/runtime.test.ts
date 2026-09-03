@@ -17,6 +17,11 @@ test("starts with the current D1 schema", async () => {
     const tables = await testEnv.DB.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table'"
     ).all<{ name: string }>();
+    const repositoryColumns = await testEnv.DB.prepare(
+        "PRAGMA table_info(installation_repositories)"
+    ).all<{ name: string }>();
 
     expect(tables.results.map((table) => table.name)).toContain("project_automations");
+    expect(repositoryColumns.results.map((column) => column.name))
+        .toContain("repository_node_id");
 });

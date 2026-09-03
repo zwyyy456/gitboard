@@ -2,6 +2,7 @@ const githubAPI = "https://api.github.com";
 
 export interface InstallationRepository {
     id: number;
+    nodeID: string;
     nameWithOwner: string;
 }
 
@@ -112,11 +113,13 @@ export class GitHubAppClient implements InstallationTokenProvider {
             for (const repository of body.repositories) {
                 if (!isRecord(repository)
                     || !isPositiveInteger(repository.id)
+                    || typeof repository.node_id !== "string"
                     || typeof repository.full_name !== "string") {
                     throw new GitHubAppRequestError(502);
                 }
                 repositories.push({
                     id: repository.id,
+                    nodeID: repository.node_id,
                     nameWithOwner: repository.full_name,
                 });
             }
