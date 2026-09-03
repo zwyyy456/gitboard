@@ -61,7 +61,7 @@ function issue(
     return {
         issueNodeID: "ISSUE",
         issueState,
-        issueRepositoryID: 1,
+        issueRepositoryNodeID: "REPOSITORY",
         issueRepositoryNameWithOwner: "owner/repository",
         closingPullRequests,
     };

@@ -106,6 +106,7 @@ export async function replaceRepositories(
     const now = new Date().toISOString();
     const encodedRepositories = JSON.stringify(repositories.map((repository) => ({
         id: repository.id,
+        nodeID: repository.nodeID,
         name: repository.nameWithOwner,
     })));
     await database.batch([
@@ -114,10 +115,11 @@ export async function replaceRepositories(
         ).bind(installationID),
         database.prepare(
             `INSERT INTO installation_repositories (
-                installation_id, repository_id, name_with_owner, updated_at
+                installation_id, repository_id, repository_node_id, name_with_owner, updated_at
              )
              SELECT ?,
                     CAST(json_extract(value, '$.id') AS INTEGER),
+                    CAST(json_extract(value, '$.nodeID') AS TEXT),
                     CAST(json_extract(value, '$.name') AS TEXT),
                     ?
              FROM json_each(?)`

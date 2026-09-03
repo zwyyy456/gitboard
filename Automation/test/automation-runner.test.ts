@@ -118,7 +118,7 @@ class RunnerDatabase {
             oauth_credential_id: "credential",
             installation_id: 7,
             installation_status: "ACTIVE",
-            repository_name_with_owner: "owner/source",
+            repository_node_id: "SOURCE_REPOSITORY",
             project_owner_login: "owner",
             project_number: 1,
             project_node_id: "PROJECT",
@@ -139,7 +139,10 @@ class RunnerDatabase {
                         return statement;
                     },
                     first: async () => automation,
-                    all: async () => ({ results: [{ repository_id: 11 }, { repository_id: 22 }] }),
+                    all: async () => ({ results: [
+                        { repository_node_id: "SOURCE_REPOSITORY" },
+                        { repository_node_id: "ISSUE_REPOSITORY" },
+                    ] }),
                     run: async () => {
                         if (sql.includes("processing_state = 'PROCESSING'")) {
                             this.deliveryState = "PROCESSING";
@@ -166,7 +169,7 @@ function issueTruth(): IssueWorkflowTruth {
     return {
         issueNodeID: "ISSUE",
         issueState: "OPEN",
-        issueRepositoryID: 22,
+        issueRepositoryNodeID: "ISSUE_REPOSITORY",
         issueRepositoryNameWithOwner: "owner/issues",
         closingPullRequests: [{ nodeID: "PR", state: "OPEN", isDraft: false }],
     };

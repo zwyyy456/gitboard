@@ -1,5 +1,7 @@
-import { describe, expect, test } from "vitest";
-import { createAppJWT } from "../src/github-app-client";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { createAppJWT, GitHubAppClient } from "../src/github-app-client";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("createAppJWT", () => {
     test("creates a verifiable RS256 token with GitHub's required claims", async () => {
@@ -38,6 +40,27 @@ describe("createAppJWT", () => {
         await expect(createAppJWT("12345", pkcs1PrivateKey)).resolves.toMatch(
             /^[^.]+\.[^.]+\.[^.]+$/
         );
+    });
+});
+
+describe("GitHubAppClient", () => {
+    test("retains repository node identity from an installation", async () => {
+        vi.stubGlobal("fetch", vi.fn()
+            .mockResolvedValueOnce(Response.json({ token: "installation-token" }))
+            .mockResolvedValueOnce(Response.json({
+                repositories: [{
+                    id: 7,
+                    node_id: "REPOSITORY_NODE",
+                    full_name: "owner/repository",
+                }],
+            })));
+        const client = new GitHubAppClient("12345", pkcs1PrivateKey, "2026-03-10");
+
+        await expect(client.listInstallationRepositories(9)).resolves.toEqual([{
+            id: 7,
+            nodeID: "REPOSITORY_NODE",
+            nameWithOwner: "owner/repository",
+        }]);
     });
 });
 
