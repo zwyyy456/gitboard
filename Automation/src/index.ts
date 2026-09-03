@@ -49,8 +49,7 @@ export default {
             || url.pathname === "/api/setup/sessions"
             || /^\/setup\/[^/]+\/oauth$/.test(url.pathname)
             || url.pathname === "/oauth/callback"
-            || url.pathname === "/setup/github-app"
-            || url.pathname === "/api/management/token") {
+            || url.pathname === "/setup/github-app") {
             return handleSetupRequest(request, env);
         }
         if (url.pathname === "/api/automations" || url.pathname.startsWith("/api/automations/")) {
