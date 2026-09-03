@@ -1,5 +1,5 @@
 import { AutomationRunner } from "./automation-runner";
-import { flushDeliveryOutbox } from "./delivery-outbox";
+import { failExhaustedDelivery, flushDeliveryOutbox } from "./delivery-outbox";
 import { GitHubAppClient } from "./github-app-client";
 import { GitHubGraphQLClient } from "./github-graphql";
 import { GraphQLStatusWriter } from "./graphql-status-writer";
@@ -59,6 +59,16 @@ export default {
         return new Response("Not found", { status: 404 });
     },
     async queue(batch, env): Promise<void> {
+        if (batch.queue === "gitboard-automation-dlq") {
+            for (const message of batch.messages) {
+                if (isDeliveryMessage(message.body)) {
+                    await failExhaustedDelivery(env.DB, message.body.deliveryID);
+                }
+                message.ack();
+            }
+            return;
+        }
+
         const graphQL = new GitHubGraphQLClient(env.GITHUB_API_VERSION);
         const appClient = new GitHubAppClient(
             env.GITHUB_APP_ID,

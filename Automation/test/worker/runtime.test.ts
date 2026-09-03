@@ -2,7 +2,11 @@ import { env } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeAll, expect, test } from "vitest";
 import { AutomationRunner } from "../../src/automation-runner";
-import { flushDeliveryOutbox, queueDelivery } from "../../src/delivery-outbox";
+import {
+    failExhaustedDelivery,
+    flushDeliveryOutbox,
+    queueDelivery,
+} from "../../src/delivery-outbox";
 import {
     InstallationLifecycleRunner,
     receiveInstallationWebhook,
@@ -166,6 +170,53 @@ test("uses current suspended installation truth instead of an older event action
     expect(repositories?.count).toBe(0);
     expect(repositoryReads).toBe(0);
     await expect(deliveryState("installation-stale-event")).resolves.toBe("COMPLETED");
+});
+
+test("fails every nonterminal DLQ state without overwriting terminal deliveries", async () => {
+    const now = new Date().toISOString();
+    const states = [
+        "RECEIVED",
+        "QUEUED",
+        "PROCESSING",
+        "RETRYING",
+        "COMPLETED",
+        "FAILED",
+        "IGNORED",
+    ];
+    for (const state of states) {
+        await testEnv.DB.prepare(
+            `INSERT INTO webhook_deliveries (
+                delivery_id, installation_id, event_name, event_action,
+                processing_state, error_code, received_at, state_updated_at
+             ) VALUES (?, 99, 'installation', 'created', ?, ?, ?, ?)`
+        ).bind(
+            `dlq-${state}`,
+            state,
+            state === "RETRYING" ? "TRANSIENT_GITHUB_FAILURE" : null,
+            now,
+            now
+        ).run();
+        await failExhaustedDelivery(testEnv.DB, `dlq-${state}`);
+    }
+
+    const deliveries = await testEnv.DB.prepare(
+        `SELECT delivery_id, processing_state, error_code
+         FROM webhook_deliveries WHERE delivery_id LIKE 'dlq-%'`
+    ).all<{ delivery_id: string; processing_state: string; error_code: string | null }>();
+    const result = Object.fromEntries(deliveries.results.map((delivery) => [
+        delivery.delivery_id,
+        [delivery.processing_state, delivery.error_code],
+    ]));
+
+    expect(result).toEqual({
+        "dlq-RECEIVED": ["FAILED", "RETRIES_EXHAUSTED"],
+        "dlq-QUEUED": ["FAILED", "RETRIES_EXHAUSTED"],
+        "dlq-PROCESSING": ["FAILED", "RETRIES_EXHAUSTED"],
+        "dlq-RETRYING": ["FAILED", "TRANSIENT_GITHUB_FAILURE"],
+        "dlq-COMPLETED": ["COMPLETED", null],
+        "dlq-FAILED": ["FAILED", null],
+        "dlq-IGNORED": ["IGNORED", null],
+    });
 });
 
 function queueThat(
