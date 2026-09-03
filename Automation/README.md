@@ -12,8 +12,14 @@ npm install
 cp .dev.vars.example .dev.vars
 npm run db:migrate:local
 npm run typecheck
+npm test
+npm run test:integration
 npm run build
 ```
+
+The default test command runs fast Node unit tests. `test:integration` runs the
+Worker in the local Cloudflare runtime with an isolated D1 database and applies
+all migrations before exercising it.
 
 Keep local and deployed secret values out of Wrangler variables. Local values
 belong in the ignored `.dev.vars`; deployed values are configured as Worker
