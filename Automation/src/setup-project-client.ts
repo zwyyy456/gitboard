@@ -191,10 +191,17 @@ export class SetupProjectClient {
         } catch {
             throw new SetupProjectError("TRANSIENT_GITHUB_FAILURE");
         }
-        if (response.status !== 401 && !hasProjectScope(response.headers.get("X-OAuth-Scopes"))) {
+        if (!response.ok) {
+            if (response.status === 403
+                && !isRateLimited(response.headers)
+                && !hasProjectScope(response.headers.get("X-OAuth-Scopes"))) {
+                throw new SetupProjectError("OAUTH_SCOPE_MISSING", response.status);
+            }
+            throw classifyFailure(response);
+        }
+        if (!hasProjectScope(response.headers.get("X-OAuth-Scopes"))) {
             throw new SetupProjectError("OAUTH_SCOPE_MISSING", response.status);
         }
-        if (!response.ok) throw classifyFailure(response);
         let body: unknown;
         try {
             body = await response.json();
@@ -226,16 +233,18 @@ function hasProjectScope(header: string | null): boolean {
 
 function classifyFailure(response: Response): SetupProjectError {
     if (response.status === 401) return new SetupProjectError("OAUTH_REAUTH_REQUIRED", 401);
-    if (response.status === 403
-        && (response.headers.has("Retry-After")
-            || response.headers.get("X-RateLimit-Remaining") === "0")) {
+    if (response.status === 403 && isRateLimited(response.headers)) {
         return new SetupProjectError("TRANSIENT_GITHUB_FAILURE", 403);
     }
-    if (response.status === 403) return new SetupProjectError("OAUTH_REAUTH_REQUIRED", 403);
+    if (response.status === 403) return new SetupProjectError("PROJECT_WRITE_FORBIDDEN", 403);
     if (response.status === 429 || response.status >= 500) {
         return new SetupProjectError("TRANSIENT_GITHUB_FAILURE", response.status);
     }
     return new SetupProjectError("PROJECT_API_INCOMPATIBLE", response.status);
+}
+
+function isRateLimited(headers: Headers): boolean {
+    return headers.has("Retry-After") || headers.get("X-RateLimit-Remaining") === "0";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

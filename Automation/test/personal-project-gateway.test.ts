@@ -99,6 +99,28 @@ describe("PersonalProjectGateway", () => {
         ])).rejects.toMatchObject({ code: "TRANSIENT_GITHUB_FAILURE" });
     });
 
+    test("classifies a server failure before checking the project scope", async () => {
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(
+            { message: "unavailable" },
+            { status: 503 }
+        )));
+
+        await expect(makeGateway(new StubWriter()).applyStatuses(project, [
+            assignment("ISSUE", "owner/repository", "IN_PROGRESS"),
+        ])).rejects.toMatchObject({ code: "TRANSIENT_GITHUB_FAILURE" });
+    });
+
+    test("classifies an ordinary 403 as an invalid runtime configuration", async () => {
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(projectResponse(
+            { message: "forbidden" },
+            { status: 403 }
+        )));
+
+        await expect(makeGateway(new StubWriter()).applyStatuses(project, [
+            assignment("ISSUE", "owner/repository", "IN_PROGRESS"),
+        ])).rejects.toMatchObject({ code: "PROJECT_CONFIGURATION_INVALID" });
+    });
+
     test("re-resolves once when the looked-up item was deleted", async () => {
         vi.stubGlobal("fetch", vi.fn()
             .mockResolvedValueOnce(projectResponse([item("OLD_ITEM", "ISSUE")]))

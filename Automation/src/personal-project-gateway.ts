@@ -217,11 +217,16 @@ export class PersonalProjectGateway {
         } catch {
             throw new PersonalProjectError("TRANSIENT_GITHUB_FAILURE");
         }
-        if (response.status !== 401 && !hasProjectScope(response.headers.get("X-OAuth-Scopes"))) {
-            throw new PersonalProjectError("OAUTH_SCOPE_MISSING", response.status);
-        }
         if (!response.ok) {
+            if (response.status === 403
+                && !isRateLimited(response.headers)
+                && !hasProjectScope(response.headers.get("X-OAuth-Scopes"))) {
+                throw new PersonalProjectError("OAUTH_SCOPE_MISSING", response.status);
+            }
             throw classifyRESTFailure(response);
+        }
+        if (!hasProjectScope(response.headers.get("X-OAuth-Scopes"))) {
+            throw new PersonalProjectError("OAUTH_SCOPE_MISSING", response.status);
         }
 
         let body: unknown;
@@ -310,7 +315,7 @@ function classifyRESTFailure(response: Response): PersonalProjectError {
     if (status === 403 && isRateLimited(response.headers)) {
         return new PersonalProjectError("TRANSIENT_GITHUB_FAILURE", status);
     }
-    if (status === 403) return new PersonalProjectError("OAUTH_REAUTH_REQUIRED", status);
+    if (status === 403) return new PersonalProjectError("PROJECT_CONFIGURATION_INVALID", status);
     if (status === 404) return new PersonalProjectError("PROJECT_CONFIGURATION_INVALID", status);
     if (status === 429 || status >= 500) {
         return new PersonalProjectError("TRANSIENT_GITHUB_FAILURE", status);

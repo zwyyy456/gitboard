@@ -47,6 +47,28 @@ describe("SetupProjectClient", () => {
             .rejects.toMatchObject({ code: "OAUTH_SCOPE_MISSING" });
     });
 
+    test("classifies a server failure before checking the project scope", async () => {
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(
+            { message: "unavailable" },
+            { status: 503 }
+        )));
+        const client = new SetupProjectClient(graphQL(), "2026-03-10");
+
+        await expect(client.listProjects("oauth", "octocat"))
+            .rejects.toMatchObject({ code: "TRANSIENT_GITHUB_FAILURE" });
+    });
+
+    test("classifies an ordinary 403 as missing project write access", async () => {
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(githubResponse(
+            { message: "forbidden" },
+            { status: 403 }
+        )));
+        const client = new SetupProjectClient(graphQL(), "2026-03-10");
+
+        await expect(client.listProjects("oauth", "octocat"))
+            .rejects.toMatchObject({ code: "PROJECT_WRITE_FORBIDDEN" });
+    });
+
     test("proves visibility only when REST and installation GraphQL return the same private Issue", async () => {
         vi.stubGlobal("fetch", vi.fn().mockResolvedValue(githubResponse([{
             node_id: "ITEM_NODE",
@@ -71,8 +93,10 @@ describe("SetupProjectClient", () => {
     });
 });
 
-function githubResponse(body: unknown): Response {
-    return Response.json(body, { headers: { "X-OAuth-Scopes": "project" } });
+function githubResponse(body: unknown, init: ResponseInit = {}): Response {
+    const headers = new Headers(init.headers);
+    headers.set("X-OAuth-Scopes", "project");
+    return Response.json(body, { ...init, headers });
 }
 
 function graphQL(): GraphQLRequester {
