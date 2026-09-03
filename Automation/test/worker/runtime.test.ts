@@ -3,6 +3,10 @@ import { applyD1Migrations, type D1Migration } from "cloudflare:test";
 import { beforeAll, expect, test } from "vitest";
 import { AutomationRunner } from "../../src/automation-runner";
 import { flushDeliveryOutbox, queueDelivery } from "../../src/delivery-outbox";
+import {
+    InstallationLifecycleRunner,
+    receiveInstallationWebhook,
+} from "../../src/installation-lifecycle";
 import type { DeliveryMessage } from "../../src/index";
 import type { Env } from "../../src/index";
 
@@ -84,10 +88,106 @@ test("does not run GitHub work for a terminal delivery", async () => {
     await expect(deliveryState("delivery-terminal")).resolves.toBe("COMPLETED");
 });
 
+test("persists an installation webhook before doing GitHub work", async () => {
+    await seedUser();
+    const messages: DeliveryMessage[] = [];
+    const queue = queueThat(async (message) => { messages.push(message); });
+    const body = new TextEncoder().encode(JSON.stringify({
+        action: "created",
+        installation: { id: 17, account: { id: 1, type: "User" } },
+    })).buffer;
+
+    const response = await receiveInstallationWebhook(
+        "installation",
+        "installation-ingress",
+        body,
+        environmentWith(queue)
+    );
+    const delivery = await testEnv.DB.prepare(
+        `SELECT event_name, processing_state
+         FROM webhook_deliveries WHERE delivery_id = 'installation-ingress'`
+    ).first<{ event_name: string; processing_state: string }>();
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ accepted: true });
+    expect(messages).toEqual([{ deliveryID: "installation-ingress" }]);
+    expect(delivery).toEqual({ event_name: "installation", processing_state: "QUEUED" });
+});
+
+test("uses current suspended installation truth instead of an older event action", async () => {
+    const now = new Date().toISOString();
+    await seedUser();
+    await testEnv.DB.batch([
+        testEnv.DB.prepare(
+            `INSERT INTO installations (
+                installation_id, user_id, github_account_id, status, updated_at
+             ) VALUES (27, 'user', 1, 'ACTIVE', ?)`
+        ).bind(now),
+        testEnv.DB.prepare(
+            `INSERT INTO installation_repositories (
+                installation_id, repository_id, repository_node_id, name_with_owner, updated_at
+             ) VALUES (27, 11, 'OLD_REPOSITORY', 'owner/old', ?)`
+        ).bind(now),
+        testEnv.DB.prepare(
+            `INSERT INTO webhook_deliveries (
+                delivery_id, installation_id, event_name, event_action,
+                processing_state, received_at, state_updated_at
+             ) VALUES (
+                'installation-stale-event', 27, 'installation', 'unsuspend', 'QUEUED', ?, ?
+             )`
+        ).bind(now, now),
+    ]);
+    let repositoryReads = 0;
+    const runner = new InstallationLifecycleRunner(testEnv.DB, {
+        async getInstallation() {
+            return {
+                id: 27,
+                accountID: 1,
+                accountType: "User",
+                status: "SUSPENDED" as const,
+            };
+        },
+        async listInstallationRepositories() {
+            repositoryReads += 1;
+            return [];
+        },
+    });
+
+    await expect(runner.run("installation-stale-event", 1))
+        .resolves.toEqual({ action: "ack" });
+    const installation = await testEnv.DB.prepare(
+        "SELECT status FROM installations WHERE installation_id = 27"
+    ).first<{ status: string }>();
+    const repositories = await testEnv.DB.prepare(
+        "SELECT COUNT(*) AS count FROM installation_repositories WHERE installation_id = 27"
+    ).first<{ count: number }>();
+
+    expect(installation?.status).toBe("SUSPENDED");
+    expect(repositories?.count).toBe(0);
+    expect(repositoryReads).toBe(0);
+    await expect(deliveryState("installation-stale-event")).resolves.toBe("COMPLETED");
+});
+
 function queueThat(
     send: (message: DeliveryMessage) => Promise<void>
 ): Queue<DeliveryMessage> {
     return { send } as unknown as Queue<DeliveryMessage>;
+}
+
+function environmentWith(queue: Queue<DeliveryMessage>): Env {
+    return {
+        DB: testEnv.DB,
+        AUTOMATION_QUEUE: queue,
+        GITHUB_API_VERSION: "2026-03-10",
+        GITHUB_APP_ID: "unused",
+        GITHUB_APP_PRIVATE_KEY: "unused",
+        GITHUB_OAUTH_CLIENT_ID: "unused",
+        GITHUB_OAUTH_CLIENT_SECRET: "unused",
+        GITHUB_APP_SLUG: "unused",
+        GITHUB_WEBHOOK_SECRET: "unused",
+        OAUTH_TOKEN_ENCRYPTION_KEY: "unused",
+        PUBLIC_BASE_URL: "https://example.invalid",
+    };
 }
 
 async function deliveryState(deliveryID: string): Promise<string | null> {
@@ -100,11 +200,7 @@ async function deliveryState(deliveryID: string): Promise<string | null> {
 async function seedCompletedAutomationDelivery(): Promise<void> {
     const now = new Date().toISOString();
     await testEnv.DB.batch([
-        testEnv.DB.prepare(
-            `INSERT INTO users (
-                id, github_user_node_id, github_user_database_id, github_login, created_at, updated_at
-             ) VALUES ('user', 'USER_NODE', 1, 'owner', ?, ?)`
-        ).bind(now, now),
+        userInsertion(now),
         testEnv.DB.prepare(
             `INSERT INTO oauth_credentials (
                 id, user_id, encrypted_access_token, encrypted_refresh_token,
@@ -148,4 +244,17 @@ async function seedCompletedAutomationDelivery(): Promise<void> {
              )`
         ).bind(now, now, now),
     ]);
+}
+
+async function seedUser(): Promise<void> {
+    const now = new Date().toISOString();
+    await userInsertion(now).run();
+}
+
+function userInsertion(now: string): D1PreparedStatement {
+    return testEnv.DB.prepare(
+        `INSERT OR IGNORE INTO users (
+            id, github_user_node_id, github_user_database_id, github_login, created_at, updated_at
+         ) VALUES ('user', 'USER_NODE', 1, 'owner', ?, ?)`
+    ).bind(now, now);
 }

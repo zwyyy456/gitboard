@@ -43,16 +43,14 @@ export async function receiveGitHubWebhook(request: Request, env: Env): Promise<
         return new Response(null, { status: 204 });
     }
     if (eventName === "installation" || eventName === "installation_repositories") {
-        return receiveInstallationWebhook(eventName, body, env);
+        const deliveryID = requireDeliveryID(request);
+        return receiveInstallationWebhook(eventName, deliveryID, body, env);
     }
     if (eventName !== "pull_request") {
         return Response.json({ accepted: false, reason: "unsupported_event" }, { status: 202 });
     }
 
-    const deliveryID = request.headers.get("X-GitHub-Delivery");
-    if (!deliveryID) {
-        throw new WebhookRequestError(400, "MISSING_DELIVERY_ID");
-    }
+    const deliveryID = requireDeliveryID(request);
 
     const payload = parsePullRequestWebhook(body);
     if (!pullRequestActions.has(payload.action)) {
@@ -104,6 +102,12 @@ export async function receiveGitHubWebhook(request: Request, env: Env): Promise<
     });
 
     return Response.json({ accepted: true }, { status: 202 });
+}
+
+function requireDeliveryID(request: Request): string {
+    const deliveryID = request.headers.get("X-GitHub-Delivery");
+    if (!deliveryID) throw new WebhookRequestError(400, "MISSING_DELIVERY_ID");
+    return deliveryID;
 }
 
 export async function verifyWebhookSignature(
