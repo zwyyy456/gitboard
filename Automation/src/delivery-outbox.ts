@@ -38,3 +38,19 @@ export async function flushDeliveryOutbox(
         await queueDelivery(database, queue, delivery.delivery_id);
     }
 }
+
+export async function failExhaustedDelivery(
+    database: D1Database,
+    deliveryID: string
+): Promise<void> {
+    const now = new Date().toISOString();
+    await database.prepare(
+        `UPDATE webhook_deliveries
+         SET processing_state = 'FAILED',
+             error_code = COALESCE(error_code, 'RETRIES_EXHAUSTED'),
+             completed_at = ?,
+             state_updated_at = ?
+         WHERE delivery_id = ?
+           AND processing_state NOT IN ('COMPLETED', 'FAILED', 'IGNORED')`
+    ).bind(now, now, deliveryID).run();
+}
