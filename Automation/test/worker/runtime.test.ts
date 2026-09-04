@@ -415,6 +415,28 @@ test("deleting an automation preserves objects used by an unexpired setup", asyn
     expect(counts).toEqual({ users: 1, credentials: 1, installations: 1, sessions: 1 });
 });
 
+test("deleting the final automation removes its service data and returns success", async () => {
+    const token = "management-delete-final";
+    const setup = await seedConfigurableSetup("delete-final", 123);
+    const automationID = await persistSetupCompletion(
+        testEnv.DB,
+        completionInput(setup, 1123, token)
+    );
+
+    const response = await handleManagementRequest(new Request(
+        `https://example.invalid/api/automations/${automationID}`,
+        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
+    ), environmentWith(queueThat(async () => {})));
+    const counts = await maintenanceObjectCounts("delete-final", 123);
+    const tokenRecord = await testEnv.DB.prepare(
+        "SELECT id FROM management_tokens WHERE user_id = 'user-delete-final'"
+    ).first<{ id: string }>();
+
+    expect(response.status).toBe(204);
+    expect(counts).toEqual({ users: 0, credentials: 0, installations: 0, sessions: 0 });
+    expect(tokenRecord).toBeNull();
+});
+
 function queueThat(
     send: (message: DeliveryMessage) => Promise<void>
 ): Queue<DeliveryMessage> {
