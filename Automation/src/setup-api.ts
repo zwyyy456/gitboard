@@ -1,4 +1,8 @@
-import { GitHubAppClient, GitHubAppRequestError } from "./github-app-client";
+import {
+    GitHubAppClient,
+    GitHubAppRequestError,
+    type GitHubInstallation,
+} from "./github-app-client";
 import { GitHubGraphQLClient } from "./github-graphql";
 import { replaceRepositories } from "./installation-lifecycle";
 import {
@@ -63,16 +67,16 @@ export async function handleSetupRequest(request: Request, env: Env): Promise<Re
     try {
         const url = new URL(request.url);
         if (request.method === "POST" && url.pathname === "/api/setup/sessions") {
-            return createSetupSession(request, env);
+            return await createSetupSession(request, env);
         }
         if (request.method === "GET" && /^\/setup\/[^/]+\/oauth$/.test(url.pathname)) {
-            return beginOAuth(url.pathname.split("/")[2], env);
+            return await beginOAuth(url.pathname.split("/")[2], env);
         }
         if (request.method === "GET" && url.pathname === "/oauth/callback") {
-            return finishOAuth(url, env);
+            return await finishOAuth(url, env);
         }
         if (request.method === "GET" && url.pathname === "/setup/github-app") {
-            return finishInstallation(request, url, env);
+            return await finishInstallation(request, url, env);
         }
         const setupMatch = url.pathname.match(/^\/api\/setup\/sessions\/([^/]+)(?:\/(options|project-fields|complete))?$/);
         if (setupMatch) {
@@ -81,13 +85,13 @@ export async function handleSetupRequest(request: Request, env: Env): Promise<Re
                 return Response.json(publicSession(session));
             }
             if (request.method === "GET" && setupMatch[2] === "options") {
-                return listSetupOptions(session, env);
+                return await listSetupOptions(session, env);
             }
             if (request.method === "POST" && setupMatch[2] === "project-fields") {
-                return listProjectFields(request, session, env);
+                return await listProjectFields(request, session, env);
             }
             if (request.method === "POST" && setupMatch[2] === "complete") {
-                return completeSetup(request, session, env);
+                return await completeSetup(request, session, env);
             }
         }
         return new Response("Not found", { status: 404 });
@@ -265,12 +269,27 @@ async function finishOAuth(url: URL, env: Env): Promise<Response> {
         throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
     }
 
-    const response = Response.redirect(
-        `https://github.com/apps/${encodeURIComponent(env.GITHUB_APP_SLUG)}/installations/new`,
-        302
-    );
-    response.headers.append("Set-Cookie", setupCookie(session.id, env));
-    return response;
+    const app = appClient(env);
+    const existingInstallation = await app.getUserInstallation(user.login);
+    if (existingInstallation) {
+        const callbackURL = new URL(`${publicBaseURL(env)}/setup/github-app`);
+        callbackURL.searchParams.set("installation_id", String(existingInstallation.id));
+        return new Response(null, {
+            status: 302,
+            headers: {
+                Location: callbackURL.toString(),
+                "Set-Cookie": setupCookie(session.id, env),
+            },
+        });
+    }
+
+    return new Response(null, {
+        status: 302,
+        headers: {
+            Location: `https://github.com/apps/${encodeURIComponent(env.GITHUB_APP_SLUG)}/installations/new`,
+            "Set-Cookie": setupCookie(session.id, env),
+        },
+    });
 }
 
 async function finishReauthorizationOAuth(
@@ -350,10 +369,28 @@ async function finishInstallation(request: Request, url: URL, env: Env): Promise
     }
     const session = await loadSession(env.DB, sessionID);
     requireState(session, "INSTALLATION_PENDING");
-    if (!session.user_id) throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
 
     const app = appClient(env);
     const installation = await app.getInstallation(installationID);
+    await connectInstallation(session, installation, app, env);
+
+    return new Response(setupCompleteHTML, {
+        headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Set-Cookie": `${setupCookieName}=; HttpOnly;${secureCookieAttribute(env)} SameSite=Lax; Path=/setup/github-app; Max-Age=0`,
+        },
+    });
+}
+
+async function connectInstallation(
+    session: SetupSessionRecord,
+    installation: GitHubInstallation,
+    app: GitHubAppClient,
+    env: Env
+): Promise<void> {
+    requireState(session, "INSTALLATION_PENDING");
+    if (!session.user_id) throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+
     const user = await env.DB.prepare(
         "SELECT github_user_database_id FROM users WHERE id = ?"
     ).bind(session.user_id).first<{ github_user_database_id: number }>();
@@ -362,7 +399,10 @@ async function finishInstallation(request: Request, url: URL, env: Env): Promise
         || installation.accountID !== user.github_user_database_id) {
         throw new SetupRequestError(403, "INSTALLATION_ACCOUNT_MISMATCH");
     }
-    const repositories = await app.listInstallationRepositories(installationID);
+    if (installation.status !== "ACTIVE") {
+        throw new SetupRequestError(409, "INSTALLATION_NOT_ACTIVE");
+    }
+    const repositories = await app.listInstallationRepositories(installation.id);
     const now = new Date().toISOString();
     await env.DB.prepare(
         `INSERT INTO installations (installation_id, user_id, github_account_id, status, updated_at)
@@ -372,21 +412,14 @@ async function finishInstallation(request: Request, url: URL, env: Env): Promise
             github_account_id = excluded.github_account_id,
             status = 'ACTIVE',
             updated_at = excluded.updated_at`
-    ).bind(installationID, session.user_id, installation.accountID, now).run();
-    await replaceRepositories(env.DB, installationID, repositories);
+    ).bind(installation.id, session.user_id, installation.accountID, now).run();
+    await replaceRepositories(env.DB, installation.id, repositories);
     const result = await env.DB.prepare(
         `UPDATE setup_sessions
          SET installation_id = ?, state = 'CONFIGURATION_PENDING', updated_at = ?
          WHERE id = ? AND state = 'INSTALLATION_PENDING'`
-    ).bind(installationID, now, session.id).run();
+    ).bind(installation.id, now, session.id).run();
     if (result.meta.changes !== 1) throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
-
-    return new Response(setupCompleteHTML, {
-        headers: {
-            "Content-Type": "text/html; charset=utf-8",
-            "Set-Cookie": `${setupCookieName}=; HttpOnly;${secureCookieAttribute(env)} SameSite=Lax; Path=/setup/github-app; Max-Age=0`,
-        },
-    });
 }
 
 async function listSetupOptions(session: SetupSessionRecord, env: Env): Promise<Response> {
