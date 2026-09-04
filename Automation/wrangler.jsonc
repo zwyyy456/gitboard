@@ -3,6 +3,7 @@
   "name": "gitboard-automation",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-02",
+  "preview_urls": false,
   "d1_databases": [
     {
       "binding": "DB",
