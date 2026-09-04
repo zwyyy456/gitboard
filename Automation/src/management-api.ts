@@ -30,18 +30,18 @@ export async function handleManagementRequest(request: Request, env: Env): Promi
         const identity = await authenticateManagementRequest(request, env.DB);
         const url = new URL(request.url);
         if (request.method === "GET" && url.pathname === "/api/automations") {
-            return listAutomations(identity.userID, env.DB);
+            return await listAutomations(identity.userID, env.DB);
         }
         const match = url.pathname.match(/^\/api\/automations\/([^/]+)(?:\/(reauthorization))?$/);
         if (!match) return new Response("Not found", { status: 404 });
         if (request.method === "PATCH" && !match[2]) {
-            return updateAutomation(request, identity.userID, match[1], env.DB);
+            return await updateAutomation(request, identity.userID, match[1], env.DB);
         }
         if (request.method === "DELETE" && !match[2]) {
-            return deleteAutomation(identity.userID, match[1], env.DB);
+            return await deleteAutomation(identity.userID, match[1], env.DB);
         }
         if (request.method === "POST" && match[2] === "reauthorization") {
-            return beginReauthorization(identity.userID, match[1], env);
+            return await beginReauthorization(identity.userID, match[1], env);
         }
         return new Response("Not found", { status: 404 });
     } catch (error) {
@@ -181,7 +181,7 @@ async function deleteAutomation(
                )`
         ).bind(userID, userID, userID, now),
     ]);
-    if (results[0].meta.changes !== 1) {
+    if (results[0].meta.changes < 1) {
         throw new ManagementRequestError(404, "AUTOMATION_NOT_FOUND");
     }
     return new Response(null, { status: 204 });
