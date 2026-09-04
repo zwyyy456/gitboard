@@ -71,6 +71,22 @@ describe("management API", () => {
         expect(database.batchSQL[2]).toContain("DELETE FROM installations");
         expect(database.batchSQL[3]).toContain("DELETE FROM users");
     });
+
+    test("classifies asynchronous management failures", async () => {
+        const database = fakeDatabase();
+        database.binding.batch = async () => { throw new Error("database unavailable"); };
+
+        const response = await handleManagementRequest(
+            new Request("https://automation.example/api/automations/automation-1", {
+                method: "DELETE",
+                headers: { Authorization: "Bearer management-secret" },
+            }),
+            { DB: database.binding } as Env
+        );
+
+        expect(response.status).toBe(500);
+        await expect(response.json()).resolves.toEqual({ error: "MANAGEMENT_UNAVAILABLE" });
+    });
 });
 
 function fakeDatabase(): {
