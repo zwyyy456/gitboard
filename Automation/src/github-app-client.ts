@@ -72,32 +72,17 @@ export class GitHubAppClient implements InstallationTokenProvider {
         const response = await fetch(`${githubAPI}/app/installations/${installationID}`, {
             headers: this.headers(jwt),
         });
-        if (!response.ok) {
-            throw new GitHubAppRequestError(
-                response.status,
-                isRetryable(response.status, response.headers)
-            );
-        }
-        let body: unknown;
-        try {
-            body = await response.json();
-        } catch {
-            throw new GitHubAppRequestError(502);
-        }
-        if (!isRecord(body)
-            || !isPositiveInteger(body.id)
-            || !isRecord(body.account)
-            || !isPositiveInteger(body.account.id)
-            || typeof body.account.type !== "string"
-            || (body.suspended_at !== null && typeof body.suspended_at !== "string")) {
-            throw new GitHubAppRequestError(502);
-        }
-        return {
-            id: body.id,
-            accountID: body.account.id,
-            accountType: body.account.type,
-            status: body.suspended_at === null ? "ACTIVE" : "SUSPENDED",
-        };
+        return readInstallation(response);
+    }
+
+    async getUserInstallation(username: string): Promise<GitHubInstallation | null> {
+        const jwt = await createAppJWT(this.appID, this.privateKey);
+        const response = await fetch(
+            `${githubAPI}/users/${encodeURIComponent(username)}/installation`,
+            { headers: this.headers(jwt) }
+        );
+        if (response.status === 404) return null;
+        return readInstallation(response);
     }
 
     async listInstallationRepositories(installationID: number): Promise<InstallationRepository[]> {
@@ -150,6 +135,35 @@ export class GitHubAppClient implements InstallationTokenProvider {
             "X-GitHub-Api-Version": this.apiVersion,
         };
     }
+}
+
+async function readInstallation(response: Response): Promise<GitHubInstallation> {
+    if (!response.ok) {
+        throw new GitHubAppRequestError(
+            response.status,
+            isRetryable(response.status, response.headers)
+        );
+    }
+    let body: unknown;
+    try {
+        body = await response.json();
+    } catch {
+        throw new GitHubAppRequestError(502);
+    }
+    if (!isRecord(body)
+        || !isPositiveInteger(body.id)
+        || !isRecord(body.account)
+        || !isPositiveInteger(body.account.id)
+        || typeof body.account.type !== "string"
+        || (body.suspended_at !== null && typeof body.suspended_at !== "string")) {
+        throw new GitHubAppRequestError(502);
+    }
+    return {
+        id: body.id,
+        accountID: body.account.id,
+        accountType: body.account.type,
+        status: body.suspended_at === null ? "ACTIVE" : "SUSPENDED",
+    };
 }
 
 export async function createAppJWT(
