@@ -236,19 +236,6 @@ export async function replaceRepositories(
                     ?
              FROM json_each(?)`
         ).bind(installationID, now, encodedRepositories),
-        database.prepare(
-            `UPDATE project_automations
-             SET enabled = 0,
-                 health_state = 'INSTALLATION_REPOSITORY_REMOVED',
-                 updated_at = ?
-             WHERE installation_id = ?
-               AND NOT EXISTS (
-                   SELECT 1
-                   FROM installation_repositories repository
-                   WHERE repository.installation_id = project_automations.installation_id
-                     AND repository.repository_id = project_automations.repository_id
-               )`
-        ).bind(now, installationID),
     ]);
 }
 

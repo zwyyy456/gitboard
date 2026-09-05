@@ -9,8 +9,6 @@ interface AutomationRecord {
     id: string;
     oauth_credential_id: string;
     installation_id: number;
-    repository_id: number;
-    repository_name_with_owner: string;
     project_owner_login: string;
     project_number: number;
     project_node_id: string;
@@ -22,7 +20,7 @@ interface AutomationRecord {
     delivery_received_at: string | null;
     installation_status: string;
     credential_health_state: string;
-    repository_available: number;
+    repository_count: number;
 }
 
 export async function handleManagementRequest(request: Request, env: Env): Promise<Response> {
@@ -62,8 +60,6 @@ async function listAutomations(userID: string, database: D1Database): Promise<Re
         `SELECT automation.id,
                 automation.oauth_credential_id,
                 automation.installation_id,
-                automation.repository_id,
-                automation.repository_name_with_owner,
                 automation.project_owner_login,
                 automation.project_number,
                 automation.project_node_id,
@@ -72,11 +68,9 @@ async function listAutomations(userID: string, database: D1Database): Promise<Re
                 automation.updated_at,
                 installation.status AS installation_status,
                 credential.health_state AS credential_health_state,
-                EXISTS (
-                    SELECT 1 FROM installation_repositories repository
-                    WHERE repository.installation_id = automation.installation_id
-                      AND repository.repository_id = automation.repository_id
-                ) AS repository_available,
+                (SELECT COUNT(*) FROM installation_repositories repository
+                 WHERE repository.installation_id = automation.installation_id)
+                    AS repository_count,
                 delivery.processing_state AS delivery_state,
                 delivery.error_code AS delivery_error_code,
                 delivery.received_at AS delivery_received_at
@@ -210,8 +204,6 @@ async function loadAutomation(
         `SELECT automation.id,
                 automation.oauth_credential_id,
                 automation.installation_id,
-                automation.repository_id,
-                automation.repository_name_with_owner,
                 automation.project_owner_login,
                 automation.project_number,
                 automation.project_node_id,
@@ -220,11 +212,9 @@ async function loadAutomation(
                 automation.updated_at,
                 installation.status AS installation_status,
                 credential.health_state AS credential_health_state,
-                EXISTS (
-                    SELECT 1 FROM installation_repositories repository
-                    WHERE repository.installation_id = automation.installation_id
-                      AND repository.repository_id = automation.repository_id
-                ) AS repository_available,
+                (SELECT COUNT(*) FROM installation_repositories repository
+                 WHERE repository.installation_id = automation.installation_id)
+                    AS repository_count,
                 NULL AS delivery_state,
                 NULL AS delivery_error_code,
                 NULL AS delivery_received_at
@@ -242,7 +232,7 @@ async function loadAutomation(
 function canEnable(automation: AutomationRecord): boolean {
     return automation.installation_status === "ACTIVE"
         && automation.credential_health_state === "ACTIVE"
-        && automation.repository_available === 1
+        && automation.repository_count > 0
         && (automation.health_state === "ACTIVE"
             || automation.health_state === "CONTENT_VISIBILITY_UNVERIFIED");
 }
@@ -250,11 +240,9 @@ function canEnable(automation: AutomationRecord): boolean {
 function publicAutomation(automation: AutomationRecord): Record<string, unknown> {
     return {
         id: automation.id,
-        repositoryID: automation.repository_id,
-        repositoryNameWithOwner: automation.repository_name_with_owner,
-        projectOwnerLogin: automation.project_owner_login,
-        projectNumber: automation.project_number,
-        projectNodeID: automation.project_node_id,
+        accountLogin: automation.project_owner_login,
+        repositoryCount: automation.repository_count,
+        mappingProjectNumber: automation.project_number,
         enabled: automation.enabled === 1,
         healthState: automation.health_state,
         updatedAt: automation.updated_at,

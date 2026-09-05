@@ -1,4 +1,7 @@
-import type { GraphQLRequester } from "./github-graphql";
+import {
+    GitHubGraphQLError,
+    type GraphQLRequester,
+} from "./github-graphql";
 import {
     GitHubProjectsRESTClient,
     GitHubProjectsRESTError,
@@ -17,7 +20,12 @@ export interface SetupStatusField {
     options: Array<{ id: string; name: string }>;
 }
 
-export type ContentVisibilityProbe = "VERIFIED" | "UNVERIFIED";
+interface StatusOptionDetails {
+    id: string;
+    name: string;
+    color: string;
+    description: string;
+}
 
 export type SetupProjectErrorCode =
     | "OAUTH_REAUTH_REQUIRED"
@@ -125,57 +133,67 @@ export class SetupProjectClient {
         }
     }
 
-    async probeContentVisibility(
-        oauthToken: string,
-        installationToken: string,
-        ownerLogin: string,
-        projectNumber: number,
-        repositoryNameWithOwner: string
-    ): Promise<ContentVisibilityProbe> {
-        const issueNodeIDs: string[] = [];
-        const itemsURL = githubProjectsURL(
-            `/users/${encodeURIComponent(ownerLogin)}/projectsV2/${projectNumber}/items`
-        );
-        itemsURL.searchParams.set("q", `repo:${repositoryNameWithOwner} is:issue`);
-        itemsURL.searchParams.set("per_page", "100");
-        const page = await this.requestPage(itemsURL.toString(), oauthToken);
-        for (const value of page.body) {
-            if (!isRecord(value)) throw new SetupProjectError("PROJECT_API_INCOMPATIBLE");
-            if (isRecord(value.content) && typeof value.content.node_id === "string") {
-                issueNodeIDs.push(value.content.node_id);
-            }
-        }
-        if (issueNodeIDs.length === 0) return "UNVERIFIED";
+    async ensureStatusOption(
+        accessToken: string,
+        fieldNodeID: string,
+        optionName: string
+    ): Promise<{ id: string; name: string }> {
+        try {
+            const options = await this.loadStatusOptionDetails(accessToken, fieldNodeID);
+            const existing = findStatusOption(options, optionName);
+            if (existing) return { id: existing.id, name: existing.name };
 
-        const data = await this.graphQL.request<{
-            nodes: unknown;
-        }>(installationToken, `
-            query SetupContentVisibility($issueIDs: [ID!]!) {
-                nodes(ids: $issueIDs) {
-                    ... on Issue {
-                        id
-                        repository { nameWithOwner isPrivate }
-                    }
-                }
-            }
-        `, { issueIDs: issueNodeIDs });
-        if (!Array.isArray(data.nodes)) throw new SetupProjectError("PROJECT_API_INCOMPATIBLE");
-        for (const node of data.nodes) {
-            if (node === null) continue;
-            if (!isRecord(node)
-                || typeof node.id !== "string"
-                || !isRecord(node.repository)
-                || typeof node.repository.nameWithOwner !== "string"
-                || typeof node.repository.isPrivate !== "boolean") {
+            const optionInputs: Array<{
+                id?: string;
+                name: string;
+                color: string;
+                description: string;
+            }> = options.map((option) => ({
+                id: option.id,
+                name: option.name,
+                color: option.color,
+                description: option.description,
+            }));
+            optionInputs.push({
+                name: optionName,
+                color: "ORANGE",
+                description: "",
+            });
+            const data = await this.graphQL.request<{
+                updateProjectV2Field: null | {
+                    projectV2Field: null | {
+                        id: string;
+                        options: unknown[];
+                    };
+                };
+            }>(accessToken, updateStatusFieldMutation, {
+                fieldID: fieldNodeID,
+                options: optionInputs,
+            });
+            const field = data.updateProjectV2Field?.projectV2Field;
+            if (!field || field.id !== fieldNodeID) {
                 throw new SetupProjectError("PROJECT_API_INCOMPATIBLE");
             }
-            if (node.repository.nameWithOwner === repositoryNameWithOwner
-                && node.repository.isPrivate
-                && issueNodeIDs.includes(node.id)) {
-                return "VERIFIED";
-            }
+            const updated = findStatusOption(parseStatusOptions(field.options), optionName);
+            if (!updated) throw new SetupProjectError("PROJECT_API_INCOMPATIBLE");
+            return { id: updated.id, name: updated.name };
+        } catch (error) {
+            if (error instanceof GitHubGraphQLError) throw mapGraphQLError(error);
+            throw error;
         }
-        return "UNVERIFIED";
+    }
+
+    private async loadStatusOptionDetails(
+        accessToken: string,
+        fieldNodeID: string
+    ): Promise<StatusOptionDetails[]> {
+        const data = await this.graphQL.request<{
+            node: null | { id: string; options: unknown[] };
+        }>(accessToken, statusFieldOptionsQuery, { fieldID: fieldNodeID });
+        if (!data.node || data.node.id !== fieldNodeID) {
+            throw new SetupProjectError("PROJECT_API_INCOMPATIBLE");
+        }
+        return parseStatusOptions(data.node.options);
     }
 
     private async requestPage(
@@ -193,6 +211,60 @@ export class SetupProjectClient {
     }
 }
 
+const statusFieldOptionsQuery = `
+query SetupStatusFieldOptions($fieldID: ID!) {
+  node(id: $fieldID) {
+    ... on ProjectV2SingleSelectField {
+      id
+      options { id name color description }
+    }
+  }
+}`;
+
+const updateStatusFieldMutation = `
+mutation EnsureSetupStatusOption(
+  $fieldID: ID!
+  $options: [ProjectV2SingleSelectFieldOptionInput!]!
+) {
+  updateProjectV2Field(input: {
+    fieldId: $fieldID
+    singleSelectOptions: $options
+  }) {
+    projectV2Field {
+      ... on ProjectV2SingleSelectField {
+        id
+        options { id name color description }
+      }
+    }
+  }
+}`;
+
+function parseStatusOptions(values: unknown[]): StatusOptionDetails[] {
+    return values.map((value) => {
+        if (!isRecord(value)
+            || typeof value.id !== "string"
+            || typeof value.name !== "string"
+            || typeof value.color !== "string"
+            || typeof value.description !== "string") {
+            throw new SetupProjectError("PROJECT_API_INCOMPATIBLE");
+        }
+        return {
+            id: value.id,
+            name: value.name,
+            color: value.color,
+            description: value.description,
+        };
+    });
+}
+
+function findStatusOption<T extends { name: string }>(
+    options: T[],
+    name: string
+): T | undefined {
+    return options.find((option) => option.name === name)
+        ?? options.find((option) => option.name.toLowerCase() === name.toLowerCase());
+}
+
 function mapRESTError(error: GitHubProjectsRESTError): SetupProjectError {
     switch (error.code) {
     case "AUTH_REQUIRED":
@@ -205,6 +277,20 @@ function mapRESTError(error: GitHubProjectsRESTError): SetupProjectError {
         return new SetupProjectError("TRANSIENT_GITHUB_FAILURE", error.status);
     case "NOT_FOUND":
     case "INCOMPATIBLE":
+        return new SetupProjectError("PROJECT_API_INCOMPATIBLE", error.status);
+    }
+}
+
+function mapGraphQLError(error: GitHubGraphQLError): SetupProjectError {
+    switch (error.kind) {
+    case "AUTHENTICATION":
+        return new SetupProjectError("OAUTH_REAUTH_REQUIRED", error.status);
+    case "FORBIDDEN":
+        return new SetupProjectError("PROJECT_WRITE_FORBIDDEN", error.status);
+    case "TRANSIENT":
+        return new SetupProjectError("TRANSIENT_GITHUB_FAILURE", error.status);
+    case "NOT_FOUND":
+    case "INVALID_RESPONSE":
         return new SetupProjectError("PROJECT_API_INCOMPATIBLE", error.status);
     }
 }
