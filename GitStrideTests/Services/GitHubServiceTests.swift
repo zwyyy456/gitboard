@@ -3,6 +3,51 @@ import Testing
 @testable import GitStride
 
 struct GitHubServiceTests {
+    @Test func processWritesInputAndClosesItWhileDrainingOutput() async throws {
+        let runner = ProcessGitHubCommandRunner(executableURL: URL(fileURLWithPath: "/bin/cat"))
+        let input = Data(repeating: 65, count: 256 * 1024)
+        let result = try await runner.run(arguments: [], standardInput: input)
+        #expect(result.standardOutput == input)
+    }
+
+    @Test(arguments: [3.0, 2.5, 0.0]) func numberFieldsUseJSONNumbers(_ value: Double) async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [#"{"data":{}}"#])
+        try await GitHubService(runner: runner).updateItemField(
+            projectId: "P", itemId: "I", fieldId: "F", value: .number(value)
+        )
+        let input = try #require(await runner.recordedInputs().first ?? nil)
+        let body = try #require(JSONSerialization.jsonObject(with: input) as? [String: Any])
+        let variables = try #require(body["variables"] as? [String: Any])
+        #expect(variables["number"] is String == false)
+        #expect((variables["number"] as? NSNumber)?.doubleValue == value)
+        #expect(await runner.recordedArguments() == [["api", "graphql", "--input", "-"]])
+    }
+
+    @Test(arguments: ["The project scope is required", "API rate limit exceeded", "plain failure"])
+    func processFailurePreservesGraphQLErrors(_ message: String) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let executable = directory.appendingPathComponent("gh")
+        let script = "#!/bin/sh\nprintf '%s' '{\"data\":null,\"errors\":[{\"message\":\"" + message + "\"}]}'\nprintf '%s' 'command failed' >&2\nexit 1\n"
+        try script.write(to: executable, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        let runner = ProcessGitHubCommandRunner(executableURL: executable)
+        do {
+            _ = try await GitHubService(runner: runner).fetchProjects(
+                owner: ProjectOwner(id: "U", login: "me", name: nil, kind: .user)
+            )
+            Issue.record("Expected a structured error")
+        } catch let error as GitHubError {
+            switch (message, error) {
+            case ("The project scope is required", .missingProjectScope),
+                 ("API rate limit exceeded", .rateLimited),
+                 ("plain failure", .graphQLError): break
+            default: Issue.record("Incorrect error classification")
+            }
+        }
+    }
+
     @Test func projectCatalogFollowsPagination() async throws {
         let runner = FixtureGitHubCommandRunner(responses: [
             """
@@ -923,13 +968,15 @@ struct ProjectChangeDetectorTests {
 private actor FixtureGitHubCommandRunner: GitHubCommandRunning {
     private var responses: [Data]
     private var calls: [[String]] = []
+    private var inputs: [Data?] = []
 
     init(responses: [String]) {
         self.responses = responses.map { Data($0.utf8) }
     }
 
-    func run(arguments: [String]) async throws -> GitHubCommandResult {
+    func run(arguments: [String], standardInput: Data?) async throws -> GitHubCommandResult {
         calls.append(arguments)
+        inputs.append(standardInput)
         guard responses.isEmpty == false else {
             throw FixtureError.missingResponse
         }
@@ -938,6 +985,8 @@ private actor FixtureGitHubCommandRunner: GitHubCommandRunning {
             standardError: Data()
         )
     }
+
+    func recordedInputs() -> [Data?] { inputs }
 
     func recordedArguments() -> [[String]] {
         calls
@@ -956,6 +1005,7 @@ private enum SuspendingRunnerStep: Sendable {
 private actor SuspendingGitHubCommandRunner: GitHubCommandRunning {
     private var steps: [SuspendingRunnerStep]
     private var callCount = 0
+    private var calls: [[String]] = []
     private var suspendedIDs: Set<String> = []
     private var resultWaiters: [String: CheckedContinuation<GitHubCommandResult, Never>] = [:]
     private var suspensionWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
@@ -964,9 +1014,10 @@ private actor SuspendingGitHubCommandRunner: GitHubCommandRunning {
         self.steps = steps
     }
 
-    func run(arguments: [String]) async throws -> GitHubCommandResult {
+    func run(arguments: [String], standardInput: Data?) async throws -> GitHubCommandResult {
         guard steps.isEmpty == false else { throw RunnerError.missingResponse }
         callCount += 1
+        calls.append(arguments)
 
         switch steps.removeFirst() {
         case .response(let response):

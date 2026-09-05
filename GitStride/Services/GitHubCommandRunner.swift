@@ -8,7 +8,7 @@ struct GitHubCommandResult: Sendable {
 enum GitHubCommandError: Error, LocalizedError {
     case executableNotFound
     case launchFailed(String)
-    case failed(status: Int32, message: String)
+    case failed(status: Int32, message: String, standardOutput: Data)
     case timedOut
 
     var errorDescription: String? {
@@ -17,7 +17,7 @@ enum GitHubCommandError: Error, LocalizedError {
             return "GitHub CLI (gh) was not found."
         case .launchFailed(let message):
             return "GitHub CLI could not be launched: \(message)"
-        case .failed(_, let message):
+        case .failed(_, let message, _):
             return message.isEmpty ? "GitHub CLI command failed." : message
         case .timedOut:
             return "GitHub CLI command timed out."
@@ -26,7 +26,7 @@ enum GitHubCommandError: Error, LocalizedError {
 }
 
 protocol GitHubCommandRunning: Sendable {
-    func run(arguments: [String]) async throws -> GitHubCommandResult
+    func run(arguments: [String], standardInput: Data?) async throws -> GitHubCommandResult
 }
 
 actor ProcessGitHubCommandRunner: GitHubCommandRunning {
@@ -34,21 +34,24 @@ actor ProcessGitHubCommandRunner: GitHubCommandRunning {
     private var executableURL: URL?
     private var runningProcesses: [UUID: Process] = [:]
 
-    init(timeout: Duration = .seconds(60)) {
+    init(timeout: Duration = .seconds(60), executableURL: URL? = nil) {
+        self.executableURL = executableURL
         self.timeout = timeout
     }
 
-    func run(arguments: [String]) async throws -> GitHubCommandResult {
+    func run(arguments: [String], standardInput: Data?) async throws -> GitHubCommandResult {
         let executableURL = try locateExecutable()
         let process = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
+        let inputPipe = Pipe()
         let processID = UUID()
 
         process.executableURL = executableURL
         process.arguments = arguments
         process.standardOutput = outputPipe
         process.standardError = errorPipe
+        process.standardInput = inputPipe
         runningProcesses[processID] = process
 
         let outputTask = Task.detached {
@@ -60,7 +63,7 @@ actor ProcessGitHubCommandRunner: GitHubCommandRunning {
 
         do {
             let status = try await withTaskCancellationHandler {
-                try await waitForExit(process)
+                try await waitForExit(process, input: standardInput, inputPipe: inputPipe)
             } onCancel: {
                 Task { await self.terminate(processID) }
             }
@@ -72,7 +75,8 @@ actor ProcessGitHubCommandRunner: GitHubCommandRunning {
             guard status == 0 else {
                 throw GitHubCommandError.failed(
                     status: status,
-                    message: Self.safeMessage(from: error)
+                    message: Self.safeMessage(from: error),
+                    standardOutput: output
                 )
             }
 
@@ -82,6 +86,9 @@ actor ProcessGitHubCommandRunner: GitHubCommandRunning {
             )
         } catch {
             terminate(processID)
+            try? inputPipe.fileHandleForWriting.close()
+            try? outputPipe.fileHandleForWriting.close()
+            try? errorPipe.fileHandleForWriting.close()
             runningProcesses[processID] = nil
             _ = await outputTask.value
             _ = await errorTask.value
@@ -118,43 +125,50 @@ actor ProcessGitHubCommandRunner: GitHubCommandRunning {
         return url
     }
 
-    private func waitForExit(_ process: Process) async throws -> Int32 {
-        try await withThrowingTaskGroup(of: Int32.self) { group in
+    private func waitForExit(_ process: Process, input: Data?, inputPipe: Pipe) async throws -> Int32 {
+        let (exits, continuation) = AsyncStream<Int32>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        process.terminationHandler = { process in
+            continuation.yield(process.terminationStatus)
+            continuation.finish()
+        }
+        defer {
+            process.terminationHandler = nil
+            continuation.finish()
+        }
+        try Task.checkCancellation()
+        do {
+            try process.run()
+        } catch {
+            throw GitHubCommandError.launchFailed(error.localizedDescription)
+        }
+
+        return try await withThrowingTaskGroup(of: Int32?.self) { group in
             group.addTask {
-                try await Self.launchAndWait(process)
+                for await status in exits { return status }
+                throw CancellationError()
             }
             group.addTask { [timeout] in
                 try await Task.sleep(for: timeout)
-                if process.isRunning {
-                    process.terminate()
-                }
+                if process.isRunning { process.terminate() }
                 throw GitHubCommandError.timedOut
             }
-
-            guard let status = try await group.next() else {
-                throw GitHubCommandError.launchFailed("No process result was produced.")
+            group.addTask {
+                defer { try? inputPipe.fileHandleForWriting.close() }
+                if let input {
+                    do {
+                        try inputPipe.fileHandleForWriting.write(contentsOf: input)
+                    } catch {
+                        if process.isRunning { process.terminate() }
+                        throw GitHubCommandError.launchFailed("Could not write the request to GitHub CLI.")
+                    }
+                }
+                return nil
             }
-            group.cancelAll()
-            return status
-        }
-    }
-
-    private nonisolated static func launchAndWait(_ process: Process) async throws -> Int32 {
-        try Task.checkCancellation()
-
-        return try await withCheckedThrowingContinuation { continuation in
-            process.terminationHandler = { process in
-                continuation.resume(returning: process.terminationStatus)
+            defer { group.cancelAll() }
+            while let result = try await group.next() {
+                if let status = result { return status }
             }
-
-            do {
-                try process.run()
-            } catch {
-                process.terminationHandler = nil
-                continuation.resume(
-                    throwing: GitHubCommandError.launchFailed(error.localizedDescription)
-                )
-            }
+            throw CancellationError()
         }
     }
 
