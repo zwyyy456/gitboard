@@ -41,6 +41,16 @@ enum ProjectStoreError: LocalizedError {
     }
 }
 
+struct PendingCreatedIssue: LocalizedError {
+    let projectID: String
+    let issueURL: String
+    let fields: [(ProjectField, ProjectFieldOption)]
+
+    var errorDescription: String? {
+        "The issue was created at \(issueURL), but its Project fields could not be completed. Retry to finish this issue."
+    }
+}
+
 private struct ItemDetailEntry {
     let sourceUpdatedAt: String?
     let state: ItemDetailState
@@ -49,11 +59,19 @@ private struct ItemDetailEntry {
 private struct ItemMutationKey: Hashable {
     enum Aspect: Hashable {
         case status
-        case assignee(String)
     }
 
     let projectID: String
     let itemID: String
+    let aspect: Aspect
+}
+
+private struct ContentMutationKey: Hashable {
+    enum Aspect: Hashable {
+        case assignee(String)
+        case labels
+    }
+    let contentID: String
     let aspect: Aspect
 }
 
@@ -107,6 +125,7 @@ final class ProjectStore {
     private(set) var refreshingItemReferences: Set<ItemInspectorReference> = []
     private var repositoryMilestones: [String: RepositoryMilestonesState] = [:]
     private var pendingItemMutations: Set<ItemMutationKey> = []
+    private var pendingContentMutations: Set<ContentMutationKey> = []
     private var hiddenKanbanStatusIDsByProject: [String: Set<String>]
 
     private let gitHubService: GitHubService
@@ -948,7 +967,7 @@ final class ProjectStore {
     func deleteItem(_ item: ProjectItem, from projectID: String) async throws {
         let project = try editableProject(id: projectID)
         try await gitHubService.deleteItem(projectId: project.id, itemId: item.id)
-        var updatedProject = project
+        guard var updatedProject = self.project(id: projectID) else { return }
         updatedProject.items.removeAll { $0.id == item.id }
         replaceProject(updatedProject)
         removeItemDetail(for: item)
@@ -959,7 +978,7 @@ final class ProjectStore {
     func archiveItem(_ item: ProjectItem, in projectID: String) async throws {
         let project = try editableProject(id: projectID)
         try await gitHubService.archiveItem(projectId: project.id, itemId: item.id)
-        var updatedProject = project
+        guard var updatedProject = self.project(id: projectID) else { return }
         updatedProject.items.removeAll { $0.id == item.id }
         replaceProject(updatedProject)
         removeItemDetail(for: item)
@@ -1023,90 +1042,62 @@ final class ProjectStore {
     }
 
     func addAssignee(to item: ProjectItem, in projectID: String, user: Assignee) async throws {
-        guard let url = item.url,
-              let project = project(id: projectID),
-              canEditProject(id: projectID),
-              let currentItem = project.items.first(where: { $0.id == item.id }),
-              currentItem.assignees.contains(where: { $0.login == user.login }) == false else { return }
-        let mutationKey = ItemMutationKey(
-            projectID: projectID,
-            itemID: item.id,
-            aspect: .assignee(user.login.lowercased())
-        )
-        guard pendingItemMutations.insert(mutationKey).inserted else { return }
-        defer { pendingItemMutations.remove(mutationKey) }
-
-        updateItem(projectID: projectID, itemID: item.id) { item in
-            item.assignees.append(user)
-        }
-
-        do {
-            try await gitHubService.addAssignee(issueUrl: url, userLogin: user.login)
-            lastUpdated = Date()
-            await persistCache()
-        } catch {
-            updateItem(projectID: projectID, itemID: item.id) { item in
-                item.assignees.removeAll { $0.login == user.login }
-            }
-            throw error
-        }
+        try await setAssignee(user, assigned: true, on: item, in: projectID)
     }
 
     func removeAssignee(from item: ProjectItem, in projectID: String, user: Assignee) async throws {
-        guard let url = item.url,
-              let project = project(id: projectID),
-              canEditProject(id: projectID),
-              let currentItem = project.items.first(where: { $0.id == item.id }),
-              let originalIndex = currentItem.assignees.firstIndex(where: {
-                  $0.login == user.login
-              }) else { return }
-        let mutationKey = ItemMutationKey(
-            projectID: projectID,
-            itemID: item.id,
-            aspect: .assignee(user.login.lowercased())
-        )
-        guard pendingItemMutations.insert(mutationKey).inserted else { return }
-        defer { pendingItemMutations.remove(mutationKey) }
+        try await setAssignee(user, assigned: false, on: item, in: projectID)
+    }
 
-        updateItem(projectID: projectID, itemID: item.id) { item in
-            item.assignees.removeAll { $0.login == user.login }
-        }
-
-        do {
+    private func setAssignee(
+        _ user: Assignee, assigned: Bool, on item: ProjectItem, in projectID: String
+    ) async throws {
+        guard let contentID = item.contentId, let url = item.url,
+              canEditProject(id: projectID) else { return }
+        let key = ContentMutationKey(contentID: contentID, aspect: .assignee(user.login.lowercased()))
+        guard pendingContentMutations.insert(key).inserted else { return }
+        defer { pendingContentMutations.remove(key) }
+        if assigned {
+            try await gitHubService.addAssignee(issueUrl: url, userLogin: user.login)
+        } else {
             try await gitHubService.removeAssignee(issueUrl: url, userLogin: user.login)
-            lastUpdated = Date()
-            await persistCache()
-        } catch {
-            updateItem(projectID: projectID, itemID: item.id) { item in
-                guard item.assignees.contains(where: { $0.login == user.login }) == false else {
-                    return
-                }
-                item.assignees.insert(user, at: min(originalIndex, item.assignees.count))
-            }
-            throw error
         }
+        updateContent(contentID: contentID) { item in
+            item.assignees.removeAll { $0.login.caseInsensitiveCompare(user.login) == .orderedSame }
+            if assigned { item.assignees.append(user) }
+        }
+        lastUpdated = Date()
+        await persistCache()
     }
 
     func addLabel(to item: ProjectItem, in projectID: String, name: String) async throws {
-        guard let url = item.url, canEditProject(id: projectID) else { return }
-
-        try await gitHubService.addLabel(issueUrl: url, label: name)
-        if selectedProjectId == projectID {
-            await loadProjectDetails(id: projectID)
-        } else {
-            try await refreshProjectSnapshot(id: projectID)
-        }
+        try await setLabel(name, assigned: true, on: item, in: projectID)
     }
 
     func removeLabel(from item: ProjectItem, in projectID: String, name: String) async throws {
-        guard let url = item.url, canEditProject(id: projectID) else { return }
+        try await setLabel(name, assigned: false, on: item, in: projectID)
+    }
 
-        try await gitHubService.removeLabel(issueUrl: url, label: name)
-        if selectedProjectId == projectID {
-            await loadProjectDetails(id: projectID)
+    private func setLabel(
+        _ name: String, assigned: Bool, on item: ProjectItem, in projectID: String
+    ) async throws {
+        guard let contentID = item.contentId, let url = item.url,
+              canEditProject(id: projectID) else { return }
+        let key = ContentMutationKey(contentID: contentID, aspect: .labels)
+        guard pendingContentMutations.insert(key).inserted else { return }
+        defer { pendingContentMutations.remove(key) }
+        if assigned {
+            try await gitHubService.addLabel(issueUrl: url, label: name)
         } else {
-            try await refreshProjectSnapshot(id: projectID)
+            try await gitHubService.removeLabel(issueUrl: url, label: name)
         }
+        var refreshError: Error?
+        for id in projectsContaining(contentID: contentID) {
+            do { try await refreshProjectSnapshot(id: id) }
+            catch is CancellationError { throw CancellationError() }
+            catch { refreshError = error }
+        }
+        if let refreshError { throw refreshError }
     }
 
     func createIssueAndAdd(
@@ -1143,24 +1134,30 @@ final class ProjectStore {
             labels: labels,
             assignees: assignees
         )
-        await refresh()
-        guard resolvedFields.isEmpty || selectedProject?.items.contains(where: {
-            $0.url == issueURL
-        }) == true else {
-            throw ProjectStoreError.createdIssueUnavailable
-        }
-        if let item = selectedProject?.items.first(where: { $0.url == issueURL }) {
-            for (field, option) in resolvedFields {
+        try await finishCreatedIssue(PendingCreatedIssue(
+            projectID: project.id, issueURL: issueURL, fields: resolvedFields
+        ))
+    }
+
+    func finishCreatedIssue(_ pending: PendingCreatedIssue) async throws {
+        do {
+            try await refreshProjectSnapshot(id: pending.projectID)
+            guard let item = project(id: pending.projectID)?.items.first(where: {
+                $0.url == pending.issueURL
+            }) else { throw ProjectStoreError.createdIssueUnavailable }
+            for (field, option) in pending.fields {
                 try await gitHubService.updateItemField(
-                    projectId: project.id,
-                    itemId: item.id,
-                    fieldId: field.id,
+                    projectId: pending.projectID, itemId: item.id, fieldId: field.id,
                     value: .singleSelect(optionId: option.id, name: option.name)
                 )
             }
-            if resolvedFields.isEmpty == false {
-                await refresh()
+            if !pending.fields.isEmpty {
+                try await refreshProjectSnapshot(id: pending.projectID)
             }
+        } catch {
+            // Retain the created identity even after cancellation: submitting
+            // the form again must never create a second issue.
+            throw pending
         }
     }
 
@@ -1204,6 +1201,22 @@ final class ProjectStore {
             throw ProjectStoreError.readOnlyProject
         }
         return project
+    }
+
+    private func projectsContaining(contentID: String) -> [String] {
+        projectSnapshots.values.filter { project in
+            project.items.contains { $0.contentId == contentID }
+        }.map(\.id).sorted()
+    }
+
+    private func updateContent(contentID: String, transform: (inout ProjectItem) -> Void) {
+        for id in projectsContaining(contentID: contentID) {
+            guard var project = project(id: id) else { continue }
+            for index in project.items.indices where project.items[index].contentId == contentID {
+                transform(&project.items[index])
+            }
+            replaceProject(project)
+        }
     }
 
     private func updateItem(

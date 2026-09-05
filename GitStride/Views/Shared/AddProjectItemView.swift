@@ -31,6 +31,7 @@ struct AddProjectItemView: View {
     @State private var isWorking = false
     @State private var showsMoreOptions = false
     @State private var validationMessage: String?
+    @State private var pendingCreatedIssue: PendingCreatedIssue?
     @FocusState private var focusedField: Field?
 
     init(store: ProjectStore, presentation: Presentation = .sheet) {
@@ -425,7 +426,7 @@ struct AddProjectItemView: View {
 
             switch mode {
             case .create:
-                Button(itemType == .issue ? "Create Issue" : "Create Draft", action: createItem)
+                Button(createActionTitle, action: createItem)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(createActionIsDisabled)
@@ -442,8 +443,14 @@ struct AddProjectItemView: View {
         .padding(.vertical, 14)
     }
 
+    private var createActionTitle: String {
+        if pendingCreatedIssue != nil { return "Retry Project Fields" }
+        return itemType == .issue ? "Create Issue" : "Create Draft"
+    }
+
     private var createActionIsDisabled: Bool {
-        isWorking || title.trimmed.isEmpty || (itemType == .issue && repository.trimmed.isEmpty)
+        if pendingCreatedIssue != nil { return isWorking }
+        return isWorking || title.trimmed.isEmpty || (itemType == .issue && repository.trimmed.isEmpty)
     }
 
     private var preferredSheetHeight: CGFloat {
@@ -477,7 +484,9 @@ struct AddProjectItemView: View {
         validationMessage = nil
         Task {
             do {
-                if itemType == .draft {
+                if let pendingCreatedIssue {
+                    try await store.finishCreatedIssue(pendingCreatedIssue)
+                } else if itemType == .draft {
                     try await store.createDraftIssue(
                         title: title.trimmed,
                         body: bodyText
@@ -494,6 +503,9 @@ struct AddProjectItemView: View {
                     )
                 }
                 close()
+            } catch let pending as PendingCreatedIssue {
+                pendingCreatedIssue = pending
+                validationMessage = pending.localizedDescription
             } catch is CancellationError {
             } catch {
                 validationMessage = error.localizedDescription

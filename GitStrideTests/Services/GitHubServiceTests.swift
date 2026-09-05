@@ -673,6 +673,128 @@ struct ProjectStoreTests {
         #expect(detail.bodyHTML == "Updated")
     }
 
+    @Test func concurrentDeletesKeepBothItemsRemoved() async throws {
+        let runner = SuspendingGitHubCommandRunner(steps: [
+            .suspended("first", Self.graphQLSuccessResponse),
+            .suspended("second", Self.graphQLSuccessResponse)
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        let project = try Self.twoItemProject()
+        store.setFollowedProjects([FollowedProject(project: project)])
+        store.applyMonitoredSnapshots([project])
+        let first = try #require(project.items.first)
+        let second = try #require(project.items.dropFirst().first)
+        let firstTask = Task { try await store.deleteItem(first, from: project.id) }
+        await runner.waitUntilSuspended("first")
+        let secondTask = Task { try await store.deleteItem(second, from: project.id) }
+        await runner.waitUntilSuspended("second")
+        await runner.release("first")
+        try await firstTask.value
+        await runner.release("second")
+        try await secondTask.value
+        #expect(store.project(id: project.id)?.items.contains { $0.id == first.id || $0.id == second.id } == false)
+    }
+
+    @Test func archiveKeepsAnotherItemsCompletedStatusMove() async throws {
+        let runner = SuspendingGitHubCommandRunner(steps: [
+            .suspended("archive", Self.graphQLSuccessResponse), .response(Self.graphQLSuccessResponse)
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        let project = try Self.twoItemProject()
+        store.setFollowedProjects([FollowedProject(project: project)])
+        store.applyMonitoredSnapshots([project])
+        let first = try #require(project.items.first)
+        let second = try #require(project.items.dropFirst().first)
+        let status = try #require(project.statusOptions.first)
+        let archive = Task { try await store.archiveItem(first, in: project.id) }
+        await runner.waitUntilSuspended("archive")
+        try await store.moveItem(second, toStatus: status, in: project.id)
+        await runner.release("archive")
+        try await archive.value
+        #expect(store.project(id: project.id)?.items.first { $0.id == second.id }?.statusOptionId == status.id)
+    }
+
+    @Test func createdIssueFinishesInOriginalProjectAndRetryDoesNotRecreateIt() async throws {
+        let fields = Self.mutationProjectResponses[3]
+        let items = Self.mutationProjectResponses[4]
+        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+            .suspended("create", "https://github.com/acme/app/issues/1"),
+            .response("CONTENT1"), .response(Self.graphQLSuccessResponse),
+            .response(fields), .response(items), .response(Self.graphQLFailureResponse),
+            .response(fields), .response(items), .response(Self.graphQLSuccessResponse),
+            .response(fields), .response(items)
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let creation = Task {
+            try await store.createIssueAndAdd(repository: "acme/app", title: "New", body: "",
+                                              labels: [], assignees: [], status: "Review")
+        }
+        await runner.waitUntilSuspended("create")
+        store.selectedProjectId = "P2"
+        await runner.release("create")
+        do {
+            try await creation.value
+            Issue.record("Expected field failure with a resumable issue")
+        } catch let pending as PendingCreatedIssue {
+            #expect(pending.projectID == "P1")
+            try await store.finishCreatedIssue(pending)
+        }
+        let calls = await runner.recordedArguments()
+        #expect(calls.filter { $0.starts(with: ["issue", "create"]) }.count == 1)
+        #expect(calls.filter { $0.contains("optionId=REVIEW") }.count == 2)
+        #expect(calls.filter { $0.contains("optionId=REVIEW") }.allSatisfy { $0.contains("projectId=P1") && $0.contains("itemId=ITEM1") })
+        #expect(store.selectedProjectId == "P2")
+    }
+
+    @Test func contentChangesReachEveryProjectAndKeepProjectStatusIndependent() async throws {
+        let fields = Self.mutationProjectResponses[3]
+        let items = Self.mutationProjectResponses[4].replacingOccurrences(
+            of: "\"labels\":{\"nodes\":[]}",
+            with: "\"labels\":{\"nodes\":[{\"id\":\"L1\",\"name\":\"bug\",\"color\":\"ffffff\"}]}"
+        )
+        let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [
+            "", "", fields, items, fields, items.replacingOccurrences(of: "Todo", with: "Review")
+                .replacingOccurrences(of: "TODO", with: "REVIEW")
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let first = try #require(store.project(id: "P1"))
+        var encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(first)) as? [String: Any])
+        encoded["id"] = "P2"
+        var second = try JSONDecoder().decode(Project.self, from: JSONSerialization.data(withJSONObject: encoded))
+        second.items[0].status = "Review"
+        second.items[0].statusOptionId = "REVIEW"
+        store.setFollowedProjects([FollowedProject(project: first), FollowedProject(project: second)])
+        store.applyMonitoredSnapshots([second])
+        let item = try #require(first.items.first)
+        let user = Assignee(login: "octocat", avatarUrl: "", name: nil)
+        try await store.addAssignee(to: item, in: "P1", user: user)
+        #expect(store.project(id: "P1")?.items.first?.assignees == [user])
+        #expect(store.project(id: "P2")?.items.first?.assignees == [user])
+        #expect(store.project(id: "P2")?.items.first?.status == "Review")
+        try await store.addLabel(to: item, in: "P1", name: "bug")
+        #expect(store.project(id: "P1")?.items.first?.labels.map(\.name) == ["bug"])
+        #expect(store.project(id: "P2")?.items.first?.labels.map(\.name) == ["bug"])
+        #expect(store.project(id: "P1")?.items.first?.status == "Todo")
+        #expect(store.project(id: "P2")?.items.first?.status == "Review")
+    }
+
+    private static func twoItemProject() throws -> Project {
+        var project = kanbanProject()
+        let first = detailItem(updatedAt: "2026-09-01")
+        var encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(first)) as? [String: Any])
+        encoded["id"] = "ITEM2"
+        encoded["contentId"] = "CONTENT2"
+        let second = try JSONDecoder().decode(ProjectItem.self, from: JSONSerialization.data(withJSONObject: encoded))
+        project.items = [first, second]
+        return project
+    }
+
     private func makeStore(
         runner: any GitHubCommandRunning
     ) -> (ProjectStore, @MainActor () -> Void) {
@@ -1044,6 +1166,8 @@ private actor SuspendingGitHubCommandRunner: GitHubCommandRunning {
               let response = suspendedResponses.removeValue(forKey: id) else { return }
         continuation.resume(returning: result(response))
     }
+
+    func recordedArguments() -> [[String]] { calls }
 
     func recordedCallCount() -> Int {
         callCount
