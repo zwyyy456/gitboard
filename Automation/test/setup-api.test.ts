@@ -267,7 +267,88 @@ describe("setup session", () => {
         expect(response.status).toBe(400);
         await expect(response.json()).resolves.toEqual({ error: "INVALID_OAUTH_CALLBACK" });
     });
+
+    test("accepts a legacy completion retry without a review selection", async () => {
+        const managementToken = "m".repeat(43);
+        const session = {
+            id: "optional-review-session",
+            setup_token_hash: "unused-by-fake-database",
+            user_id: "user-id",
+            oauth_credential_id: "credential-id",
+            installation_id: 9,
+            state: "COMPLETE",
+            expires_at: "2999-01-01T00:00:00.000Z",
+            purpose: "INITIAL",
+            automation_id: "automation-id",
+            management_token_id: "management-token-id",
+            github_login: "owner",
+        };
+        const completed = {
+            state: "COMPLETE",
+            automation_id: "automation-id",
+            management_token_id: "management-token-id",
+            token_hash: await sha256Base64URL(managementToken),
+            installation_id: 9,
+            project_node_id: "PROJECT",
+            project_number: 1,
+            status_field_node_id: "STATUS",
+            in_progress_option_id: "IN_PROGRESS",
+            in_review_option_id: "IN_PROGRESS",
+            done_option_id: "DONE",
+            review_status_policy: "ENSURE_IN_REVIEW",
+        };
+        const database = {
+            prepare(sql: string) {
+                const statement = {
+                    bind() {
+                        return statement;
+                    },
+                    async first() {
+                        if (sql.includes("LEFT JOIN project_automations")) return completed;
+                        if (sql.includes("FROM setup_sessions session")) return session;
+                        throw new Error(`Unexpected first query: ${sql}`);
+                    },
+                };
+                return statement;
+            },
+        } as unknown as D1Database;
+        const response = await handleSetupRequest(
+            new Request(
+                "https://automation.example/api/setup/sessions/optional-review-session/complete",
+                {
+                    method: "POST",
+                    headers: {
+                        Authorization: "Bearer setup-token",
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        projectNodeID: "PROJECT",
+                        projectNumber: 1,
+                        statusFieldNodeID: "STATUS",
+                        inProgressOptionID: "IN_PROGRESS",
+                        doneOptionID: "DONE",
+                        managementToken,
+                    }),
+                }
+            ),
+            { DB: database } as Env
+        );
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toEqual({ automationID: "automation-id" });
+    });
 });
+
+async function sha256Base64URL(value: string): Promise<string> {
+    const hash = new Uint8Array(await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(value)
+    ));
+    return btoa(String.fromCharCode(...hash))
+        .replace(/=/g, "")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_");
+}
 
 async function privateKeyPEM(): Promise<string> {
     const keyPair = await crypto.subtle.generateKey(

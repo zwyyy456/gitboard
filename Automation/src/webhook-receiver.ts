@@ -58,11 +58,14 @@ export async function receiveGitHubWebhook(request: Request, env: Env): Promise<
     }
 
     const automation = await env.DB.prepare(
-        `SELECT id
-         FROM project_automations
-         WHERE installation_id = ? AND repository_id = ? AND enabled = 1
+        `SELECT automation.id
+         FROM project_automations automation
+         JOIN installation_repositories repository
+           ON repository.installation_id = automation.installation_id
+          AND repository.repository_id = ?
+         WHERE automation.installation_id = ? AND automation.enabled = 1
          LIMIT 1`
-    ).bind(payload.installation.id, payload.repository.id).first<{ id: string }>();
+    ).bind(payload.repository.id, payload.installation.id).first<{ id: string }>();
     if (!automation) {
         return Response.json({ accepted: false, reason: "automation_not_found" }, { status: 202 });
     }

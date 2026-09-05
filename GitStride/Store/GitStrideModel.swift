@@ -17,6 +17,7 @@ final class GitStrideModel {
     private let projectMonitor = ProjectMonitor()
     private let notificationService = NotificationService.shared
     private var monitorTask: Task<Void, Never>?
+    private var automationEventTask: Task<Void, Never>?
     private var mutedProjectIDs: Set<String>
     private var snoozedItems: [String: Date]
     private var didStart = false
@@ -54,6 +55,8 @@ final class GitStrideModel {
     func start() async {
         guard didStart == false else { return }
         didStart = true
+        startAutomationEventHandling()
+        await automationSetup.loadConnection()
         if projectStore.currentUserLogin == nil {
             await projectStore.loadProjects()
         }
@@ -71,6 +74,24 @@ final class GitStrideModel {
                 return
             }
             await restartMonitoring()
+        }
+    }
+
+    private func startAutomationEventHandling() {
+        guard automationEventTask == nil else { return }
+        let events = automationSetup.projectChangeEvents
+        automationEventTask = Task { [weak self] in
+            for await _ in events {
+                guard Task.isCancelled == false, let self else { return }
+                let followedProjects = self.myWorkStore.followedProjects
+                if followedProjects.isEmpty == false {
+                    await self.projectStore.refreshFollowedProjects(followedProjects)
+                }
+                if let selectedProjectID = self.projectStore.selectedProjectId,
+                   followedProjects.contains(where: { $0.id == selectedProjectID }) == false {
+                    await self.projectStore.refresh()
+                }
+            }
         }
     }
 
