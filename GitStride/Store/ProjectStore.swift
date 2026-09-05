@@ -22,6 +22,7 @@ enum ProjectStoreError: LocalizedError {
     case noProjectSelected
     case readOnlyProject
     case itemUnavailable
+    case operationInProgress
     case missingFieldOption(field: String, option: String)
     case createdIssueUnavailable
 
@@ -31,6 +32,8 @@ enum ProjectStoreError: LocalizedError {
             "No project is selected."
         case .readOnlyProject:
             "This project is read-only."
+        case .operationInProgress:
+            "Another change to this item is still in progress."
         case .itemUnavailable:
             "This item is no longer available."
         case .missingFieldOption(let field, let option):
@@ -57,22 +60,51 @@ private struct ItemDetailEntry {
 }
 
 private struct ItemMutationKey: Hashable {
-    enum Aspect: Hashable {
-        case status
-    }
-
     let projectID: String
     let itemID: String
-    let aspect: Aspect
 }
 
-private struct ContentMutationKey: Hashable {
-    enum Aspect: Hashable {
-        case assignee(String)
-        case labels
+private struct PendingStatusMove {
+    let operationID: UUID
+    let fieldID: String
+    let status: StatusOption
+}
+
+private struct ProjectState {
+    enum Source { case catalog, cache, remote }
+    enum Load { case idle, loading, failed(String) }
+
+    let owner: ProjectOwner
+    var snapshot: Project?
+    var source: Source = .catalog
+    var load: Load = .idle
+    var latestReadID: UUID?
+    var mutationRevision: UInt64 = 0
+    var mutations: Set<UUID> = []
+    var needsRefresh = false
+    var lastRefreshedAt: Date?
+
+    var phase: ProjectContentPhase {
+        switch load {
+        case .loading: return source == .catalog ? .loading : .refreshing
+        case .failed(let message):
+            if source == .catalog { return .failed(message) }
+        case .idle: break
+        }
+        switch source {
+        case .catalog: return .summary
+        case .cache: return .cached
+        case .remote: return .loaded
+        }
     }
-    let contentID: String
-    let aspect: Aspect
+}
+
+private struct ProjectReadTicket {
+    let projectID: String
+    let requestID: UUID
+    let mutationRevision: UInt64
+    let contentRevision: UInt64
+    let followedGeneration: Int?
 }
 
 @MainActor
@@ -109,23 +141,22 @@ final class ProjectStore {
     private var catalogGeneration = 0
     private var projectGeneration = 0
     private var followedProjectsGeneration = 0
-    private var projectSnapshots: [String: Project] = [:]
+    private var projectStates: [String: ProjectState] = [:]
+    private var contentRevision: UInt64 = 0
+    private var reconciliationTasks: [String: (id: UUID, task: Task<Void, Never>)] = [:]
     private var catalogProjectIDs: [String] = []
     private var followedProjectIDs: Set<String> = []
     private var didRestoreCache = false
     private var cachedAccountLogin: String?
-    private var projectContentPhases: [String: ProjectContentPhase] = [:]
-    private var detailedProjectIDs: Set<String> = []
-    private var cachedProjectIDs: Set<String> = []
-    private var loadingProjectID: String?
-    private var projectLoadTask: Task<Project, Error>?
+    private var projectLoadTask: Task<Project?, Error>?
     private var itemDetailEntries: [String: ItemDetailEntry] = [:]
     private var itemDetailTasks: [String: Task<ProjectItemDetail, Error>] = [:]
     private var itemDetailGenerations: [String: Int] = [:]
     private(set) var refreshingItemReferences: Set<ItemInspectorReference> = []
     private var repositoryMilestones: [String: RepositoryMilestonesState] = [:]
-    private var pendingItemMutations: Set<ItemMutationKey> = []
-    private var pendingContentMutations: Set<ContentMutationKey> = []
+    private var pendingItemMutations: [ItemMutationKey: UUID] = [:]
+    private var pendingStatusMoves: [ItemMutationKey: PendingStatusMove] = [:]
+    private var pendingContentMutations: [String: UUID] = [:]
     private var hiddenKanbanStatusIDsByProject: [String: Set<String>]
 
     private let gitHubService: GitHubService
@@ -146,7 +177,7 @@ final class ProjectStore {
     }
 
     var projects: [Project] {
-        catalogProjectIDs.compactMap { projectSnapshots[$0] }
+        catalogProjectIDs.compactMap { project(id: $0) }
     }
 
     var selectedOwner: ProjectOwner? {
@@ -157,7 +188,7 @@ final class ProjectStore {
     var selectedProjectContentState: SelectedProjectContentState {
         guard let project = selectedProject else { return .none }
 
-        switch projectContentPhases[project.id] ?? .summary {
+        switch projectStates[project.id]?.phase ?? .summary {
         case .summary, .loading:
             return .loading(project)
         case .cached:
@@ -169,7 +200,7 @@ final class ProjectStore {
                 ? .empty(project, isRefreshing: false, isCached: false)
                 : .content(project, isRefreshing: false, isCached: false)
         case .refreshing:
-            let isCached = cachedProjectIDs.contains(project.id)
+            let isCached = projectStates[project.id]?.source == .cache
             return project.items.isEmpty
                 ? .empty(project, isRefreshing: true, isCached: isCached)
                 : .content(project, isRefreshing: true, isCached: isCached)
@@ -179,7 +210,7 @@ final class ProjectStore {
     }
 
     var isShowingCachedData: Bool {
-        selectedProjectId.map(cachedProjectIDs.contains) ?? false
+        selectedProjectId.flatMap { projectStates[$0]?.source } == .cache
     }
 
     var canEditSelectedProject: Bool {
@@ -187,15 +218,24 @@ final class ProjectStore {
     }
 
     func project(id: String) -> Project? {
-        projectSnapshots[id]
+        guard var project = projectStates[id]?.snapshot else { return nil }
+        for (key, move) in pendingStatusMoves where key.projectID == id {
+            guard let index = project.items.firstIndex(where: { $0.id == key.itemID }) else { continue }
+            project.items[index].status = move.status.name
+            project.items[index].statusOptionId = move.status.id
+            project.items[index].fieldValues[move.fieldID] = .singleSelect(
+                optionId: move.status.id, name: move.status.name
+            )
+        }
+        return project
     }
 
     var allProjects: [Project] {
-        Array(projectSnapshots.values)
+        projectStates.keys.compactMap { project(id: $0) }
     }
 
     func followedProject(id: String) -> Project? {
-        followedProjectIDs.contains(id) ? projectSnapshots[id] : nil
+        followedProjectIDs.contains(id) ? project(id: id) : nil
     }
 
     func item(for reference: ItemInspectorReference) -> ProjectItem? {
@@ -204,7 +244,7 @@ final class ProjectStore {
 
     func canEditProject(id: String) -> Bool {
         guard let project = project(id: id), project.viewerCanUpdate else { return false }
-        return projectContentPhases[id] == .loaded
+        return projectStates[id]?.source == .remote
     }
 
     func itemDetailState(for item: ProjectItem) -> ItemDetailState {
@@ -227,14 +267,7 @@ final class ProjectStore {
         refreshingItemReferences.insert(reference)
         defer { refreshingItemReferences.remove(reference) }
 
-        let refreshedProject = try await gitHubService.fetchProjectWithItems(
-            id: project.id,
-            owner: project.owner
-        )
-        try Task.checkCancellation()
-
-        replaceProject(refreshedProject)
-        lastUpdated = Date()
+        guard try await refreshProjectSnapshot(id: project.id) != nil else { return }
 
         if let refreshedItem = item(for: reference) {
             await loadItemDetail(for: refreshedItem, forceRefresh: true)
@@ -327,10 +360,9 @@ final class ProjectStore {
               case .loaded(let detail) = itemDetailState(for: item),
               detail.issueMetadata?.viewerCanSetMilestone == true else { return }
 
-        try await gitHubService.updateIssueMilestone(
-            issueID: contentID,
-            milestoneID: milestone?.id
-        )
+        try await performContentMutation([contentID]) {
+            try await self.gitHubService.updateIssueMilestone(issueID: contentID, milestoneID: milestone?.id)
+        }
         await loadItemDetail(for: item, forceRefresh: true)
     }
 
@@ -345,19 +377,26 @@ final class ProjectStore {
               detail.issueMetadata?.viewerCanUpdate == true else { return }
         let endpoints = kind.endpoints(issueID: issueID, relatedIssueID: target.id)
 
-        switch kind {
-        case .parent, .subIssue:
-            try await gitHubService.addSubIssue(
-                parentIssueID: endpoints.issueID,
-                subIssueID: endpoints.relatedIssueID,
-                replacingParent: kind == .parent
-            )
-        case .blockedBy, .blocking:
-            try await gitHubService.addBlockedBy(
-                issueID: endpoints.issueID,
-                blockingIssueID: endpoints.relatedIssueID
-            )
+        var affectedContentIDs: Set<String> = [issueID, target.id]
+        if kind == .parent, let previousParent = detail.issueMetadata?.parent {
+            affectedContentIDs.insert(previousParent.id)
         }
+        try await performContentMutation(affectedContentIDs) {
+            switch kind {
+            case .parent, .subIssue:
+                try await self.gitHubService.addSubIssue(
+                    parentIssueID: endpoints.issueID,
+                    subIssueID: endpoints.relatedIssueID,
+                    replacingParent: kind == .parent
+                )
+            case .blockedBy, .blocking:
+                try await self.gitHubService.addBlockedBy(
+                    issueID: endpoints.issueID,
+                    blockingIssueID: endpoints.relatedIssueID
+                )
+            }
+        }
+        try await refreshContentProjects(affectedContentIDs)
         await loadItemDetail(for: item, forceRefresh: true)
     }
 
@@ -371,18 +410,21 @@ final class ProjectStore {
               detail.issueMetadata?.viewerCanUpdate == true else { return }
         let endpoints = kind.endpoints(issueID: issueID, relatedIssueID: relatedIssue.id)
 
-        switch kind {
-        case .parent, .subIssue:
-            try await gitHubService.removeSubIssue(
-                parentIssueID: endpoints.issueID,
-                subIssueID: endpoints.relatedIssueID
-            )
-        case .blockedBy, .blocking:
-            try await gitHubService.removeBlockedBy(
-                issueID: endpoints.issueID,
-                blockingIssueID: endpoints.relatedIssueID
-            )
+        try await performContentMutation([issueID, relatedIssue.id]) {
+            switch kind {
+            case .parent, .subIssue:
+                try await self.gitHubService.removeSubIssue(
+                    parentIssueID: endpoints.issueID,
+                    subIssueID: endpoints.relatedIssueID
+                )
+            case .blockedBy, .blocking:
+                try await self.gitHubService.removeBlockedBy(
+                    issueID: endpoints.issueID,
+                    blockingIssueID: endpoints.relatedIssueID
+                )
+            }
         }
+        try await refreshContentProjects([issueID, relatedIssue.id])
         await loadItemDetail(for: item, forceRefresh: true)
     }
 
@@ -521,16 +563,20 @@ final class ProjectStore {
 
         if let cachedAccountLogin, cachedAccountLogin != account.login {
             owners = []
-            projectSnapshots = [:]
+            projectStates = [:]
+            reconciliationTasks.values.forEach { $0.task.cancel() }
+            reconciliationTasks = [:]
+            pendingStatusMoves = [:]
+            pendingItemMutations = [:]
+            pendingContentMutations = [:]
+            invalidateContentDetails(Array(itemDetailEntries.keys))
+            contentRevision += 1
             catalogProjectIDs = []
             followedProjectIDs = []
             followedProjectsGeneration += 1
             selectedOwnerId = nil
             selectedProjectId = nil
             selectedStatusFilter = nil
-            projectContentPhases = [:]
-            detailedProjectIDs = []
-            cachedProjectIDs = []
         }
         currentUserLogin = account.login
 
@@ -564,61 +610,29 @@ final class ProjectStore {
     }
 
     func loadProjectDetails(id: String) async {
-        guard let project = project(id: id) else { return }
+        guard projectStates[id] != nil else { return }
         cancelProjectLoad()
-        let generation = projectGeneration
-        let hadDetails = detailedProjectIDs.contains(id)
-        let fallbackPhase: ProjectContentPhase = if cachedProjectIDs.contains(id) {
-            .cached
-        } else if hadDetails {
-            .loaded
-        } else {
-            .summary
-        }
-
-        projectContentPhases[id] = hadDetails ? .refreshing : .loading
-        loadingProjectID = id
-        operationErrorMessage = nil
-        let task = Task {
-            try await gitHubService.fetchProjectWithItems(id: project.id, owner: project.owner)
-        }
-        projectLoadTask = task
-
-        do {
-            let detailedProject = try await withTaskCancellationHandler {
-                try await task.value
-            } onCancel: {
-                task.cancel()
-            }
-            guard generation == projectGeneration, selectedProjectId == id else { return }
-
-            replaceProject(detailedProject)
-
-            projectLoadTask = nil
-            loadingProjectID = nil
-            detailedProjectIDs.insert(id)
-            cachedProjectIDs.remove(id)
-            projectContentPhases[id] = .loaded
-            lastUpdated = Date()
-            operationErrorMessage = nil
-            await persistCache()
-        } catch is CancellationError {
-            guard generation == projectGeneration else { return }
-            projectLoadTask = nil
-            loadingProjectID = nil
-            projectContentPhases[id] = fallbackPhase
+        if let reconciliation = reconciliationTasks[id] {
+            await reconciliation.task.value
             return
-        } catch {
-            guard generation == projectGeneration, selectedProjectId == id else { return }
-            projectLoadTask = nil
-            loadingProjectID = nil
-            if hadDetails {
-                projectContentPhases[id] = fallbackPhase
-                let prefix = cachedProjectIDs.contains(id) ? "Showing cached data" : "Keeping the current project"
-                operationErrorMessage = "\(prefix) because GitHub refresh failed: \(error.localizedDescription)"
-            } else {
-                projectContentPhases[id] = .failed(error.localizedDescription)
+        }
+        let generation = projectGeneration
+        operationErrorMessage = nil
+        let task = Task { try await refreshProjectSnapshot(id: id) }
+        projectLoadTask = task
+        defer {
+            if generation == projectGeneration {
+                projectLoadTask = nil
             }
+        }
+        do {
+            _ = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: { task.cancel() }
+        } catch is CancellationError {
+        } catch {
+            guard generation == projectGeneration else { return }
+            operationErrorMessage = error.localizedDescription
         }
     }
 
@@ -659,18 +673,7 @@ final class ProjectStore {
         }
 
         do {
-            var loaded: [String: Project] = [:]
-            for reference in references {
-                try Task.checkCancellation()
-                loaded[reference.id] = try await gitHubService.fetchProjectWithItems(
-                    id: reference.id,
-                    owner: reference.owner
-                )
-            }
-            guard generation == followedProjectsGeneration else { return }
-            for project in loaded.values {
-                replaceProject(project)
-            }
+            _ = try await refreshMonitoredProjects(references)
         } catch is CancellationError {
             return
         } catch {
@@ -683,28 +686,41 @@ final class ProjectStore {
         followedProjectsGeneration += 1
         let previousIDs = followedProjectIDs
         followedProjectIDs = Set(references.map(\.id))
-        for id in previousIDs.subtracting(followedProjectIDs)
-            where catalogProjectIDs.contains(id) == false {
-            projectSnapshots[id] = nil
+        for reference in references where projectStates[reference.id] == nil {
+            projectStates[reference.id] = ProjectState(owner: reference.owner)
         }
-        let retainedProjectIDs = Set(projects.map(\.id)).union(followedProjectIDs)
-        detailedProjectIDs.formIntersection(retainedProjectIDs)
-        cachedProjectIDs.formIntersection(retainedProjectIDs)
-        projectContentPhases = projectContentPhases.filter {
-            retainedProjectIDs.contains($0.key)
+        for id in previousIDs.subtracting(followedProjectIDs)
+            where !catalogProjectIDs.contains(id) {
+            removeProject(id: id)
         }
         followedProjectsErrorMessage = nil
         isLoadingFollowedProjects = false
     }
 
-    func applyMonitoredSnapshots(_ snapshots: [Project]) {
-        for project in snapshots where followedProjectIDs.contains(project.id) {
-            replaceProject(project)
+    // nil means this cycle was superseded, not that the projects are empty.
+    func refreshMonitoredProjects(_ references: [FollowedProject]) async throws -> [Project]? {
+        let generation = followedProjectsGeneration
+        let revision = contentRevision
+        let revisions = references.map { projectStates[$0.id]?.mutationRevision }
+        var snapshots: [Project] = []
+        for reference in references {
+            try Task.checkCancellation()
+            guard generation == followedProjectsGeneration,
+                  followedProjectIDs.contains(reference.id) else { return nil }
+            if let snapshot = try await refreshProjectSnapshot(id: reference.id, followedGeneration: generation) {
+                snapshots.append(snapshot)
+            }
         }
+        guard snapshots.count == references.count,
+              generation == followedProjectsGeneration, revision == contentRevision,
+              revisions == references.map({ projectStates[$0.id]?.mutationRevision }),
+              pendingContentMutations.isEmpty,
+              references.allSatisfy({ projectStates[$0.id]?.mutations.isEmpty == true }) else { return nil }
+        return snapshots
     }
 
     func selectProject(_ project: Project) async {
-        let phase = projectContentPhases[project.id] ?? .summary
+        let phase = projectStates[project.id]?.phase ?? .summary
         guard project.id != selectedProjectId || phase != .loaded else { return }
         selectedProjectId = project.id
         selectedStatusFilter = nil
@@ -727,9 +743,9 @@ final class ProjectStore {
         do {
             let loadedProjects = try await gitHubService.fetchProjects(owner: owner)
             guard generation == catalogGeneration, selectedOwnerId == owner.id else { return }
-            let detailedProjects = Dictionary(uniqueKeysWithValues: allProjects.map { ($0.id, $0) })
+            let detailedProjects = projectStates.compactMapValues(\.snapshot)
             let mergedProjects = loadedProjects.map { project in
-                guard detailedProjectIDs.contains(project.id),
+                guard let source = projectStates[project.id]?.source, source != .catalog,
                       let detailed = detailedProjects[project.id] else {
                     return project
                 }
@@ -739,7 +755,7 @@ final class ProjectStore {
                     title: project.title,
                     number: project.number,
                     url: project.url,
-                    viewerCanUpdate: cachedProjectIDs.contains(project.id)
+                    viewerCanUpdate: projectStates[project.id]?.source == .cache
                         ? false
                         : project.viewerCanUpdate,
                     fields: detailed.fields,
@@ -748,19 +764,6 @@ final class ProjectStore {
                 )
             }
             replaceCatalog(with: mergedProjects)
-
-            let projectIDs = Set(loadedProjects.map(\.id))
-            let retainedProjectIDs = projectIDs.union(followedProjectIDs)
-            detailedProjectIDs.formIntersection(retainedProjectIDs)
-            cachedProjectIDs.formIntersection(retainedProjectIDs)
-            projectContentPhases = projectContentPhases.filter {
-                retainedProjectIDs.contains($0.key)
-            }
-            for project in projects where projectContentPhases[project.id] == nil {
-                projectContentPhases[project.id] = detailedProjectIDs.contains(project.id)
-                    ? (cachedProjectIDs.contains(project.id) ? .cached : .loaded)
-                    : .summary
-            }
 
             let selectedProject = loadedProjects.first { $0.id == selectedProjectId }
                 ?? loadedProjects.first
@@ -771,7 +774,6 @@ final class ProjectStore {
             }
 
             guard generation == catalogGeneration else { return }
-            lastUpdated = Date()
             isLoading = false
         } catch is CancellationError {
             return
@@ -801,12 +803,9 @@ final class ProjectStore {
         owners = [snapshot.owner]
         let cachedProjects = snapshot.projects.map(makeReadOnly)
         replaceCatalog(with: cachedProjects)
-        let projectIDs = Set(projects.map(\.id))
-        detailedProjectIDs = snapshot.detailedProjectIDs.intersection(projectIDs)
-        cachedProjectIDs = detailedProjectIDs
-        projectContentPhases = Dictionary(uniqueKeysWithValues: projects.map { project in
-            (project.id, detailedProjectIDs.contains(project.id) ? .cached : .summary)
-        })
+        for id in snapshot.detailedProjectIDs where projectStates[id] != nil {
+            projectStates[id]?.source = .cache
+        }
         selectedOwnerId = snapshot.owner.id
         selectedProjectId = snapshot.projects.contains { $0.id == snapshot.selectedProjectId }
             ? snapshot.selectedProjectId
@@ -830,8 +829,10 @@ final class ProjectStore {
                 ProjectCacheSnapshot(
                     accountLogin: accountLogin,
                     owner: owner,
-                    projects: projects,
-                    detailedProjectIDs: detailedProjectIDs,
+                    projects: catalogProjectIDs.compactMap { projectStates[$0]?.snapshot },
+                    detailedProjectIDs: Set(projectStates.compactMap { id, state in
+                        state.source == .catalog ? nil : id
+                    }),
                     selectedProjectId: selectedProjectId,
                     selectedStatusFilter: selectedStatusFilter
                 )
@@ -842,33 +843,103 @@ final class ProjectStore {
         }
     }
 
-    private func refreshProjectSnapshot(id: String) async throws {
-        guard let project = project(id: id) else { return }
-        let detailedProject = try await gitHubService.fetchProjectWithItems(
-            id: project.id,
-            owner: project.owner
+    @discardableResult
+    private func refreshProjectSnapshot(id: String, followedGeneration: Int? = nil) async throws -> Project? {
+        guard let state = projectStates[id] else { return nil }
+        guard state.mutations.isEmpty, pendingContentMutations.isEmpty else {
+            projectStates[id]?.needsRefresh = true
+            return nil
+        }
+        let ticket = ProjectReadTicket(
+            projectID: id, requestID: UUID(), mutationRevision: state.mutationRevision,
+            contentRevision: contentRevision, followedGeneration: followedGeneration
         )
-        replaceProject(detailedProject)
-        lastUpdated = Date()
-        await persistCache()
+        projectStates[id]?.latestReadID = ticket.requestID
+        projectStates[id]?.load = .loading
+        projectStates[id]?.needsRefresh = false
+        do {
+            let snapshot = try await gitHubService.fetchProjectWithItems(id: id, owner: state.owner)
+            try Task.checkCancellation()
+            guard canCommit(ticket) else {
+                discardRead(ticket)
+                return nil
+            }
+            projectStates[id]?.snapshot = snapshot
+            projectStates[id]?.source = .remote
+            projectStates[id]?.load = .idle
+            projectStates[id]?.lastRefreshedAt = Date()
+            lastUpdated = projectStates[id]?.lastRefreshedAt
+            await persistCache()
+            return canCommit(ticket) ? snapshot : nil
+        } catch {
+            guard canCommit(ticket) else { discardRead(ticket); return nil }
+            projectStates[id]?.load = error is CancellationError ? .idle : .failed(error.localizedDescription)
+            throw error
+        }
     }
 
-    private func replaceProject(_ project: Project) {
-        projectSnapshots[project.id] = project
-        detailedProjectIDs.insert(project.id)
-        cachedProjectIDs.remove(project.id)
-        projectContentPhases[project.id] = .loaded
+    private func canCommit(_ ticket: ProjectReadTicket) -> Bool {
+        guard let state = projectStates[ticket.projectID] else { return false }
+        return state.latestReadID == ticket.requestID
+            && state.mutationRevision == ticket.mutationRevision
+            && contentRevision == ticket.contentRevision
+            && state.mutations.isEmpty && pendingContentMutations.isEmpty
+            && (ticket.followedGeneration == nil || ticket.followedGeneration == followedProjectsGeneration)
+    }
+
+    private func discardRead(_ ticket: ProjectReadTicket) {
+        guard projectStates[ticket.projectID]?.latestReadID == ticket.requestID else { return }
+        projectStates[ticket.projectID]?.load = .idle
+        if projectStates[ticket.projectID]?.mutationRevision != ticket.mutationRevision
+            || contentRevision != ticket.contentRevision
+            || (ticket.followedGeneration != nil && ticket.followedGeneration != followedProjectsGeneration
+                && followedProjectIDs.contains(ticket.projectID)) {
+            projectStates[ticket.projectID]?.needsRefresh = true
+            scheduleReconciliation()
+        }
+    }
+
+    private func scheduleReconciliation() {
+        guard pendingContentMutations.isEmpty else { return }
+        for (id, state) in projectStates where state.needsRefresh && state.mutations.isEmpty {
+            guard reconciliationTasks[id] == nil else { continue }
+            let taskID = UUID()
+            let task = Task { [weak self] in
+                guard let self else { return }
+                defer {
+                    if self.reconciliationTasks[id]?.id == taskID {
+                        self.reconciliationTasks[id] = nil
+                        self.scheduleReconciliation()
+                    }
+                }
+                do {
+                    try Task.checkCancellation()
+                    guard self.projectStates[id]?.needsRefresh == true else { return }
+                    _ = try await self.refreshProjectSnapshot(id: id)
+                }
+                catch is CancellationError {}
+                catch { self.operationErrorMessage = error.localizedDescription }
+            }
+            reconciliationTasks[id] = (taskID, task)
+        }
+    }
+
+    private func removeProject(id: String) {
+        projectStates[id] = nil
+        pendingStatusMoves = pendingStatusMoves.filter { $0.key.projectID != id }
+        pendingItemMutations = pendingItemMutations.filter { $0.key.projectID != id }
+        reconciliationTasks.removeValue(forKey: id)?.task.cancel()
     }
 
     private func replaceCatalog(with projects: [Project]) {
         let newIDs = Set(projects.map(\.id))
-        for id in Set(catalogProjectIDs).subtracting(newIDs)
-            where followedProjectIDs.contains(id) == false {
-            projectSnapshots[id] = nil
+        for id in Set(catalogProjectIDs).subtracting(newIDs) where !followedProjectIDs.contains(id) {
+            removeProject(id: id)
         }
         catalogProjectIDs = projects.map(\.id)
         for project in projects {
-            projectSnapshots[project.id] = project
+            if projectStates[project.id] == nil { projectStates[project.id] = ProjectState(owner: project.owner) }
+            projectStates[project.id]?.snapshot = project
         }
     }
 
@@ -892,14 +963,8 @@ final class ProjectStore {
     }
 
     private func cancelProjectLoad() {
-        if let loadingProjectID {
-            projectContentPhases[loadingProjectID] = cachedProjectIDs.contains(loadingProjectID)
-                ? .cached
-                : (detailedProjectIDs.contains(loadingProjectID) ? .loaded : .summary)
-        }
         projectLoadTask?.cancel()
         projectLoadTask = nil
-        loadingProjectID = nil
         projectGeneration += 1
     }
 
@@ -919,91 +984,74 @@ final class ProjectStore {
     }
 
     func moveItem(
-        _ item: ProjectItem,
-        toStatus status: StatusOption,
-        in projectID: String
+        _ item: ProjectItem, toStatus status: StatusOption, in projectID: String
     ) async throws {
         let project = try editableProject(id: projectID)
-        guard let fieldId = project.statusField?.id,
-              let currentItem = project.items.first(where: { $0.id == item.id }) else {
+        guard let fieldID = project.statusField?.id,
+              project.items.contains(where: { $0.id == item.id }) else {
             throw ProjectStoreError.itemUnavailable
         }
-        let mutationKey = ItemMutationKey(
-            projectID: projectID,
-            itemID: item.id,
-            aspect: .status
-        )
-        guard pendingItemMutations.insert(mutationKey).inserted else { return }
-        defer { pendingItemMutations.remove(mutationKey) }
-
-        let originalStatus = currentItem.status
-        let originalStatusOptionId = currentItem.statusOptionId
-        let originalFieldValue = currentItem.fieldValues[fieldId]
-        updateItem(projectID: projectID, itemID: item.id) { item in
-            item.status = status.name
-            item.statusOptionId = status.id
-            item.fieldValues[fieldId] = .singleSelect(optionId: status.id, name: status.name)
-        }
-
-        do {
-            try await gitHubService.updateItemStatus(
-                projectId: project.id,
-                itemId: item.id,
-                fieldId: fieldId,
-                optionId: status.id
+        try await performProjectMutation(
+            projectID: projectID, itemID: item.id, optimisticStatus: (fieldID, status)
+        ) {
+            try await self.gitHubService.updateItemStatus(
+                projectId: projectID, itemId: item.id, fieldId: fieldID, optionId: status.id
             )
-            lastUpdated = Date()
-            await persistCache()
-        } catch {
-            updateItem(projectID: projectID, itemID: item.id) { item in
-                item.status = originalStatus
-                item.statusOptionId = originalStatusOptionId
-                item.fieldValues[fieldId] = originalFieldValue
+        } apply: { _ in
+            self.updateItem(projectID: projectID, itemID: item.id) { item in
+                item.status = status.name
+                item.statusOptionId = status.id
+                item.fieldValues[fieldID] = .singleSelect(optionId: status.id, name: status.name)
             }
-            throw error
         }
+        await persistCache()
     }
 
     func deleteItem(_ item: ProjectItem, from projectID: String) async throws {
-        let project = try editableProject(id: projectID)
-        try await gitHubService.deleteItem(projectId: project.id, itemId: item.id)
-        guard var updatedProject = self.project(id: projectID) else { return }
-        updatedProject.items.removeAll { $0.id == item.id }
-        replaceProject(updatedProject)
-        removeItemDetail(for: item)
-        lastUpdated = Date()
+        _ = try editableProject(id: projectID)
+        try await performProjectMutation(projectID: projectID, itemID: item.id) {
+            try await self.gitHubService.deleteItem(projectId: projectID, itemId: item.id)
+        } apply: { _ in
+            self.projectStates[projectID]?.snapshot?.items.removeAll { $0.id == item.id }
+            self.invalidateContentDetails([item.contentId].compactMap { $0 })
+        }
         await persistCache()
     }
 
     func archiveItem(_ item: ProjectItem, in projectID: String) async throws {
-        let project = try editableProject(id: projectID)
-        try await gitHubService.archiveItem(projectId: project.id, itemId: item.id)
-        guard var updatedProject = self.project(id: projectID) else { return }
-        updatedProject.items.removeAll { $0.id == item.id }
-        replaceProject(updatedProject)
-        removeItemDetail(for: item)
-        lastUpdated = Date()
+        _ = try editableProject(id: projectID)
+        try await performProjectMutation(projectID: projectID, itemID: item.id) {
+            try await self.gitHubService.archiveItem(projectId: projectID, itemId: item.id)
+        } apply: { _ in
+            self.projectStates[projectID]?.snapshot?.items.removeAll { $0.id == item.id }
+            self.invalidateContentDetails([item.contentId].compactMap { $0 })
+        }
         await persistCache()
     }
 
     func updateField(
-        on item: ProjectItem,
-        in projectID: String,
-        field: ProjectField,
-        value: ProjectFieldValue?
+        on item: ProjectItem, in projectID: String, field: ProjectField, value: ProjectFieldValue?
     ) async throws {
-        let project = try editableProject(id: projectID)
-        try await gitHubService.updateItemField(
-            projectId: project.id,
-            itemId: item.id,
-            fieldId: field.id,
-            value: value
-        )
-        if selectedProjectId == project.id {
-            await loadProjectDetails(id: project.id)
-        } else {
-            try await refreshProjectSnapshot(id: project.id)
+        _ = try editableProject(id: projectID)
+        try await performProjectMutation(projectID: projectID, itemID: item.id) {
+            try await self.gitHubService.updateItemField(
+                projectId: projectID, itemId: item.id, fieldId: field.id, value: value
+            )
+        } apply: { _ in
+            self.updateItem(projectID: projectID, itemID: item.id) { item in
+                item.fieldValues[field.id] = value
+                if self.projectStates[projectID]?.snapshot?.statusField?.id == field.id {
+                    if case .singleSelect(let id, let name) = value {
+                        item.status = name
+                        item.statusOptionId = id
+                    } else {
+                        item.status = nil
+                        item.statusOptionId = nil
+                    }
+                }
+            }
         }
+        await persistCache()
     }
 
     func moveItemToStatus(
@@ -1054,19 +1102,18 @@ final class ProjectStore {
     ) async throws {
         guard let contentID = item.contentId, let url = item.url,
               canEditProject(id: projectID) else { return }
-        let key = ContentMutationKey(contentID: contentID, aspect: .assignee(user.login.lowercased()))
-        guard pendingContentMutations.insert(key).inserted else { return }
-        defer { pendingContentMutations.remove(key) }
-        if assigned {
-            try await gitHubService.addAssignee(issueUrl: url, userLogin: user.login)
-        } else {
-            try await gitHubService.removeAssignee(issueUrl: url, userLogin: user.login)
+        try await performContentMutation([contentID]) {
+            if assigned {
+                try await self.gitHubService.addAssignee(issueUrl: url, userLogin: user.login)
+            } else {
+                try await self.gitHubService.removeAssignee(issueUrl: url, userLogin: user.login)
+            }
+        } apply: { _ in
+            self.updateContent(contentID: contentID) { item in
+                item.assignees.removeAll { $0.login.caseInsensitiveCompare(user.login) == .orderedSame }
+                if assigned { item.assignees.append(user) }
+            }
         }
-        updateContent(contentID: contentID) { item in
-            item.assignees.removeAll { $0.login.caseInsensitiveCompare(user.login) == .orderedSame }
-            if assigned { item.assignees.append(user) }
-        }
-        lastUpdated = Date()
         await persistCache()
     }
 
@@ -1083,21 +1130,14 @@ final class ProjectStore {
     ) async throws {
         guard let contentID = item.contentId, let url = item.url,
               canEditProject(id: projectID) else { return }
-        let key = ContentMutationKey(contentID: contentID, aspect: .labels)
-        guard pendingContentMutations.insert(key).inserted else { return }
-        defer { pendingContentMutations.remove(key) }
-        if assigned {
-            try await gitHubService.addLabel(issueUrl: url, label: name)
-        } else {
-            try await gitHubService.removeLabel(issueUrl: url, label: name)
+        try await performContentMutation([contentID]) {
+            if assigned {
+                try await self.gitHubService.addLabel(issueUrl: url, label: name)
+            } else {
+                try await self.gitHubService.removeLabel(issueUrl: url, label: name)
+            }
         }
-        var refreshError: Error?
-        for id in projectsContaining(contentID: contentID) {
-            do { try await refreshProjectSnapshot(id: id) }
-            catch is CancellationError { throw CancellationError() }
-            catch { refreshError = error }
-        }
-        if let refreshError { throw refreshError }
+        try await refreshContentProjects([contentID])
     }
 
     func createIssueAndAdd(
@@ -1126,14 +1166,16 @@ final class ProjectStore {
             resolvedFields.append((field, option))
         }
 
-        let issueURL = try await gitHubService.createIssueAndAdd(
-            projectId: project.id,
-            repository: repository,
-            title: title,
-            body: body,
-            labels: labels,
-            assignees: assignees
-        )
+        let issueURL = try await performProjectMutation(projectID: project.id) {
+            try await self.gitHubService.createIssueAndAdd(
+                projectId: project.id,
+                repository: repository,
+                title: title,
+                body: body,
+                labels: labels,
+                assignees: assignees
+            )
+        }
         try await finishCreatedIssue(PendingCreatedIssue(
             projectID: project.id, issueURL: issueURL, fields: resolvedFields
         ))
@@ -1145,11 +1187,13 @@ final class ProjectStore {
             guard let item = project(id: pending.projectID)?.items.first(where: {
                 $0.url == pending.issueURL
             }) else { throw ProjectStoreError.createdIssueUnavailable }
-            for (field, option) in pending.fields {
-                try await gitHubService.updateItemField(
-                    projectId: pending.projectID, itemId: item.id, fieldId: field.id,
-                    value: .singleSelect(optionId: option.id, name: option.name)
-                )
+            try await performProjectMutation(projectID: pending.projectID, itemID: item.id) {
+                for (field, option) in pending.fields {
+                    try await self.gitHubService.updateItemField(
+                        projectId: pending.projectID, itemId: item.id, fieldId: field.id,
+                        value: .singleSelect(optionId: option.id, name: option.name)
+                    )
+                }
             }
             if !pending.fields.isEmpty {
                 try await refreshProjectSnapshot(id: pending.projectID)
@@ -1163,12 +1207,10 @@ final class ProjectStore {
 
     func createDraftIssue(title: String, body: String) async throws {
         let project = try editableSelectedProject()
-        _ = try await gitHubService.createDraftIssue(
-            projectId: project.id,
-            title: title,
-            body: body
-        )
-        await refresh()
+        _ = try await performProjectMutation(projectID: project.id) {
+            try await self.gitHubService.createDraftIssue(projectId: project.id, title: title, body: body)
+        }
+        try await refreshProjectSnapshot(id: project.id)
     }
 
     func searchItems(query: String) async throws -> [GitHubItemCandidate] {
@@ -1177,14 +1219,18 @@ final class ProjectStore {
 
     func addExistingItem(url: String) async throws {
         let project = try editableSelectedProject()
-        try await gitHubService.addExistingItem(projectId: project.id, url: url)
-        await refresh()
+        try await performProjectMutation(projectID: project.id) {
+            try await self.gitHubService.addExistingItem(projectId: project.id, url: url)
+        }
+        try await refreshProjectSnapshot(id: project.id)
     }
 
     func addExistingItem(_ candidate: GitHubItemCandidate) async throws {
         let project = try editableSelectedProject()
-        try await gitHubService.addExistingItem(projectId: project.id, candidate: candidate)
-        await refresh()
+        try await performProjectMutation(projectID: project.id) {
+            try await self.gitHubService.addExistingItem(projectId: project.id, candidate: candidate)
+        }
+        try await refreshProjectSnapshot(id: project.id)
     }
 
     func clearOperationError() {
@@ -1203,19 +1249,122 @@ final class ProjectStore {
         return project
     }
 
+    private func performProjectMutation<Result>(
+        projectID: String,
+        itemID: String? = nil,
+        optimisticStatus: (String, StatusOption)? = nil,
+        operation: () async throws -> Result,
+        apply: (Result) -> Void = { _ in }
+    ) async throws -> Result {
+        guard projectStates[projectID] != nil else { throw ProjectStoreError.itemUnavailable }
+        let key = itemID.map { ItemMutationKey(projectID: projectID, itemID: $0) }
+        if let key, pendingItemMutations[key] != nil { throw ProjectStoreError.operationInProgress }
+        let operationID = UUID()
+        projectStates[projectID]?.mutations.insert(operationID)
+        projectStates[projectID]?.mutationRevision += 1
+        if let key {
+            pendingItemMutations[key] = operationID
+            if let (field, status) = optimisticStatus {
+                pendingStatusMoves[key] = PendingStatusMove(operationID: operationID, fieldID: field, status: status)
+            }
+        }
+        defer {
+            if let key, pendingItemMutations[key] == operationID {
+                pendingItemMutations[key] = nil
+                if pendingStatusMoves[key]?.operationID == operationID { pendingStatusMoves[key] = nil }
+            }
+            if projectStates[projectID]?.mutations.remove(operationID) != nil {
+                projectStates[projectID]?.mutationRevision += 1
+            }
+            scheduleReconciliation()
+        }
+        do {
+            let result = try await operation()
+            guard projectStates[projectID]?.mutations.contains(operationID) == true else { throw CancellationError() }
+            apply(result)
+            lastUpdated = Date()
+            return result
+        } catch {
+            if projectStates[projectID]?.mutations.contains(operationID) == true,
+               requiresReconciliation(error) { projectStates[projectID]?.needsRefresh = true }
+            throw error
+        }
+    }
+
+    private func performContentMutation<Result>(
+        _ contentIDs: Set<String>,
+        operation: () async throws -> Result,
+        apply: (Result) -> Void = { _ in }
+    ) async throws -> Result {
+        guard contentIDs.allSatisfy({ pendingContentMutations[$0] == nil }) else {
+            throw ProjectStoreError.operationInProgress
+        }
+        let operationID = UUID()
+        for id in contentIDs { pendingContentMutations[id] = operationID }
+        contentRevision += 1
+        invalidateContentDetails(Array(contentIDs))
+        defer {
+            let ownedIDs = contentIDs.filter { pendingContentMutations[$0] == operationID }
+            for id in ownedIDs { pendingContentMutations[id] = nil }
+            if !ownedIDs.isEmpty {
+                contentRevision += 1
+                invalidateContentDetails(Array(ownedIDs))
+            }
+            scheduleReconciliation()
+        }
+        do {
+            let result = try await operation()
+            guard contentIDs.allSatisfy({ pendingContentMutations[$0] == operationID }) else { throw CancellationError() }
+            apply(result)
+            lastUpdated = Date()
+            return result
+        } catch {
+            if contentIDs.allSatisfy({ pendingContentMutations[$0] == operationID }),
+               requiresReconciliation(error) {
+                for id in projectStates.keys { projectStates[id]?.needsRefresh = true }
+            }
+            throw error
+        }
+    }
+
+    private func requiresReconciliation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if case GitHubError.processError = error { return true }
+        return false
+    }
+
+    private func refreshContentProjects(_ contentIDs: Set<String>) async throws {
+        let ids = Set(contentIDs.flatMap { projectsContaining(contentID: $0) })
+        var failure: Error?
+        for id in ids.sorted() {
+            do { try await refreshProjectSnapshot(id: id) }
+            catch is CancellationError { throw CancellationError() }
+            catch { failure = error }
+        }
+        if let failure { throw failure }
+    }
+
+    private func invalidateContentDetails(_ contentIDs: [String]) {
+        for id in contentIDs {
+            itemDetailTasks.removeValue(forKey: id)?.cancel()
+            itemDetailEntries[id] = nil
+            itemDetailGenerations[id, default: 0] += 1
+        }
+    }
+
     private func projectsContaining(contentID: String) -> [String] {
-        projectSnapshots.values.filter { project in
+        projectStates.values.compactMap(\.snapshot).filter { project in
             project.items.contains { $0.contentId == contentID }
         }.map(\.id).sorted()
     }
 
     private func updateContent(contentID: String, transform: (inout ProjectItem) -> Void) {
         for id in projectsContaining(contentID: contentID) {
-            guard var project = project(id: id) else { continue }
+            guard var project = projectStates[id]?.snapshot else { continue }
             for index in project.items.indices where project.items[index].contentId == contentID {
                 transform(&project.items[index])
             }
-            replaceProject(project)
+            projectStates[project.id]?.snapshot = project
         }
     }
 
@@ -1224,10 +1373,10 @@ final class ProjectStore {
         itemID: String,
         transform: (inout ProjectItem) -> Void
     ) {
-        guard var project = project(id: projectID),
+        guard var project = projectStates[projectID]?.snapshot,
               let itemIndex = project.items.firstIndex(where: { $0.id == itemID }) else { return }
         transform(&project.items[itemIndex])
-        replaceProject(project)
+        projectStates[project.id]?.snapshot = project
     }
 
     private func finishItemDetailLoad(
@@ -1258,11 +1407,5 @@ final class ProjectStore {
         }
     }
 
-    private func removeItemDetail(for item: ProjectItem) {
-        guard let contentID = item.contentId else { return }
-        itemDetailTasks[contentID]?.cancel()
-        itemDetailTasks[contentID] = nil
-        itemDetailEntries[contentID] = nil
-        itemDetailGenerations[contentID, default: 0] += 1
-    }
+
 }

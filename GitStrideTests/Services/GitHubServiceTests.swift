@@ -543,7 +543,9 @@ struct ProjectStoreTests {
         await runner.waitUntilSuspended("status-move")
         let callCount = await runner.recordedCallCount()
 
-        try await store.moveItem(item, toStatus: review, in: project.id)
+        await #expect(throws: ProjectStoreError.self) {
+            try await store.moveItem(item, toStatus: review, in: project.id)
+        }
 
         #expect(await runner.recordedCallCount() == callCount)
         await runner.release("status-move")
@@ -674,15 +676,14 @@ struct ProjectStoreTests {
     }
 
     @Test func concurrentDeletesKeepBothItemsRemoved() async throws {
-        let runner = SuspendingGitHubCommandRunner(steps: [
+        let runner = SuspendingGitHubCommandRunner(steps: try Self.twoItemResponses().map { .response($0) } + [
             .suspended("first", Self.graphQLSuccessResponse),
             .suspended("second", Self.graphQLSuccessResponse)
         ])
         let (store, cleanup) = makeStore(runner: runner)
         defer { cleanup() }
-        let project = try Self.twoItemProject()
-        store.setFollowedProjects([FollowedProject(project: project)])
-        store.applyMonitoredSnapshots([project])
+        await store.loadProjects()
+        let project = try #require(store.selectedProject)
         let first = try #require(project.items.first)
         let second = try #require(project.items.dropFirst().first)
         let firstTask = Task { try await store.deleteItem(first, from: project.id) }
@@ -697,14 +698,13 @@ struct ProjectStoreTests {
     }
 
     @Test func archiveKeepsAnotherItemsCompletedStatusMove() async throws {
-        let runner = SuspendingGitHubCommandRunner(steps: [
+        let runner = SuspendingGitHubCommandRunner(steps: try Self.twoItemResponses().map { .response($0) } + [
             .suspended("archive", Self.graphQLSuccessResponse), .response(Self.graphQLSuccessResponse)
         ])
         let (store, cleanup) = makeStore(runner: runner)
         defer { cleanup() }
-        let project = try Self.twoItemProject()
-        store.setFollowedProjects([FollowedProject(project: project)])
-        store.applyMonitoredSnapshots([project])
+        await store.loadProjects()
+        let project = try #require(store.selectedProject)
         let first = try #require(project.items.first)
         let second = try #require(project.items.dropFirst().first)
         let status = try #require(project.statusOptions.first)
@@ -757,6 +757,9 @@ struct ProjectStoreTests {
             with: "\"labels\":{\"nodes\":[{\"id\":\"L1\",\"name\":\"bug\",\"color\":\"ffffff\"}]}"
         )
         let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [
+            fields, Self.mutationProjectResponses[4], fields,
+            Self.mutationProjectResponses[4].replacingOccurrences(of: "Todo", with: "Review")
+                .replacingOccurrences(of: "TODO", with: "REVIEW"),
             "", "", fields, items, fields, items.replacingOccurrences(of: "Todo", with: "Review")
                 .replacingOccurrences(of: "TODO", with: "REVIEW")
         ])
@@ -769,8 +772,7 @@ struct ProjectStoreTests {
         var second = try JSONDecoder().decode(Project.self, from: JSONSerialization.data(withJSONObject: encoded))
         second.items[0].status = "Review"
         second.items[0].statusOptionId = "REVIEW"
-        store.setFollowedProjects([FollowedProject(project: first), FollowedProject(project: second)])
-        store.applyMonitoredSnapshots([second])
+        await store.refreshFollowedProjects([FollowedProject(project: first), FollowedProject(project: second)])
         let item = try #require(first.items.first)
         let user = Assignee(login: "octocat", avatarUrl: "", name: nil)
         try await store.addAssignee(to: item, in: "P1", user: user)
@@ -784,15 +786,221 @@ struct ProjectStoreTests {
         #expect(store.project(id: "P2")?.items.first?.status == "Review")
     }
 
-    private static func twoItemProject() throws -> Project {
-        var project = kanbanProject()
-        let first = detailItem(updatedAt: "2026-09-01")
-        var encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(first)) as? [String: Any])
-        encoded["id"] = "ITEM2"
-        encoded["contentId"] = "CONTENT2"
-        let second = try JSONDecoder().decode(ProjectItem.self, from: JSONSerialization.data(withJSONObject: encoded))
-        project.items = [first, second]
-        return project
+    @Test func staleRefreshCannotRestoreADeletedItemAndCoalescesReconciliation() async throws {
+        let fields = Self.mutationProjectResponses[3]
+        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+            .suspended("old-read", fields), .response(Self.graphQLSuccessResponse),
+            .response(Self.mutationProjectResponses[4]),
+            .suspended("reconcile", fields), .response(Self.emptyItemsResponse)
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let project = try #require(store.selectedProject)
+        let item = try #require(project.items.first)
+        let refresh = Task { await store.refresh() }
+        await runner.waitUntilSuspended("old-read")
+        try await store.deleteItem(item, from: project.id)
+        await runner.release("old-read")
+        await refresh.value
+        await runner.waitUntilSuspended("reconcile")
+        #expect(store.project(id: project.id)?.items.isEmpty == true)
+        let release = Task { await runner.release("reconcile") }
+        await store.refresh()
+        await release.value
+        #expect(store.project(id: project.id)?.items.isEmpty == true)
+        #expect(await runner.recordedCallCount() == 10)
+    }
+
+    @Test func supersededFailureCannotClearANewerLoadingState() async throws {
+        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+            .suspended("old-read", Self.graphQLFailureResponse),
+            .suspended("new-read", Self.mutationProjectResponses[3]), .response(Self.emptyItemsResponse)
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let project = try #require(store.selectedProject)
+        let references = [FollowedProject(project: project)]
+        store.setFollowedProjects(references)
+        let old = Task { try await store.refreshMonitoredProjects(references) }
+        await runner.waitUntilSuspended("old-read")
+        let new = Task { await store.refresh() }
+        await runner.waitUntilSuspended("new-read")
+        await runner.release("old-read")
+        #expect(try await old.value == nil)
+        guard case .content(_, let refreshing, _) = store.selectedProjectContentState else {
+            Issue.record("Expected the new request to retain its loading state")
+            await runner.release("new-read")
+            await new.value
+            return
+        }
+        #expect(refreshing)
+        await runner.release("new-read")
+        await new.value
+        #expect(store.selectedProject?.items.isEmpty == true)
+    }
+
+    @Test func contentMutationInvalidatesAProjectWhoseMembershipWasNotLoadedYet() async throws {
+        let fields = Self.mutationProjectResponses[3]
+        let updatedItems = Self.mutationProjectResponses[4].replacingOccurrences(
+            of: "\"assignees\":{\"nodes\":[]}",
+            with: "\"assignees\":{\"nodes\":[{\"login\":\"octocat\",\"avatarUrl\":\"\",\"name\":null}]}"
+        )
+        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+            .suspended("new-project", fields), .response(""),
+            .response(Self.mutationProjectResponses[4]),
+            .suspended("reconcile", fields), .response(updatedItems)
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let first = try #require(store.selectedProject)
+        let second = Project(id: "P2", owner: first.owner, title: "Two", number: 2, url: "", viewerCanUpdate: true)
+        store.setFollowedProjects([FollowedProject(project: first), FollowedProject(project: second)])
+        let loading = Task { await store.loadProjectDetails(id: "P2") }
+        await runner.waitUntilSuspended("new-project")
+        let item = try #require(first.items.first)
+        let user = Assignee(login: "octocat", avatarUrl: "", name: nil)
+        try await store.addAssignee(to: item, in: first.id, user: user)
+        await runner.release("new-project")
+        await loading.value
+        await runner.waitUntilSuspended("reconcile")
+        #expect(store.project(id: "P2") == nil)
+        let release = Task { await runner.release("reconcile") }
+        await store.loadProjectDetails(id: "P2")
+        await release.value
+        #expect(store.project(id: "P2")?.items.first?.assignees == [user])
+    }
+
+    @Test func optimisticStatusIsSharedButNeverCachedAndConflictsWithFieldEdits() async throws {
+        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+            .suspended("status", Self.graphQLFailureResponse), .response("")
+        ])
+        let identifier = "GitStrideTests.Optimistic.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: identifier))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(identifier)
+        let cache = ProjectCache(fileURL: url)
+        defer {
+            defaults.removePersistentDomain(forName: identifier)
+            try? FileManager.default.removeItem(at: url)
+        }
+        let store = ProjectStore(gitHubService: GitHubService(runner: runner), projectCache: cache, defaults: defaults)
+        await store.loadProjects()
+        let project = try #require(store.selectedProject)
+        let item = try #require(project.items.first)
+        let field = try #require(project.fields.first)
+        let review = try #require(project.statusOptions.first { $0.id == "REVIEW" })
+        store.setFollowedProjects([FollowedProject(project: project)])
+        let moving = Task { try await store.moveItem(item, toStatus: review, in: project.id) }
+        await runner.waitUntilSuspended("status")
+        #expect(store.selectedProject?.items.first?.status == "Review")
+        #expect(store.allProjects.first?.items.first?.status == "Review")
+        #expect(store.followedProject(id: project.id)?.items.first?.status == "Review")
+        await #expect(throws: ProjectStoreError.self) {
+            try await store.updateField(on: item, in: project.id, field: field,
+                                        value: .singleSelect(optionId: "TODO", name: "Todo"))
+        }
+        let user = Assignee(login: "octocat", avatarUrl: "", name: nil)
+        try await store.addAssignee(to: item, in: project.id, user: user)
+        let snapshot = try #require(try await cache.load())
+        #expect(snapshot.projects.first?.items.first?.status == "Todo")
+        #expect(snapshot.projects.first?.items.first?.assignees == [user])
+        await runner.release("status")
+        await #expect(throws: GitHubError.self) { try await moving.value }
+        #expect(store.selectedProject?.items.first?.status == "Todo")
+        #expect(store.selectedProject?.items.first?.assignees == [user])
+    }
+
+    @Test func monitorKeepsItsBaselineAcrossASupersededCycle() async throws {
+        var project = Self.kanbanProject()
+        var item = Self.detailItem(updatedAt: "2026-09-01")
+        item.status = "Todo"
+        project.items = [item]
+        var changed = project
+        changed.items[0].status = "Review"
+        let source = MonitorSnapshotSource(cycles: [[project], nil, [changed]])
+        let monitor = ProjectMonitor()
+        let stream = await monitor.events(
+            currentUserLogin: "me",
+            policy: MonitoringPolicy(interval: .zero, quietStartHour: 0, quietEndHour: 0),
+            readSnapshots: { try await source.next() }
+        )
+        var changes: [ProjectChange] = []
+        for await event in stream {
+            if case .change(let change) = event { changes.append(change) }
+        }
+        #expect(changes.count == 1)
+        #expect(changes.first?.itemID == item.id)
+    }
+
+    @Test func removedAndRefollowedProjectRejectsItsPreviousRead() async throws {
+        let fields = Self.mutationProjectResponses[3]
+        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+            .suspended("old-membership", fields), .suspended("new-membership", fields),
+            .response(Self.mutationProjectResponses[4]), .response(Self.emptyItemsResponse)
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let first = try #require(store.selectedProject)
+        let second = Project(id: "P2", owner: first.owner, title: "Two", number: 2, url: "", viewerCanUpdate: true)
+        let reference = FollowedProject(project: second)
+        store.setFollowedProjects([reference])
+        let old = Task { try await store.refreshMonitoredProjects([reference]) }
+        await runner.waitUntilSuspended("old-membership")
+        store.setFollowedProjects([])
+        store.setFollowedProjects([reference])
+        let new = Task { await store.loadProjectDetails(id: "P2") }
+        await runner.waitUntilSuspended("new-membership")
+        await runner.release("old-membership")
+        #expect(try await old.value == nil)
+        #expect(store.project(id: "P2") == nil)
+        await runner.release("new-membership")
+        await new.value
+        #expect(store.project(id: "P2")?.items.isEmpty == true)
+    }
+
+    @Test func contentMutationInvalidatesAnInFlightDetailRead() async throws {
+        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+            .suspended("old-detail", Self.itemDetailResponse(body: "Old")), .response(""),
+            .response(Self.itemDetailResponse(body: "Updated"))
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let project = try #require(store.selectedProject)
+        let item = try #require(project.items.first)
+        let loading = Task { await store.loadItemDetail(for: item) }
+        await runner.waitUntilSuspended("old-detail")
+        try await store.addAssignee(to: item, in: project.id, user: Assignee(login: "me", avatarUrl: "", name: nil))
+        await runner.release("old-detail")
+        await loading.value
+        #expect(store.itemDetailState(for: item) == .idle)
+        await store.loadItemDetail(for: item)
+        guard case .loaded(let detail) = store.itemDetailState(for: item) else {
+            Issue.record("Expected details to be fetched after content mutation")
+            return
+        }
+        #expect(detail.bodyHTML == "Updated")
+    }
+
+    private static func twoItemResponses() throws -> [String] {
+        var responses = mutationProjectResponses
+        var body = try #require(JSONSerialization.jsonObject(with: Data(responses[4].utf8)) as? [String: Any])
+        var data = try #require(body["data"] as? [String: Any])
+        var node = try #require(data["node"] as? [String: Any])
+        var items = try #require(node["items"] as? [String: Any])
+        var nodes = try #require(items["nodes"] as? [[String: Any]])
+        var second = nodes[0]
+        second["id"] = "ITEM2"
+        nodes.append(second)
+        items["nodes"] = nodes
+        node["items"] = items
+        data["node"] = node
+        body["data"] = data
+        responses[4] = String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
+        return responses
     }
 
     private func makeStore(
@@ -1181,5 +1389,14 @@ private actor SuspendingGitHubCommandRunner: GitHubCommandRunning {
 
     private enum RunnerError: Error {
         case missingResponse
+    }
+}
+
+private actor MonitorSnapshotSource {
+    private var cycles: [[Project]?]
+    init(cycles: [[Project]?]) { self.cycles = cycles }
+    func next() throws -> [Project]? {
+        guard !cycles.isEmpty else { throw GitHubError.rateLimited(nil) }
+        return cycles.removeFirst()
     }
 }

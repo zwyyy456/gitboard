@@ -263,9 +263,11 @@ final class GitStrideModel {
             quietEndHour: quietEndHour
         )
         let events = await projectMonitor.events(
-            for: projects,
             currentUserLogin: login,
-            policy: policy
+            policy: policy,
+            readSnapshots: { [projectStore] in
+                try await projectStore.refreshMonitoredProjects(projects)
+            }
         )
         monitoringStatus = "Monitoring \(projects.count) Project\(projects.count == 1 ? "" : "s")."
         monitorTask = Task { [weak self] in
@@ -279,8 +281,6 @@ final class GitStrideModel {
     private func handleMonitorEvent(_ event: ProjectMonitorEvent) async {
         do {
             switch event {
-            case .snapshots(let projects):
-                projectStore.applyMonitoredSnapshots(projects)
             case .change(let change):
                 guard shouldNotify(change) else { return }
                 try await notificationService.send(change)

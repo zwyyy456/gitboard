@@ -63,7 +63,6 @@ struct MonitoringPolicy: Sendable {
 }
 
 enum ProjectMonitorEvent: Sendable {
-    case snapshots([Project])
     case change(ProjectChange)
     case digest([ProjectChange])
     case rateLimited(String?)
