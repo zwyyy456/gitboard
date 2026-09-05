@@ -809,17 +809,19 @@ actor GitHubService {
             guard let value = variables[key] else { continue }
             arguments += ["-f", "\(key)=\(value)"]
         }
-        for key in numberVariables.keys.sorted() {
-            guard let value = numberVariables[key] else { continue }
-            arguments += ["-F", "\(key)=\(value)"]
+        var input: Data?
+        if !numberVariables.isEmpty {
+            var values: [String: Any] = variables
+            for (key, value) in numberVariables { values[key] = value }
+            input = try JSONSerialization.data(withJSONObject: ["query": query, "variables": values])
+            arguments = ["api", "graphql", "--input", "-"]
         }
 
-        let result = try await run(arguments)
+        let result = try await run(arguments, standardInput: input)
         do {
+            let issues = try decoder.decode(GraphQLErrorResponse.self, from: result.standardOutput)
+            if let errors = issues.errors, !errors.isEmpty { throw classifyGraphQLErrors(errors) }
             let envelope = try decoder.decode(GraphQLEnvelope<Payload>.self, from: result.standardOutput)
-            if let errors = envelope.errors, errors.isEmpty == false {
-                throw classifyGraphQLErrors(errors)
-            }
             guard let payload = envelope.data else {
                 throw GitHubError.decodingError("GitHub returned no data.")
             }
@@ -831,14 +833,20 @@ actor GitHubService {
         }
     }
 
-    private func run(_ arguments: [String]) async throws -> GitHubCommandResult {
+    private func run(_ arguments: [String], standardInput: Data? = nil) async throws -> GitHubCommandResult {
         do {
-            return try await runner.run(arguments: arguments)
+            return try await runner.run(arguments: arguments, standardInput: standardInput)
         } catch is CancellationError {
             throw CancellationError()
         } catch GitHubCommandError.executableNotFound {
             throw GitHubError.ghCLINotFound
         } catch let error as GitHubCommandError {
+            if arguments.starts(with: ["api", "graphql"]),
+               case .failed(_, _, let output) = error,
+               let response = try? decoder.decode(GraphQLErrorResponse.self, from: output),
+               let errors = response.errors, !errors.isEmpty {
+                throw classifyGraphQLErrors(errors)
+            }
             let message = error.localizedDescription
             let lowercased = message.lowercased()
             if lowercased.contains("authentication") || lowercased.contains("auth login") {
@@ -904,7 +912,6 @@ actor GitHubService {
 
 private struct GraphQLEnvelope<Payload: Decodable>: Decodable {
     let data: Payload?
-    let errors: [GraphQLIssue]?
 }
 
 private struct GraphQLIssue: Decodable {
@@ -1306,4 +1313,8 @@ private struct DraftIssuePayload: Decodable {
     struct ProjectItemResult: Decodable {
         let id: String
     }
+}
+
+private struct GraphQLErrorResponse: Decodable {
+    let errors: [GraphQLIssue]?
 }
