@@ -102,7 +102,9 @@ export default {
             ),
             new DurableObjectAutomationChangeNotifier(env.AUTOMATION_EVENTS)
         );
-        const installationRunner = new InstallationLifecycleRunner(env.DB, appClient);
+        const installationRunner = new InstallationLifecycleRunner(
+            env.DB, appClient, new DurableObjectAutomationChangeNotifier(env.AUTOMATION_EVENTS)
+        );
 
         for (const message of batch.messages) {
             if (!isDeliveryMessage(message.body)) {
