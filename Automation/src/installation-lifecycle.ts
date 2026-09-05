@@ -1,3 +1,4 @@
+import type { AutomationChangeNotifier } from "./automation-events";
 import type { RunnerDecision } from "./automation-runner";
 import { queueDelivery } from "./delivery-outbox";
 import {
@@ -80,7 +81,8 @@ export async function receiveInstallationWebhook(
 export class InstallationLifecycleRunner {
     constructor(
         private readonly database: D1Database,
-        private readonly client: InstallationClient
+        private readonly client: InstallationClient,
+        private readonly changeNotifier: AutomationChangeNotifier
     ) {}
 
     async run(deliveryID: string, attempt: number): Promise<RunnerDecision> {
@@ -106,6 +108,14 @@ export class InstallationLifecycleRunner {
 
         try {
             await this.reconcile(delivery.installation_id);
+            // Re-publish on retry even when reconciliation is now a no-op: the
+            // previous attempt may have committed D1 but failed to notify.
+            const automations = await this.database.prepare(
+                "SELECT id FROM project_automations WHERE installation_id = ?"
+            ).bind(delivery.installation_id).all<{ id: string }>();
+            for (const automation of automations.results) {
+                await this.changeNotifier.publish(automation.id, "automation_changed");
+            }
             await this.finish(deliveryID, "COMPLETED", null);
             return { action: "ack" };
         } catch (error) {
@@ -151,6 +161,23 @@ export class InstallationLifecycleRunner {
         try {
             const repositories = await this.client.listInstallationRepositories(installationID);
             await replaceRepositories(this.database, installationID, repositories);
+            // Installation recovery clears only installation failures. Keep the
+            // automation disabled so recovery cannot undo a user's pause.
+            await this.database.prepare(
+                `UPDATE project_automations
+                 SET health_state = 'CONTENT_VISIBILITY_UNVERIFIED', updated_at = ?
+                 WHERE installation_id = ? AND health_state IN (
+                    'INSTALLATION_SUSPENDED', 'INSTALLATION_DELETED',
+                    'INSTALLATION_ACCOUNT_UNSUPPORTED', 'INSTALLATION_ACCOUNT_MISMATCH'
+                 ) AND EXISTS (
+                    SELECT 1 FROM oauth_credentials credential
+                    WHERE credential.id = project_automations.oauth_credential_id
+                      AND credential.health_state = 'ACTIVE'
+                 ) AND EXISTS (
+                    SELECT 1 FROM installation_repositories repository
+                    WHERE repository.installation_id = project_automations.installation_id
+                 )`
+            ).bind(new Date().toISOString(), installationID).run();
         } catch (error) {
             if (error instanceof GitHubAppRequestError && error.status === 404) {
                 await deactivateInstallation(installationID, "DELETED", this.database);
