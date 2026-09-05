@@ -1,17 +1,12 @@
 import Foundation
 
 actor ProjectMonitor {
-    private let gitHubService: GitHubService
     private var task: Task<Void, Never>?
 
-    init(gitHubService: GitHubService = .shared) {
-        self.gitHubService = gitHubService
-    }
-
     func events(
-        for projects: [FollowedProject],
         currentUserLogin: String,
-        policy: MonitoringPolicy
+        policy: MonitoringPolicy,
+        readSnapshots: @escaping @Sendable () async throws -> [Project]?
     ) -> AsyncStream<ProjectMonitorEvent> {
         task?.cancel()
 
@@ -23,19 +18,13 @@ actor ProjectMonitor {
 
             while Task.isCancelled == false {
                 do {
-                    var snapshots: [Project] = []
-                    for project in projects {
-                        try Task.checkCancellation()
-                        snapshots.append(
-                            try await gitHubService.fetchProjectWithItems(
-                                id: project.id,
-                                owner: project.owner
-                            )
-                        )
+                    guard let snapshots = try await readSnapshots() else {
+                        try await Task.sleep(for: policy.interval)
+                        continue
                     }
+                    try Task.checkCancellation()
 
                     let now = Date()
-                    continuation.yield(.snapshots(snapshots))
                     let currentStates = ProjectChangeDetector.states(
                         for: snapshots,
                         currentUserLogin: currentUserLogin,

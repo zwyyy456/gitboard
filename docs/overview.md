@@ -66,18 +66,18 @@ View intent
 ```text
 View intent
   -> ProjectStore mutation orchestration
-  -> optional optimistic local update
+  -> optional pending status presentation
   -> GitHubService GraphQL/API/gh operation
-  -> success timestamp/refresh or rollback + error
+  -> commit a patch to the current confirmed snapshot, or remove pending presentation + error
 ```
 
 监控通知：
 
 ```text
 GitStrideModel restarts monitoring
-  -> ProjectMonitor fetches followed projects
-  -> ProjectMonitor yields snapshots and change events
-  -> ProjectStore applies snapshots
+  -> ProjectMonitor requests snapshots through the closure supplied by GitStrideModel
+  -> ProjectStore reads, validates and commits followed projects
+  -> ProjectMonitor compares complete accepted cycles and yields change events
   -> GitStrideModel routes changes to NotificationService
 ```
 
