@@ -6,8 +6,6 @@ const automationRecord = {
     id: "automation-1",
     oauth_credential_id: "credential-1",
     installation_id: 42,
-    repository_id: 7,
-    repository_name_with_owner: "octocat/private",
     project_owner_login: "octocat",
     project_number: 3,
     project_node_id: "PROJECT_NODE",
@@ -19,7 +17,7 @@ const automationRecord = {
     delivery_received_at: "2026-09-03T00:00:00.000Z",
     installation_status: "ACTIVE",
     credential_health_state: "ACTIVE",
-    repository_available: 1,
+    repository_count: 2,
     private_payload: "must not escape",
 };
 
@@ -38,11 +36,9 @@ describe("management API", () => {
         expect(database.managementTokenHash).not.toBe("management-secret");
         expect(body.automations).toEqual([{
             id: "automation-1",
-            repositoryID: 7,
-            repositoryNameWithOwner: "octocat/private",
-            projectOwnerLogin: "octocat",
-            projectNumber: 3,
-            projectNodeID: "PROJECT_NODE",
+            accountLogin: "octocat",
+            repositoryCount: 2,
+            mappingProjectNumber: 3,
             enabled: true,
             healthState: "ACTIVE",
             updatedAt: "2026-09-03T00:00:00.000Z",

@@ -4,6 +4,12 @@ import {
     GitHubProjectsRESTError,
     githubProjectsURL,
 } from "./github-projects-rest";
+import type {
+    SetupProject,
+    SetupProjectClient,
+    SetupStatusField,
+} from "./setup-project-client";
+import { SetupProjectError } from "./setup-project-client";
 import type { DesiredStatus } from "./workflow-models";
 
 export interface PersonalProjectConfiguration {
@@ -13,7 +19,13 @@ export interface PersonalProjectConfiguration {
     projectNodeID: string;
     statusFieldNodeID: string;
     statusOptionIDs: Record<DesiredStatus, string>;
+    reviewStatusPolicy: ReviewStatusPolicy;
 }
+
+export type ReviewStatusPolicy =
+    | "ENSURE_IN_REVIEW"
+    | "USE_IN_PROGRESS"
+    | "USE_CONFIGURED_OPTION";
 
 export interface IssueStatusAssignment {
     issueNodeID: string;
@@ -66,6 +78,10 @@ export class PersonalProjectGateway {
     constructor(
         private readonly accessTokens: AccessTokenProvider,
         private readonly statusWriter: ProjectStatusWriter,
+        private readonly projectCatalog: Pick<
+            SetupProjectClient,
+            "listProjects" | "listStatusFields" | "ensureStatusOption"
+        >,
         apiVersion: string
     ) {
         this.projectsREST = new GitHubProjectsRESTClient(apiVersion);
@@ -77,15 +93,102 @@ export class PersonalProjectGateway {
     ): Promise<Record<string, ApplyOutcome>> {
         return this.accessTokens.withValidAccessToken(
             project.oauthCredentialID,
-            async (accessToken) => this.applyWithToken(accessToken, project, assignments)
+            async (accessToken) => {
+                try {
+                    return await this.applyWithToken(accessToken, project, assignments);
+                } catch (error) {
+                    if (error instanceof SetupProjectError) throw mapProjectCatalogError(error);
+                    throw error;
+                }
+            }
         );
     }
 
     private async applyWithToken(
         accessToken: string,
-        project: PersonalProjectConfiguration,
+        template: PersonalProjectConfiguration,
         assignments: IssueStatusAssignment[]
     ): Promise<Record<string, ApplyOutcome>> {
+        const mapping = await this.loadMapping(accessToken, template);
+        const projects = await this.projectCatalog.listProjects(
+            accessToken,
+            template.ownerLogin
+        );
+        const outcomes: Record<string, ApplyOutcome> = Object.fromEntries(
+            assignments.map((assignment) => [assignment.issueNodeID, "NOT_IN_PROJECT" as const])
+        );
+
+        for (const project of projects) {
+            const fields = project.nodeID === template.projectNodeID
+                ? mapping.templateFields
+                : await this.projectCatalog.listStatusFields(
+                    accessToken,
+                    template.ownerLogin,
+                    project.number
+                );
+            const resolution = projectConfiguration(
+                template,
+                project,
+                fields,
+                mapping
+            );
+            if (!resolution) continue;
+            const projectOutcomes = await this.applyToProject(
+                accessToken,
+                resolution,
+                assignments
+            );
+            for (const [issueNodeID, outcome] of Object.entries(projectOutcomes)) {
+                if (outcome === "APPLIED") outcomes[issueNodeID] = "APPLIED";
+            }
+        }
+        return outcomes;
+    }
+
+    private async loadMapping(
+        accessToken: string,
+        template: PersonalProjectConfiguration
+    ): Promise<StatusMapping> {
+        const fields = await this.projectCatalog.listStatusFields(
+            accessToken,
+            template.ownerLogin,
+            template.number
+        );
+        const field = fields.find((candidate) => candidate.nodeID === template.statusFieldNodeID);
+        const inProgress = field?.options.find(
+            (option) => option.id === template.statusOptionIDs.IN_PROGRESS
+        );
+        const configuredReview = field?.options.find(
+            (option) => option.id === template.statusOptionIDs.IN_REVIEW
+        );
+        const done = field?.options.find(
+            (option) => option.id === template.statusOptionIDs.DONE
+        );
+        if (!field
+            || !inProgress
+            || !done
+            || (template.reviewStatusPolicy === "USE_CONFIGURED_OPTION" && !configuredReview)) {
+            throw new PersonalProjectError("PROJECT_CONFIGURATION_INVALID");
+        }
+        return {
+            fieldName: field.name,
+            optionNames: {
+                IN_PROGRESS: inProgress.name,
+                IN_REVIEW: template.reviewStatusPolicy === "USE_CONFIGURED_OPTION"
+                    ? configuredReview!.name
+                    : "In review",
+                DONE: done.name,
+            },
+            templateFields: fields,
+        };
+    }
+
+    private async applyToProject(
+        accessToken: string,
+        resolution: ProjectConfigurationResolution,
+        assignments: IssueStatusAssignment[]
+    ): Promise<Record<string, ApplyOutcome>> {
+        let project = resolution.configuration;
         const resolvedItems = new Map<string, string>();
         const missingItems = new Set<string>();
 
@@ -102,6 +205,26 @@ export class PersonalProjectGateway {
             for (const issueNodeID of resolution.missing) {
                 missingItems.add(issueNodeID);
             }
+        }
+
+        const needsReviewOption = resolution.shouldEnsureInReview
+            && assignments.some((assignment) => (
+                assignment.desiredStatus === "IN_REVIEW"
+                && resolvedItems.has(assignment.issueNodeID)
+            ));
+        if (needsReviewOption) {
+            const inReview = await this.projectCatalog.ensureStatusOption(
+                accessToken,
+                project.statusFieldNodeID,
+                "In review"
+            );
+            project = {
+                ...project,
+                statusOptionIDs: {
+                    ...project.statusOptionIDs,
+                    IN_REVIEW: inReview.id,
+                },
+            };
         }
 
         const outcomes: Record<string, ApplyOutcome> = {};
@@ -234,6 +357,59 @@ export class PersonalProjectGateway {
     }
 }
 
+interface StatusMapping {
+    fieldName: string;
+    optionNames: Record<DesiredStatus, string>;
+    templateFields: SetupStatusField[];
+}
+
+interface ProjectConfigurationResolution {
+    configuration: PersonalProjectConfiguration;
+    shouldEnsureInReview: boolean;
+}
+
+function projectConfiguration(
+    template: PersonalProjectConfiguration,
+    project: SetupProject,
+    fields: SetupStatusField[],
+    mapping: StatusMapping
+): ProjectConfigurationResolution | null {
+    const field = fields.find((candidate) => candidate.name === mapping.fieldName);
+    if (!field) return null;
+    const inProgress = findStatusOption(field.options, mapping.optionNames.IN_PROGRESS);
+    const done = findStatusOption(field.options, mapping.optionNames.DONE);
+    if (!inProgress || !done) return null;
+    const existingInReview = findStatusOption(field.options, mapping.optionNames.IN_REVIEW);
+    const inReview = template.reviewStatusPolicy === "USE_IN_PROGRESS"
+        ? inProgress
+        : existingInReview ?? inProgress;
+    return {
+        configuration: {
+            oauthCredentialID: template.oauthCredentialID,
+            ownerLogin: template.ownerLogin,
+            number: project.number,
+            projectNodeID: project.nodeID,
+            statusFieldNodeID: field.nodeID,
+            statusOptionIDs: {
+                IN_PROGRESS: inProgress.id,
+                IN_REVIEW: inReview.id,
+                DONE: done.id,
+            },
+            reviewStatusPolicy: template.reviewStatusPolicy,
+        },
+        shouldEnsureInReview: template.reviewStatusPolicy === "ENSURE_IN_REVIEW"
+            && existingInReview === undefined,
+    };
+}
+
+function findStatusOption<T extends { name: string }>(
+    options: T[],
+    name: string
+): T | undefined {
+    return options.find((option) => option.name === name)
+        ?? options.find((option) => option.name.toLowerCase() === name.toLowerCase());
+}
+
 function projectItemsURL(
     project: PersonalProjectConfiguration,
     issueRepositoryNameWithOwner: string
@@ -271,6 +447,21 @@ function mapRESTError(error: GitHubProjectsRESTError): PersonalProjectError {
         return new PersonalProjectError("TRANSIENT_GITHUB_FAILURE", error.status);
     case "INCOMPATIBLE":
         return new PersonalProjectError("PROJECT_API_INCOMPATIBLE", error.status);
+    }
+}
+
+function mapProjectCatalogError(error: SetupProjectError): PersonalProjectError {
+    switch (error.code) {
+    case "OAUTH_REAUTH_REQUIRED":
+        return new PersonalProjectError("OAUTH_REAUTH_REQUIRED", error.status);
+    case "OAUTH_SCOPE_MISSING":
+        return new PersonalProjectError("OAUTH_SCOPE_MISSING", error.status);
+    case "PROJECT_API_INCOMPATIBLE":
+        return new PersonalProjectError("PROJECT_API_INCOMPATIBLE", error.status);
+    case "PROJECT_WRITE_FORBIDDEN":
+        return new PersonalProjectError("PROJECT_CONFIGURATION_INVALID", error.status);
+    case "TRANSIENT_GITHUB_FAILURE":
+        return new PersonalProjectError("TRANSIENT_GITHUB_FAILURE", error.status);
     }
 }
 

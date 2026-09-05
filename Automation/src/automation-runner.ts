@@ -1,4 +1,5 @@
 import type { DeliveryMessage } from "./index";
+import type { AutomationChangeNotifier } from "./automation-events";
 import type { OAuthCredentialError } from "./oauth-credential-provider";
 import type {
     IssueStatusAssignment,
@@ -55,6 +56,7 @@ interface AutomationRecord {
     status_field_node_id: string;
     in_progress_option_id: string;
     in_review_option_id: string;
+    review_status_policy: PersonalProjectConfiguration["reviewStatusPolicy"];
     done_option_id: string;
     enabled: number;
 }
@@ -69,7 +71,8 @@ export class AutomationRunner {
     constructor(
         private readonly database: D1Database,
         private readonly truthReader: WorkflowTruthLoader,
-        private readonly projectGateway: StatusGateway
+        private readonly projectGateway: StatusGateway,
+        private readonly changeNotifier: AutomationChangeNotifier
     ) {}
 
     async run(message: DeliveryMessage, attempt: number): Promise<RunnerDecision> {
@@ -115,7 +118,8 @@ export class AutomationRunner {
                 ? await this.projectGateway.applyStatuses(configuration(automation), assignments)
                 : {};
             const hasMissingItem = Object.values(outcomes).includes("NOT_IN_PROJECT");
-            if (Object.values(outcomes).includes("APPLIED")) {
+            const didApply = Object.values(outcomes).includes("APPLIED");
+            if (didApply) {
                 await this.database.prepare(
                     `UPDATE project_automations
                      SET health_state = 'ACTIVE', updated_at = ?
@@ -127,6 +131,13 @@ export class AutomationRunner {
                 "COMPLETED",
                 hasMissingItem ? "NOT_IN_PROJECT" : null
             );
+            if (didApply) {
+                await this.publishChange(
+                    message.deliveryID,
+                    automation.automation_id,
+                    "project_data_changed"
+                );
+            }
             console.info("automation_delivery_completed", {
                 deliveryID: message.deliveryID,
                 automationID: automation.automation_id,
@@ -155,6 +166,7 @@ export class AutomationRunner {
                     automation.status_field_node_id,
                     automation.in_progress_option_id,
                     automation.in_review_option_id,
+                    automation.review_status_policy,
                     automation.done_option_id,
                     automation.enabled
              FROM webhook_deliveries delivery
@@ -163,7 +175,7 @@ export class AutomationRunner {
                ON installation.installation_id = automation.installation_id
              JOIN installation_repositories repository
                ON repository.installation_id = automation.installation_id
-              AND repository.repository_id = automation.repository_id
+              AND repository.repository_id = delivery.repository_id
              WHERE delivery.delivery_id = ?
                AND delivery.event_name = 'pull_request'`
         ).bind(message.deliveryID).first<AutomationRecord>();
@@ -218,12 +230,29 @@ export class AutomationRunner {
                 automation.oauth_credential_id
             ).run();
         }
+        await this.publishChange(deliveryID, automation.automation_id, "automation_changed");
         console.info("automation_delivery_failed", {
             deliveryID,
             automationID: automation.automation_id,
             errorCode: code,
         });
         return { action: "ack" };
+    }
+
+    private async publishChange(
+        deliveryID: string,
+        automationID: string,
+        type: "project_data_changed" | "automation_changed"
+    ): Promise<void> {
+        try {
+            await this.changeNotifier.publish(automationID, type);
+        } catch {
+            console.warn("automation_event_publish_failed", {
+                deliveryID,
+                automationID,
+                eventType: type,
+            });
+        }
     }
 
     private async finishDelivery(
@@ -253,6 +282,7 @@ function configuration(automation: AutomationRecord): PersonalProjectConfigurati
             IN_REVIEW: automation.in_review_option_id,
             DONE: automation.done_option_id,
         },
+        reviewStatusPolicy: automation.review_status_policy,
     };
 }
 

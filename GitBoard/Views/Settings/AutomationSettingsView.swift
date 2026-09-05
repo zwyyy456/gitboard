@@ -15,7 +15,7 @@ struct AutomationSettingsView: View {
                         description: Text("This build does not have an automation service configured.")
                     )
                 case .disconnected:
-                    Text("Connect a personal GitHub Project to keep closing Issues in sync with pull request progress.")
+                    Text("Connect once to keep closing Issues in matching personal Projects synchronized across every repository available to the GitHub App.")
                         .foregroundStyle(.secondary)
                     Button(
                         "Connect GitHub Automation…",
@@ -39,13 +39,13 @@ struct AutomationSettingsView: View {
                     Button("Open Setup Page", systemImage: "arrow.up.forward.app", action: reopenBrowser)
                     Button("Cancel Setup", role: .cancel, action: cancelSetup)
                 case .loadingConfiguration:
-                    ProgressView("Loading repositories and Projects…")
+                    ProgressView("Loading Projects…")
                     Button("Cancel Setup", role: .cancel, action: cancelSetup)
                 case .configuring:
                     AutomationConfigurationForm(setup: setup)
                     Button("Cancel Setup", role: .cancel, action: cancelSetup)
                 case .saving:
-                    ProgressView("Enabling automation…")
+                    ProgressView("Enabling account automation…")
                 case .connectionStorageFailed:
                     Label("The connection could not be saved locally, so automation was not enabled.", systemImage: "key")
                     Button("Retry Saving to Keychain", action: retryTokenStorage)
@@ -65,11 +65,6 @@ struct AutomationSettingsView: View {
                     } else {
                         AutomationConnectionList(setup: setup)
                     }
-                    Button(
-                        "Add Automation…",
-                        systemImage: "plus",
-                        action: startAddSetup
-                    )
                 }
 
                 if let errorMessage = setup.errorMessage {
@@ -97,14 +92,6 @@ struct AutomationSettingsView: View {
     private func startSetup() {
         Task {
             if let url = await setup.startSetup() {
-                NSWorkspace.shared.open(url)
-            }
-        }
-    }
-
-    private func startAddSetup() {
-        Task {
-            if let url = await setup.startAddSetup() {
                 NSWorkspace.shared.open(url)
             }
         }

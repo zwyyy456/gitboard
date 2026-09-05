@@ -13,7 +13,7 @@ A native macOS menu bar app for GitHub Projects. View your kanban board, filter 
 - **Full kanban window** — drag and drop between columns
 - **Status notifications** — know when issues move
 - **Native issue planning** — view and edit milestones, parent/sub-issues, and dependencies
-- **Pull request automation** — keep closing Issues in a personal Project aligned with PR progress
+- **Pull request automation** — keep closing Issues in matching personal Projects aligned with PR progress
 - **GitHub CLI auth** — no API tokens needed
 
 ![GitBoard Kanban](https://yogesh.co/gitboard-kanban.webp)
@@ -46,7 +46,7 @@ Click "Open Board" or use the keyboard shortcut to open the full kanban window. 
 
 ### Pull Request Automation
 
-Connect automation from Settings to map PR progress to three existing Project Status options. The automation runs in the hosted Worker, so GitBoard does not need to remain open.
+Connect automation once from Settings. Every repository currently available to the GitHub App is included automatically, and closing Issues are updated in every matching personal Project. The selected Project supplies the Status mapping names used across Projects; In Progress and Done are required. For Ready pull requests, choose either `Move to In review` or `Keep in In progress`. The first choice reuses a case-insensitive `In review` match or adds an Orange `In review` only when a matching Project first needs it. The second never changes Project options. Automation never adds Backlog. The hosted Worker runs even when GitBoard is closed, and a running app refreshes displayed Project data and Automation connection health when the Worker reports a change.
 
 The Worker temporarily processes GitHub Project Item responses to locate exact item identities. It does not persist or log private Issue content, and the desktop app stores its management token only in Keychain.
 

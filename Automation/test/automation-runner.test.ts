@@ -9,18 +9,21 @@ describe("AutomationRunner", () => {
         const database = new RunnerDatabase({ processing_state: "COMPLETED" });
         const truthReader = new StubTruthReader([]);
         const gateway = new StubGateway({});
-        const runner = new AutomationRunner(database.binding, truthReader, gateway);
+        const notifier = new StubNotifier();
+        const runner = new AutomationRunner(database.binding, truthReader, gateway, notifier);
 
         await expect(runner.run(message, 2)).resolves.toEqual({ action: "ack" });
         expect(truthReader.calls).toBe(0);
         expect(gateway.calls).toBe(0);
+        expect(notifier.calls).toEqual([]);
     });
 
     test("recomputes current truth and completes an idempotent delivery", async () => {
         const database = new RunnerDatabase();
         const truthReader = new StubTruthReader([issueTruth()]);
         const gateway = new StubGateway({ ISSUE: "APPLIED" });
-        const runner = new AutomationRunner(database.binding, truthReader, gateway);
+        const notifier = new StubNotifier();
+        const runner = new AutomationRunner(database.binding, truthReader, gateway, notifier);
 
         await expect(runner.run(message, 1)).resolves.toEqual({ action: "ack" });
         expect(gateway.assignments).toEqual([{
@@ -31,6 +34,10 @@ describe("AutomationRunner", () => {
         expect(database.deliveryState).toBe("COMPLETED");
         expect(database.attemptCount).toBe(1);
         expect(database.automationHealth).toBe("ACTIVE");
+        expect(notifier.calls).toEqual([{
+            automationID: "automation",
+            type: "project_data_changed",
+        }]);
     });
 
     test("retries only a transient classified failure", async () => {
@@ -40,7 +47,8 @@ describe("AutomationRunner", () => {
         const runner = new AutomationRunner(
             database.binding,
             new StubTruthReader([issueTruth()]),
-            gateway
+            gateway,
+            new StubNotifier()
         );
 
         await expect(runner.run(message, 3)).resolves.toEqual({
@@ -49,6 +57,27 @@ describe("AutomationRunner", () => {
         });
         expect(database.deliveryState).toBe("RETRYING");
         expect(database.errorCode).toBe("TRANSIENT_GITHUB_FAILURE");
+    });
+
+    test("publishes after a terminal OAuth failure changes connection health", async () => {
+        const database = new RunnerDatabase();
+        const gateway = new StubGateway({});
+        gateway.error = new PersonalProjectError("OAUTH_REAUTH_REQUIRED", 401);
+        const notifier = new StubNotifier();
+        const runner = new AutomationRunner(
+            database.binding,
+            new StubTruthReader([issueTruth()]),
+            gateway,
+            notifier
+        );
+
+        await expect(runner.run(message, 1)).resolves.toEqual({ action: "ack" });
+        expect(database.deliveryState).toBe("FAILED");
+        expect(database.errorCode).toBe("OAUTH_REAUTH_REQUIRED");
+        expect(notifier.calls).toEqual([{
+            automationID: "automation",
+            type: "automation_changed",
+        }]);
     });
 
     test("does not open OAuth when current truth has no desired status", async () => {
@@ -60,12 +89,46 @@ describe("AutomationRunner", () => {
                 ...issueTruth(),
                 closingPullRequests: [],
             }]),
-            gateway
+            gateway,
+            new StubNotifier()
         );
 
         await expect(runner.run(message, 1)).resolves.toEqual({ action: "ack" });
         expect(gateway.calls).toBe(0);
         expect(database.deliveryState).toBe("COMPLETED");
+    });
+
+    test("does not publish when GitHub reports no project change", async () => {
+        const database = new RunnerDatabase();
+        const notifier = new StubNotifier();
+        const runner = new AutomationRunner(
+            database.binding,
+            new StubTruthReader([issueTruth()]),
+            new StubGateway({ ISSUE: "NOT_IN_PROJECT" }),
+            notifier
+        );
+
+        await expect(runner.run(message, 1)).resolves.toEqual({ action: "ack" });
+        expect(notifier.calls).toEqual([]);
+    });
+
+    test("keeps a completed delivery successful when event publication fails", async () => {
+        const database = new RunnerDatabase();
+        const notifier = new StubNotifier();
+        notifier.error = new Error("unavailable");
+        const runner = new AutomationRunner(
+            database.binding,
+            new StubTruthReader([issueTruth()]),
+            new StubGateway({ ISSUE: "APPLIED" }),
+            notifier
+        );
+
+        await expect(runner.run(message, 1)).resolves.toEqual({ action: "ack" });
+        expect(database.deliveryState).toBe("COMPLETED");
+        expect(notifier.calls).toEqual([{
+            automationID: "automation",
+            type: "project_data_changed",
+        }]);
     });
 });
 
@@ -99,6 +162,16 @@ class StubGateway {
     }
 }
 
+class StubNotifier {
+    calls: Array<{ automationID: string; type: string }> = [];
+    error: Error | null = null;
+
+    async publish(automationID: string, type: string): Promise<void> {
+        this.calls.push({ automationID, type });
+        if (this.error) throw this.error;
+    }
+}
+
 class RunnerDatabase {
     deliveryState: string;
     attemptCount = 0;
@@ -123,6 +196,7 @@ class RunnerDatabase {
             in_progress_option_id: "PROGRESS",
             in_review_option_id: "REVIEW",
             done_option_id: "DONE",
+            review_status_policy: "USE_CONFIGURED_OPTION",
             enabled: 1,
             ...overrides,
         };

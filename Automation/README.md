@@ -1,7 +1,7 @@
 # GitBoard Automation
 
 The automation service is a Cloudflare Worker backed by D1. It uses a GitHub App
-to read repository truth and a separate OAuth App to update a personal Project.
+to read repository truth and a separate OAuth App to update personal Projects.
 
 ## Worker development
 
@@ -41,7 +41,9 @@ Lifecycle events use the same outbox and are acknowledged before any GitHub API
 request. The consumer uses a short-lived RS256 App JWT and an ephemeral
 installation token to reconcile the installation's current status and complete
 repository set, so event delivery order does not become state truth. Suspension,
-deletion, or source repository removal disables the affected automation.
+deletion, or an unsupported account disables the account automation. Repository
+changes only alter its accepted source set; removing one repository does not stop
+automation for the remaining repositories.
 Neither token is written to D1 or logs.
 
 For each queued pull request, `RepositoryTruthReader` uses an installation token
@@ -60,12 +62,26 @@ identity and actual `project` scope, saves each replacement token pair with an
 optimistic credential version, and performs one refresh/retry after a 401.
 Tokens use versioned AES-GCM envelopes and are never included in errors.
 
-`PersonalProjectGateway` groups assignments by the Issue repository and uses the
-versioned personal Project REST endpoint with `repo:OWNER/REPOSITORY is:issue`.
-It follows every Link page and matches only exact `content.node_id` values. An
-unresolved scan with any item lacking `item.node_id` or `content.node_id` fails
-as visibility-indeterminate; only a complete, fully identifiable scan yields
-`NOT_IN_PROJECT`. Project response content is reduced to those two node IDs.
+One account automation accepts pull request events from every repository in its
+current GitHub App installation. Its selected Project and Status IDs are a mapping
+template, not a target boundary. `PersonalProjectGateway` resolves the template's
+field and option names, enumerates the OAuth account's personal Projects, and uses
+the versioned Project REST endpoint with `repo:OWNER/REPOSITORY is:issue` against
+each compatible Project. It follows every Link page and matches only exact
+`content.node_id` values. Project response content is reduced to item and content
+node IDs; Issue-to-Project matches are never persisted.
+
+Each target Project resolves its own field node ID by exact name. Status options
+prefer an exact name and then retry with case ignored while preserving whitespace
+and every other character. Projects without the mapped field, In Progress, or
+Done options are not matching targets. Setup records the user's Ready-PR policy
+without modifying any Project. With `Move to In review`, a Project that contains
+the exact closing Issue reuses exact `In review`, then a case-insensitive match,
+or appends `In review` in Orange while preserving every existing option ID. The
+append occurs only when that Project first needs an In Review write. With
+`Keep in In progress`, Ready PRs use that Project's In Progress and no option is
+added. Listing or selecting a Project never mutates it, and automation never adds
+Backlog.
 
 Status updates use only `updateProjectV2ItemFieldValue` with the Project, REST
 item `node_id`, Status field, and option IDs. A node-resolution failure triggers
@@ -80,6 +96,13 @@ failures are retried with a bounded delay. The same Worker consumes the dead
 letter queue and marks every exhausted nonterminal delivery failed without
 overwriting a terminal result. Status writes remain idempotent across
 redelivery.
+
+After at least one status mutation succeeds or the automation connection health
+changes, the consumer increments a revision in the automation's Durable Object and
+sends a typed, content-free invalidation over the authenticated `/api/events`
+WebSocket. A new socket receives the current revision immediately so the desktop app
+refreshes after being offline. Event publication is best effort and cannot turn an
+already completed GitHub update into a retry.
 
 Daily maintenance marks delivery work that has made no progress for seven days
 as `DELIVERY_STALE`, removes terminal deliveries after 30 days, and reclaims
@@ -182,24 +205,27 @@ original Status is restored.
 
 | Gate | Disposable setup and action | Required result |
 | --- | --- | --- |
-| Repository narrowing | Link at least two Issues from different installed repositories to multiple Project items, then deliver a pull request event for one repository | Only exact Issue node IDs from the event's repository are selected and updated |
+| Account repository scope | Grant the installation two repositories, complete setup once, then deliver a pull request event from the second repository | The second repository is accepted without Add Automation; a repository outside the installation is ignored |
+| Multi-Project matching | Add one closing Issue to two personal Projects with compatible Status names | Both exact Project items are updated using each Project's own field and option IDs |
+| Ready policy: create | Enable `Move to In review`, then make a closing PR Ready for an Issue in a Project without that option | That matching Project preserves existing options and gains one Orange `In review`; an existing case variant is reused, and unrelated Projects are unchanged |
+| Ready policy: fallback | Enable `Keep in In progress`, then make a closing PR Ready | The matching item remains In Progress and no Status option is added |
+| Live app refresh | Keep GitBoard open on an affected Project and change a closing PR state | The Worker WebSocket emits a new revision and the displayed item refreshes without a manual reload |
 | REST pagination | Place the target private Issue after the first Project item page and trigger its pull request | The Link chain is fully followed and the target item is found |
 | REST-to-GraphQL identity | Run `validate-personal-auth.mjs --device-flow --gh-mapping` | REST `item.node_id` is accepted by the status mutation and the original Status is restored |
 | Refresh path | Add `--rotate-refresh-token` to the personal validator | Refresh succeeds, the REST lookup and mutation succeed, and the original Status is restored |
-| OAuth loss | Revoke the disposable OAuth authorization or remove its `project` grant, then trigger a delivery and refresh Automation settings | No mutation occurs; health reports reauthorization or missing scope with a stable delivery error |
+| OAuth loss | Revoke the disposable OAuth authorization or remove its `project` grant, keep GitBoard connected, then trigger a delivery | No mutation occurs; Automation settings automatically report reauthorization or missing scope with a stable delivery error |
 | Invalid selection | Submit a setup selection with an unknown Status field or option ID | Setup rejects it and no automation row is created |
-| Repository removal | Remove the configured repository from the disposable GitHub App installation, then wait for `installation_repositories` delivery | The repository is reconciled out of D1 and its automation is disabled before another mutation |
+| Repository removal | Remove one of two repositories from the disposable GitHub App installation, then wait for `installation_repositories` delivery | Events from the removed repository are ignored while automation remains enabled for the other repository |
 
-The deterministic suite covers reducer priority, cross-repository grouping,
-REST Link pagination, exact node matching, opaque item rejection, one 401
+The deterministic suite covers reducer priority, account-wide repository ingress,
+multi-Project matching, review fallback, REST Link pagination, exact node matching, one 401
 refresh, missing scope, rate-limited 403, and deleted Project items. Those tests
 do not replace the real private-repository gates.
 
 After all gates pass, perform one setup from the release GitBoard build and
-confirm settings can pause, resume, reauthorize, and delete its automation.
-Deleting must remove the automation from the management response; shared user,
-installation, and credential rows are retained only while another automation
-uses them.
+confirm settings can pause, resume, reauthorize, and delete the account automation.
+Deleting must remove it from the management response and stop every installed
+repository from creating automation deliveries.
 
 ## Authorization boundary validation
 

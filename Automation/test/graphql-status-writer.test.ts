@@ -46,6 +46,7 @@ const project: PersonalProjectConfiguration = {
         IN_REVIEW: "REVIEW_NODE",
         DONE: "DONE_NODE",
     },
+    reviewStatusPolicy: "USE_CONFIGURED_OPTION",
 };
 
 class StubGraphQL implements GraphQLRequester {

@@ -1,4 +1,9 @@
 import { AutomationRunner } from "./automation-runner";
+import {
+    AutomationEvents,
+    DurableObjectAutomationChangeNotifier,
+    handleAutomationEventsRequest,
+} from "./automation-events";
 import { failExhaustedDelivery, flushDeliveryOutbox } from "./delivery-outbox";
 import { GitHubAppClient } from "./github-app-client";
 import { GitHubGraphQLClient } from "./github-graphql";
@@ -8,6 +13,7 @@ import { runMaintenance } from "./maintenance";
 import { OAuthCredentialProvider } from "./oauth-credential-provider";
 import { PersonalProjectGateway } from "./personal-project-gateway";
 import { RepositoryTruthReader } from "./repository-truth-reader";
+import { SetupProjectClient } from "./setup-project-client";
 import { handleManagementRequest } from "./management-api";
 import { handleSetupRequest } from "./setup-api";
 import { receiveGitHubWebhook, WebhookRequestError } from "./webhook-receiver";
@@ -15,6 +21,7 @@ import { receiveGitHubWebhook, WebhookRequestError } from "./webhook-receiver";
 export interface Env {
     DB: D1Database;
     AUTOMATION_QUEUE: Queue<DeliveryMessage>;
+    AUTOMATION_EVENTS: DurableObjectNamespace<AutomationEvents>;
     GITHUB_API_VERSION: string;
     GITHUB_APP_ID: string;
     GITHUB_APP_PRIVATE_KEY: string;
@@ -45,6 +52,9 @@ export default {
                 }
                 return Response.json({ error: "WEBHOOK_UNAVAILABLE" }, { status: 503 });
             }
+        }
+        if (url.pathname === "/api/events") {
+            return handleAutomationEventsRequest(request, env);
         }
         if (url.pathname.startsWith("/api/setup/")
             || url.pathname === "/api/setup/sessions"
@@ -87,8 +97,10 @@ export default {
             new PersonalProjectGateway(
                 accessTokens,
                 new GraphQLStatusWriter(graphQL),
+                new SetupProjectClient(graphQL, env.GITHUB_API_VERSION),
                 env.GITHUB_API_VERSION
-            )
+            ),
+            new DurableObjectAutomationChangeNotifier(env.AUTOMATION_EVENTS)
         );
         const installationRunner = new InstallationLifecycleRunner(env.DB, appClient);
 
@@ -126,6 +138,8 @@ export default {
         }
     },
 } satisfies ExportedHandler<Env>;
+
+export { AutomationEvents };
 
 function isDeliveryMessage(value: unknown): value is DeliveryMessage {
     return typeof value === "object"

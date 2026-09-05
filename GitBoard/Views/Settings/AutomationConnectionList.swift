@@ -11,9 +11,9 @@ struct AutomationConnectionList: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(automation.repositoryNameWithOwner)
+                        Text(automation.accountLogin)
                             .font(.headline)
-                        Text("\(automation.projectOwnerLogin)’s Project #\(automation.projectNumber)")
+                        Text("Repositories: \(automation.repositoryCount) · Status mapping from Project #\(automation.mappingProjectNumber)")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -58,16 +58,16 @@ struct AutomationConnectionList: View {
             .padding(.vertical, 4)
         }
         .confirmationDialog(
-            "Delete this automation?",
+            "Delete account automation?",
             isPresented: $isShowingDeletionConfirmation,
             presenting: pendingDeletion
         ) { automation in
-            Button("Delete Automation", role: .destructive) {
+            Button("Delete Account Automation", role: .destructive) {
                 Task { await setup.deleteAutomation(id: automation.id) }
             }
             Button("Cancel", role: .cancel) {}
         } message: { automation in
-            Text("GitBoard will delete the automation and its stored service data for \(automation.repositoryNameWithOwner).")
+            Text("GitBoard will stop automation for all repositories available to the GitHub App and delete its stored service data.")
         }
     }
 

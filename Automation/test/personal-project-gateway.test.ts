@@ -11,6 +11,212 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PersonalProjectGateway", () => {
+    test("updates every matching personal Project and falls back to in progress", async () => {
+        vi.stubGlobal("fetch", vi.fn()
+            .mockResolvedValueOnce(projectResponse([item("ITEM_1", "ISSUE")]))
+            .mockResolvedValueOnce(projectResponse([item("ITEM_2", "ISSUE")])));
+        const writer = new StubWriter();
+        const catalog = {
+            async listProjects() {
+                return [
+                    { nodeID: "PROJECT", number: 1, title: "Template" },
+                    { nodeID: "PROJECT_2", number: 2, title: "Second" },
+                ];
+            },
+            async listStatusFields(_token: string, _owner: string, number: number) {
+                if (number === 1) return new StubProjectCatalog().listStatusFields();
+                return [{
+                    nodeID: "STATUS_FIELD_2",
+                    name: "Status",
+                    options: [
+                        { id: "PROGRESS_OPTION_2", name: "In Progress" },
+                        { id: "DONE_OPTION_2", name: "Done" },
+                    ],
+                }];
+            },
+            async ensureStatusOption() {
+                throw new Error("Unexpected ensureStatusOption call");
+            },
+        };
+        const gateway = new PersonalProjectGateway(
+            new StubAccessTokens(),
+            writer,
+            catalog,
+            "2026-03-10"
+        );
+
+        await expect(gateway.applyStatuses(project, [
+            assignment("ISSUE", "owner/repository", "IN_REVIEW"),
+        ])).resolves.toEqual({ ISSUE: "APPLIED" });
+        expect(writer.updates).toEqual([
+            { itemNodeID: "ITEM_1", optionID: "REVIEW_OPTION" },
+            { itemNodeID: "ITEM_2", optionID: "PROGRESS_OPTION_2" },
+        ]);
+    });
+
+    test("prefers exact option names, then ignores case without ignoring spaces", async () => {
+        vi.stubGlobal("fetch", vi.fn()
+            .mockResolvedValueOnce(projectResponse([item("ITEM_1", "ISSUE")]))
+            .mockResolvedValueOnce(projectResponse([item("ITEM_2", "ISSUE")]))
+            .mockResolvedValueOnce(projectResponse([item("ITEM_3", "ISSUE")]))
+            .mockResolvedValueOnce(projectResponse([item("ITEM_4", "ISSUE")])));
+        const writer = new StubWriter();
+        const catalog = {
+            async listProjects() {
+                return [
+                    { nodeID: "PROJECT", number: 1, title: "Template" },
+                    { nodeID: "PROJECT_2", number: 2, title: "Exact" },
+                    { nodeID: "PROJECT_3", number: 3, title: "Case fallback" },
+                    { nodeID: "PROJECT_4", number: 4, title: "Whitespace mismatch" },
+                ];
+            },
+            async listStatusFields(_token: string, _owner: string, number: number) {
+                if (number === 1) return new StubProjectCatalog().listStatusFields();
+                const reviewOptions = number === 2
+                    ? [
+                        { id: "CASE_OPTION_2", name: "In review" },
+                        { id: "EXACT_OPTION_2", name: "In Review" },
+                    ]
+                    : number === 3
+                        ? [{ id: "CASE_OPTION_3", name: "In review" }]
+                        : [{ id: "SPACED_OPTION_4", name: "In  Review" }];
+                return [{
+                    nodeID: `STATUS_FIELD_${number}`,
+                    name: "Status",
+                    options: [
+                        { id: `PROGRESS_OPTION_${number}`, name: "In Progress" },
+                        ...reviewOptions,
+                        { id: `DONE_OPTION_${number}`, name: "Done" },
+                    ],
+                }];
+            },
+            async ensureStatusOption() {
+                throw new Error("Unexpected ensureStatusOption call");
+            },
+        };
+        const gateway = new PersonalProjectGateway(
+            new StubAccessTokens(),
+            writer,
+            catalog,
+            "2026-03-10"
+        );
+
+        await expect(gateway.applyStatuses(project, [
+            assignment("ISSUE", "owner/repository", "IN_REVIEW"),
+        ])).resolves.toEqual({ ISSUE: "APPLIED" });
+        expect(writer.updates).toEqual([
+            { itemNodeID: "ITEM_1", optionID: "REVIEW_OPTION" },
+            { itemNodeID: "ITEM_2", optionID: "EXACT_OPTION_2" },
+            { itemNodeID: "ITEM_3", optionID: "CASE_OPTION_3" },
+            { itemNodeID: "ITEM_4", optionID: "PROGRESS_OPTION_4" },
+        ]);
+    });
+
+    test("adds In review only to a Project containing a matching ready Issue", async () => {
+        vi.stubGlobal("fetch", vi.fn()
+            .mockResolvedValueOnce(projectResponse([item("ITEM_1", "ISSUE")]))
+            .mockResolvedValueOnce(projectResponse([])));
+        const writer = new StubWriter();
+        const ensureCalls: Array<{ fieldNodeID: string; optionName: string }> = [];
+        const catalog = {
+            async listProjects() {
+                return [
+                    { nodeID: "PROJECT", number: 1, title: "Template" },
+                    { nodeID: "PROJECT_2", number: 2, title: "Unmatched" },
+                ];
+            },
+            async listStatusFields(_token: string, _owner: string, number: number) {
+                return [{
+                    nodeID: `STATUS_FIELD_${number}`,
+                    name: "Status",
+                    options: [
+                        { id: `PROGRESS_OPTION_${number}`, name: "In Progress" },
+                        { id: `DONE_OPTION_${number}`, name: "Done" },
+                    ],
+                }];
+            },
+            async ensureStatusOption(
+                _token: string,
+                fieldNodeID: string,
+                optionName: string
+            ) {
+                ensureCalls.push({ fieldNodeID, optionName });
+                return { id: "CREATED_REVIEW", name: optionName };
+            },
+        };
+        const gateway = new PersonalProjectGateway(
+            new StubAccessTokens(),
+            writer,
+            catalog,
+            "2026-03-10"
+        );
+        const ensureProject: PersonalProjectConfiguration = {
+            ...project,
+            statusFieldNodeID: "STATUS_FIELD_1",
+            statusOptionIDs: {
+                IN_PROGRESS: "PROGRESS_OPTION_1",
+                IN_REVIEW: "PROGRESS_OPTION_1",
+                DONE: "DONE_OPTION_1",
+            },
+            reviewStatusPolicy: "ENSURE_IN_REVIEW",
+        };
+
+        await expect(gateway.applyStatuses(ensureProject, [
+            assignment("ISSUE", "owner/repository", "IN_REVIEW"),
+        ])).resolves.toEqual({ ISSUE: "APPLIED" });
+        expect(ensureCalls).toEqual([{
+            fieldNodeID: "STATUS_FIELD_1",
+            optionName: "In review",
+        }]);
+        expect(writer.updates).toEqual([
+            { itemNodeID: "ITEM_1", optionID: "CREATED_REVIEW" },
+        ]);
+    });
+
+    test("keeps ready Issues in progress when the user declines Project changes", async () => {
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(
+            projectResponse([item("ITEM_1", "ISSUE")])
+        ));
+        const writer = new StubWriter();
+        const gateway = new PersonalProjectGateway(
+            new StubAccessTokens(),
+            writer,
+            {
+                async listProjects() {
+                    return [{ nodeID: "PROJECT", number: 1, title: "Template" }];
+                },
+                async listStatusFields() {
+                    return [{
+                        nodeID: "STATUS_FIELD",
+                        name: "Status",
+                        options: [
+                            { id: "PROGRESS_OPTION", name: "In Progress" },
+                            { id: "DONE_OPTION", name: "Done" },
+                        ],
+                    }];
+                },
+                async ensureStatusOption() {
+                    throw new Error("Unexpected ensureStatusOption call");
+                },
+            },
+            "2026-03-10"
+        );
+
+        await expect(gateway.applyStatuses({
+            ...project,
+            statusOptionIDs: {
+                ...project.statusOptionIDs,
+                IN_REVIEW: "PROGRESS_OPTION",
+            },
+            reviewStatusPolicy: "USE_IN_PROGRESS",
+        }, [
+            assignment("ISSUE", "owner/repository", "IN_REVIEW"),
+        ])).resolves.toEqual({ ISSUE: "APPLIED" });
+        expect(writer.updates).toEqual([
+            { itemNodeID: "ITEM_1", optionID: "PROGRESS_OPTION" },
+        ]);
+    });
+
     test("groups Issues by their own repository and matches exact node IDs", async () => {
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(projectResponse([
@@ -160,6 +366,7 @@ const project: PersonalProjectConfiguration = {
         IN_REVIEW: "REVIEW_OPTION",
         DONE: "DONE_OPTION",
     },
+    reviewStatusPolicy: "USE_CONFIGURED_OPTION",
 };
 
 class StubAccessTokens implements AccessTokenProvider {
@@ -189,7 +396,34 @@ class StubWriter implements ProjectStatusWriter {
 }
 
 function makeGateway(writer: StubWriter): PersonalProjectGateway {
-    return new PersonalProjectGateway(new StubAccessTokens(), writer, "2026-03-10");
+    return new PersonalProjectGateway(
+        new StubAccessTokens(),
+        writer,
+        new StubProjectCatalog(),
+        "2026-03-10"
+    );
+}
+
+class StubProjectCatalog {
+    async listProjects() {
+        return [{ nodeID: "PROJECT", number: 1, title: "Template" }];
+    }
+
+    async listStatusFields() {
+        return [{
+            nodeID: "STATUS_FIELD",
+            name: "Status",
+            options: [
+                { id: "PROGRESS_OPTION", name: "In Progress" },
+                { id: "REVIEW_OPTION", name: "In Review" },
+                { id: "DONE_OPTION", name: "Done" },
+            ],
+        }];
+    }
+
+    async ensureStatusOption(): Promise<{ id: string; name: string }> {
+        throw new Error("Unexpected ensureStatusOption call");
+    }
 }
 
 function assignment(

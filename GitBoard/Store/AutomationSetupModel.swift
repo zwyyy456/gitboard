@@ -20,25 +20,23 @@ final class AutomationSetupModel {
 
     private enum SetupIntent {
         case initial
-        case add
         case reauthorize
     }
 
     private(set) var phase: Phase
     private(set) var errorMessage: String?
     private(set) var setupSessionID: String?
-    private(set) var repositories: [AutomationService.Repository] = []
     private(set) var projects: [AutomationService.Project] = []
     private(set) var statusFields: [AutomationService.StatusField] = []
     private(set) var automations: [AutomationService.Automation] = []
     private(set) var busyAutomationIDs: Set<String> = []
+    let projectChangeEvents: AsyncStream<Int>
 
-    var selectedRepositoryID: Int64?
     var selectedProjectID: String?
     var selectedStatusFieldID: String?
     var inProgressOptionID: String?
-    var inReviewOptionID: String?
     var doneOptionID: String?
+    var reviewStatusPolicy: AutomationService.ReviewStatusPolicy = .ensureInReview
 
     private let service: AutomationService?
     private let tokenStore: any ManagementTokenStoring
@@ -49,12 +47,20 @@ final class AutomationSetupModel {
     private var loadedProjectID: String?
     private var pendingManagementToken: String?
     private var setupIntent: SetupIntent?
+    private let projectChangeContinuation: AsyncStream<Int>.Continuation
+    private var eventTask: Task<Void, Never>?
 
     init(
         service: AutomationService? = AutomationService.configured(),
         tokenStore: any ManagementTokenStoring = ManagementTokenStore(),
         makeManagementToken: @escaping () throws -> String = ManagementTokenStore.makeToken
     ) {
+        let (events, continuation) = AsyncStream.makeStream(
+            of: Int.self,
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        projectChangeEvents = events
+        projectChangeContinuation = continuation
         self.service = service
         self.tokenStore = tokenStore
         self.makeManagementToken = makeManagementToken
@@ -76,11 +82,9 @@ final class AutomationSetupModel {
 
     var canComplete: Bool {
         phase == .configuring
-            && selectedRepositoryID != nil
             && selectedProjectID != nil
             && selectedStatusFieldID != nil
             && inProgressOptionID != nil
-            && inReviewOptionID != nil
             && doneOptionID != nil
     }
 
@@ -108,31 +112,6 @@ final class AutomationSetupModel {
         }
     }
 
-    func startAddSetup() async -> URL? {
-        guard let service else { return nil }
-        phase = .starting
-        setupIntent = .add
-        errorMessage = nil
-        do {
-            let managementToken = try requireManagementToken()
-            let session = try await service.createSetupSession(
-                managementToken: managementToken
-            )
-            setupSessionID = session.id
-            setupToken = session.setupToken
-            authorizationURL = session.authorizationURL
-            phase = .waitingForBrowser
-            return session.authorizationURL
-        } catch is CancellationError {
-            phase = .connected
-            return nil
-        } catch {
-            phase = .connected
-            handleManagementFailure(error)
-            return nil
-        }
-    }
-
     func observeSetup() async {
         guard let service,
               let sessionID = setupSessionID,
@@ -156,10 +135,11 @@ final class AutomationSetupModel {
                     )
                     return
                 case "COMPLETE" where setupIntent == .reauthorize:
-                    clearSetupSession()
                     errorMessage = nil
                     phase = .connected
                     await loadAutomations()
+                    guard Task.isCancelled == false else { return }
+                    clearSetupSession()
                     return
                 case "COMPLETE":
                     return
@@ -190,6 +170,7 @@ final class AutomationSetupModel {
             let managementToken = try requireManagementToken()
             automations = try await service.automations(managementToken: managementToken)
             phase = .connected
+            startProjectChangeEvents(service: service, managementToken: managementToken)
         } catch is CancellationError {
             return
         } catch {
@@ -209,6 +190,7 @@ final class AutomationSetupModel {
         do {
             let managementToken = try requireManagementToken()
             automations = try await service.automations(managementToken: managementToken)
+            startProjectChangeEvents(service: service, managementToken: managementToken)
         } catch is CancellationError {
             return
         } catch {
@@ -248,6 +230,7 @@ final class AutomationSetupModel {
             try await service.deleteAutomation(id: id, managementToken: managementToken)
             automations.removeAll { $0.id == id }
             if automations.isEmpty {
+                stopProjectChangeEvents()
                 try tokenStore.delete()
                 phase = .disconnected
             }
@@ -332,11 +315,9 @@ final class AutomationSetupModel {
         guard let service,
               let sessionID = setupSessionID,
               let setupToken,
-              let repositoryID = selectedRepositoryID,
               let project = projects.first(where: { $0.id == selectedProjectID }),
               let statusFieldID = selectedStatusFieldID,
               let inProgressOptionID,
-              let inReviewOptionID,
               let doneOptionID else {
             return
         }
@@ -344,13 +325,12 @@ final class AutomationSetupModel {
         errorMessage = nil
         do {
             let selection = AutomationService.SetupSelection(
-                sourceRepositoryID: repositoryID,
                 projectNodeID: project.nodeID,
                 projectNumber: project.number,
                 statusFieldNodeID: statusFieldID,
                 inProgressOptionID: inProgressOptionID,
-                inReviewOptionID: inReviewOptionID,
-                doneOptionID: doneOptionID
+                doneOptionID: doneOptionID,
+                reviewStatusPolicy: reviewStatusPolicy
             )
             let managementToken: String?
             switch setupIntent {
@@ -359,8 +339,6 @@ final class AutomationSetupModel {
                 pendingManagementToken = token
                 try tokenStore.save(token)
                 managementToken = token
-            case .add:
-                managementToken = nil
             case .reauthorize, nil:
                 return
             }
@@ -410,16 +388,13 @@ final class AutomationSetupModel {
     ) async throws {
         phase = .loadingConfiguration
         let options = try await service.setupOptions(id: sessionID, setupToken: setupToken)
-        repositories = options.repositories
         projects = options.projects
-        selectedRepositoryID = repositories.first?.id
         phase = .configuring
         await selectProject(projects.first?.id)
     }
 
     private func clearStatusMapping() {
         inProgressOptionID = nil
-        inReviewOptionID = nil
         doneOptionID = nil
     }
 
@@ -427,13 +402,11 @@ final class AutomationSetupModel {
         setupSessionID = nil
         setupToken = nil
         authorizationURL = nil
-        repositories = []
         projects = []
         statusFields = []
         loadingProjectID = nil
         loadedProjectID = nil
         setupIntent = nil
-        selectedRepositoryID = nil
         selectedProjectID = nil
         selectedStatusFieldID = nil
         clearStatusMapping()
@@ -446,6 +419,7 @@ final class AutomationSetupModel {
 
     private func handleManagementFailure(_ error: Error) {
         if isManagementAuthFailure(error) {
+            stopProjectChangeEvents()
             try? tokenStore.delete()
             automations = []
             phase = .disconnected
@@ -470,6 +444,47 @@ final class AutomationSetupModel {
         return token
     }
 
+    private func startProjectChangeEvents(
+        service: AutomationService,
+        managementToken: String
+    ) {
+        guard eventTask == nil else { return }
+        eventTask = Task { [weak self] in
+            var retryDelay = Duration.seconds(1)
+            while Task.isCancelled == false {
+                do {
+                    let events = await service.projectChangeEvents(
+                        managementToken: managementToken
+                    )
+                    for try await event in events {
+                        guard Task.isCancelled == false else { return }
+                        retryDelay = .seconds(1)
+                        await self?.loadAutomations()
+                        if event.type != "automation_changed" {
+                            self?.projectChangeContinuation.yield(event.revision)
+                        }
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // HTTP management calls remain the source of user-visible connection errors.
+                }
+                guard Task.isCancelled == false else { return }
+                do {
+                    try await Task.sleep(for: retryDelay)
+                } catch {
+                    return
+                }
+                retryDelay = min(retryDelay * 2, .seconds(30))
+            }
+        }
+    }
+
+    private func stopProjectChangeEvents() {
+        eventTask?.cancel()
+        eventTask = nil
+    }
+
     private func message(for error: Error) -> String {
         guard let serviceError = error as? AutomationServiceError,
               case .server(let code) = serviceError else {
@@ -484,8 +499,8 @@ final class AutomationSetupModel {
             return "Install the GitBoard app on the same personal account you authorized."
         case "PROJECT_WRITE_FORBIDDEN":
             return "Your GitHub account cannot update the selected Project."
-        case "SOURCE_REPOSITORY_ALREADY_CONFIGURED":
-            return "That repository already has an automation."
+        case "ACCOUNT_AUTOMATION_ALREADY_CONFIGURED":
+            return "This GitHub account already has an automation connection."
         case "AUTOMATION_NOT_READY":
             return "Resolve the connection error before resuming this automation."
         case "OAUTH_ACCOUNT_MISMATCH":

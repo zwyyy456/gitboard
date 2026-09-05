@@ -4,14 +4,11 @@ struct AutomationConfigurationForm: View {
     @Bindable var setup: AutomationSetupModel
 
     var body: some View {
-        Picker("Source repository", selection: $setup.selectedRepositoryID) {
-            Text("Choose a repository").tag(nil as Int64?)
-            ForEach(setup.repositories) { repository in
-                Text(repository.nameWithOwner).tag(Optional(repository.id))
-            }
-        }
+        Text("All repositories available to the GitHub App are included automatically. The Project below defines the Status names used across your personal Projects.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
-        Picker("Personal Project", selection: $setup.selectedProjectID) {
+        Picker("Mapping template Project", selection: $setup.selectedProjectID) {
             Text("Choose a Project").tag(nil as String?)
             ForEach(setup.projects) { project in
                 Text(project.title).tag(Optional(project.id))
@@ -37,19 +34,26 @@ struct AutomationConfigurationForm: View {
             options: setup.selectedStatusOptions
         )
         StatusOptionPicker(
-            title: "In review",
-            selection: $setup.inReviewOptionID,
-            options: setup.selectedStatusOptions
-        )
-        StatusOptionPicker(
             title: "Done",
             selection: $setup.doneOptionID,
             options: setup.selectedStatusOptions
         )
 
+        Picker("Ready pull requests", selection: $setup.reviewStatusPolicy) {
+            Text("Move to In review")
+                .tag(AutomationService.ReviewStatusPolicy.ensureInReview)
+            Text("Keep in In progress")
+                .tag(AutomationService.ReviewStatusPolicy.useInProgress)
+        }
+        .pickerStyle(.radioGroup)
+
+        Text(reviewPolicyDescription)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
         HStack {
             Spacer()
-            Button("Enable Automation", action: completeSetup)
+            Button("Enable Account Automation", action: completeSetup)
                 .buttonStyle(.borderedProminent)
                 .disabled(!setup.canComplete)
         }
@@ -57,5 +61,14 @@ struct AutomationConfigurationForm: View {
 
     private func completeSetup() {
         Task { await setup.completeSetup() }
+    }
+
+    private var reviewPolicyDescription: String {
+        switch setup.reviewStatusPolicy {
+        case .ensureInReview:
+            "GitBoard reuses an existing In review option, ignoring case, or adds In review in Orange when a matching Project first needs it."
+        case .useInProgress:
+            "GitBoard keeps ready pull requests in In progress and does not add a Status option."
+        }
     }
 }

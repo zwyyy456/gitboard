@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { applyD1Migrations, type D1Migration } from "cloudflare:test";
+import { applyD1Migrations, SELF, type D1Migration } from "cloudflare:test";
 import { beforeAll, expect, test } from "vitest";
 import { AutomationRunner } from "../../src/automation-runner";
 import {
@@ -15,7 +15,9 @@ import { handleManagementRequest } from "../../src/management-api";
 import { runMaintenance } from "../../src/maintenance";
 import type { DeliveryMessage } from "../../src/index";
 import type { Env } from "../../src/index";
+import type { ReviewStatusPolicy } from "../../src/personal-project-gateway";
 import { handleSetupRequest, persistSetupCompletion } from "../../src/setup-api";
+import { receiveGitHubWebhook } from "../../src/webhook-receiver";
 
 interface TestEnvironment extends Env {
     TEST_MIGRATIONS: D1Migration[];
@@ -37,12 +39,19 @@ test("starts with the current D1 schema", async () => {
     const setupColumns = await testEnv.DB.prepare(
         "PRAGMA table_info(setup_sessions)"
     ).all<{ name: string }>();
+    const automationColumns = await testEnv.DB.prepare(
+        "PRAGMA table_info(project_automations)"
+    ).all<{ name: string }>();
 
     expect(tables.results.map((table) => table.name)).toContain("project_automations");
     expect(repositoryColumns.results.map((column) => column.name))
         .toContain("repository_node_id");
     expect(setupColumns.results.map((column) => column.name))
         .not.toContain("exchange_code_hash");
+    expect(automationColumns.results.map((column) => column.name))
+        .not.toContain("repository_id");
+    expect(automationColumns.results.map((column) => column.name))
+        .toContain("review_status_policy");
 });
 
 test("keeps a received delivery when Queue send fails and schedules it again", async () => {
@@ -90,7 +99,8 @@ test("does not run GitHub work for a terminal delivery", async () => {
                 projectWrites += 1;
                 return {};
             },
-        }
+        },
+        { async publish() {} }
     );
 
     await expect(runner.run({ deliveryID: "delivery-terminal" }, 2))
@@ -98,6 +108,86 @@ test("does not run GitHub work for a terminal delivery", async () => {
     expect(truthReads).toBe(0);
     expect(projectWrites).toBe(0);
     await expect(deliveryState("delivery-terminal")).resolves.toBe("COMPLETED");
+});
+
+test("accepts pull requests from every repository in the account installation", async () => {
+    const setup = await seedConfigurableSetup("account-webhook", 131);
+    const automationID = await persistSetupCompletion(
+        testEnv.DB,
+        completionInput(setup, 1131, "management-account-webhook")
+    );
+    const now = new Date().toISOString();
+    await testEnv.DB.prepare(
+        `INSERT INTO installation_repositories (
+            installation_id, repository_id, repository_node_id, name_with_owner, updated_at
+         ) VALUES (131, 2131, 'REPOSITORY-2131', 'owner/repository-2131', ?)`
+    ).bind(now).run();
+    const messages: DeliveryMessage[] = [];
+    const environment = environmentWith(queueThat(async (message) => { messages.push(message); }));
+
+    const accepted = await receiveGitHubWebhook(
+        await pullRequestWebhookRequest("account-repository", 131, 2131),
+        environment
+    );
+    const ignored = await receiveGitHubWebhook(
+        await pullRequestWebhookRequest("outside-installation", 131, 999_999),
+        environment
+    );
+    const delivery = await testEnv.DB.prepare(
+        `SELECT automation_id, repository_id
+         FROM webhook_deliveries WHERE delivery_id = 'account-repository'`
+    ).first<{ automation_id: string; repository_id: number }>();
+
+    expect(await accepted.json()).toEqual({ accepted: true });
+    expect(await ignored.json()).toEqual({
+        accepted: false,
+        reason: "automation_not_found",
+    });
+    expect(delivery).toEqual({ automation_id: automationID, repository_id: 2131 });
+    expect(messages).toEqual([{ deliveryID: "account-repository" }]);
+});
+
+test("streams project invalidations only to an authenticated automation connection", async () => {
+    const setup = await seedConfigurableSetup("events", 141);
+    const managementToken = "management-events";
+    const automationID = await persistSetupCompletion(
+        testEnv.DB,
+        completionInput(setup, 1141, managementToken)
+    );
+
+    const unauthorized = await SELF.fetch("https://example.invalid/api/events", {
+        headers: { Upgrade: "websocket" },
+    });
+    expect(unauthorized.status).toBe(401);
+
+    const response = await SELF.fetch("https://example.invalid/api/events", {
+        headers: {
+            Authorization: `Bearer ${managementToken}`,
+            Upgrade: "websocket",
+        },
+    });
+    expect(response.status).toBe(101);
+    const socket = response.webSocket;
+    expect(socket).not.toBeNull();
+    socket?.accept();
+
+    await expect(nextWebSocketMessage(socket!)).resolves.toEqual({
+        type: "ready",
+        revision: 0,
+    });
+    const changed = nextWebSocketMessage(socket!);
+    await testEnv.AUTOMATION_EVENTS.getByName(automationID).publish("project_data_changed");
+    await expect(changed).resolves.toEqual({
+        type: "project_data_changed",
+        revision: 1,
+    });
+    const automationChanged = nextWebSocketMessage(socket!);
+    await testEnv.AUTOMATION_EVENTS.getByName(automationID).publish("automation_changed");
+    await expect(automationChanged).resolves.toEqual({
+        type: "automation_changed",
+        revision: 2,
+    });
+    socket?.close(1000, "test complete");
 });
 
 test("persists an installation webhook before doing GitHub work", async () => {
@@ -229,17 +319,26 @@ test("fails every nonterminal DLQ state without overwriting terminal deliveries"
 
 test("completes one setup idempotently without duplicating its token or automation", async () => {
     const setup = await seedConfigurableSetup("idempotent", 107);
-    const input = completionInput(setup, 1107, "management-idempotent");
+    const input = completionInput(
+        setup,
+        1107,
+        "management-idempotent",
+        "ENSURE_IN_REVIEW"
+    );
 
     const first = await persistSetupCompletion(testEnv.DB, input);
     const second = await persistSetupCompletion(testEnv.DB, input);
     const counts = await setupCompletionCounts("idempotent");
+    const automation = await testEnv.DB.prepare(
+        "SELECT review_status_policy FROM project_automations WHERE id = ?"
+    ).bind(first).first<{ review_status_policy: string }>();
 
     expect(second).toBe(first);
     expect(counts).toEqual({ automations: 1, tokens: 1 });
+    expect(automation?.review_status_policy).toBe("ENSURE_IN_REVIEW");
 });
 
-test("binds an add-automation setup session to the existing management identity", async () => {
+test("always starts one account-level setup instead of an add-automation flow", async () => {
     const now = new Date().toISOString();
     await testEnv.DB.batch([
         testEnv.DB.prepare(
@@ -273,9 +372,9 @@ test("binds an add-automation setup session to the existing management identity"
 
     expect(response.status).toBe(201);
     expect(session).toEqual({
-        purpose: "ADD",
-        user_id: "user-add-session",
-        management_token_id: "token-add-session",
+        purpose: "INITIAL",
+        user_id: null,
+        management_token_id: null,
     });
 });
 
@@ -297,19 +396,19 @@ test("allows only one selection when the same setup is completed concurrently", 
     expect(counts).toEqual({ automations: 1, tokens: 1 });
 });
 
-test("rolls back a management token when the source repository is already configured", async () => {
+test("rolls back a management token when the account automation already exists", async () => {
     const setup = await seedConfigurableSetup("source-conflict", 109);
     const now = new Date().toISOString();
     await testEnv.DB.prepare(
         `INSERT INTO project_automations (
-            id, user_id, oauth_credential_id, installation_id, repository_id,
-            repository_name_with_owner, project_owner_login, project_number,
+            id, user_id, oauth_credential_id, installation_id,
+            project_owner_login, project_number,
             project_node_id, status_field_node_id, in_progress_option_id,
             in_review_option_id, done_option_id, enabled, health_state,
             created_at, updated_at
          ) VALUES (
             'existing-source-conflict', 'user-source-conflict', 'credential-source-conflict',
-            109, 1109, 'owner/source-conflict-1109', 'owner', 1, 'OLD_PROJECT',
+            109, 'owner', 1, 'OLD_PROJECT',
             'OLD_FIELD', 'OLD_PROGRESS', 'OLD_REVIEW', 'OLD_DONE', 1, 'ACTIVE', ?, ?
          )`
     ).bind(now, now).run();
@@ -317,7 +416,7 @@ test("rolls back a management token when the source repository is already config
     await expect(persistSetupCompletion(
         testEnv.DB,
         completionInput(setup, 1109, "management-source-conflict")
-    )).rejects.toThrow("SOURCE_REPOSITORY_ALREADY_CONFIGURED");
+    )).rejects.toThrow("ACCOUNT_AUTOMATION_ALREADY_CONFIGURED");
     const token = await testEnv.DB.prepare(
         "SELECT id FROM management_tokens WHERE user_id = 'user-source-conflict'"
     ).first<{ id: string }>();
@@ -378,14 +477,14 @@ test("deleting an automation preserves objects used by an unexpired setup", asyn
         installationInsertion(122, "user-delete-reference", now),
         testEnv.DB.prepare(
             `INSERT INTO project_automations (
-                id, user_id, oauth_credential_id, installation_id, repository_id,
-                repository_name_with_owner, project_owner_login, project_number,
+                id, user_id, oauth_credential_id, installation_id,
+                project_owner_login, project_number,
                 project_node_id, status_field_node_id, in_progress_option_id,
                 in_review_option_id, done_option_id, enabled, health_state,
                 created_at, updated_at
              ) VALUES (
                 'automation-delete-reference', 'user-delete-reference',
-                'credential-delete-reference', 122, 1122, 'owner/repository', 'owner',
+                'credential-delete-reference', 122, 'owner',
                 1, 'PROJECT', 'FIELD', 'PROGRESS', 'REVIEW', 'DONE', 1, 'ACTIVE', ?, ?
              )`
         ).bind(now, now),
@@ -396,7 +495,7 @@ test("deleting an automation preserves objects used by an unexpired setup", asyn
              ) VALUES (
                 'setup-delete-reference', 'setup-token-delete-reference',
                 'user-delete-reference', 'credential-delete-reference', 122,
-                'CONFIGURATION_PENDING', ?, ?, ?, 'ADD'
+                'CONFIGURATION_PENDING', ?, ?, ?, 'INITIAL'
              )`
         ).bind(new Date(Date.now() + 60_000).toISOString(), now, now),
         testEnv.DB.prepare(
@@ -443,10 +542,26 @@ function queueThat(
     return { send } as unknown as Queue<DeliveryMessage>;
 }
 
+async function nextWebSocketMessage(socket: WebSocket): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+        socket.addEventListener("message", (event) => {
+            try {
+                resolve(JSON.parse(String(event.data)));
+            } catch (error) {
+                reject(error);
+            }
+        }, { once: true });
+        socket.addEventListener("error", () => reject(new Error("websocket failed")), {
+            once: true,
+        });
+    });
+}
+
 function environmentWith(queue: Queue<DeliveryMessage>): Env {
     return {
         DB: testEnv.DB,
         AUTOMATION_QUEUE: queue,
+        AUTOMATION_EVENTS: testEnv.AUTOMATION_EVENTS,
         GITHUB_API_VERSION: "2026-03-10",
         GITHUB_APP_ID: "unused",
         GITHUB_APP_PRIVATE_KEY: "unused",
@@ -457,6 +572,44 @@ function environmentWith(queue: Queue<DeliveryMessage>): Env {
         OAUTH_TOKEN_ENCRYPTION_KEY: "unused",
         PUBLIC_BASE_URL: "https://example.invalid",
     };
+}
+
+async function pullRequestWebhookRequest(
+    deliveryID: string,
+    installationID: number,
+    repositoryID: number
+): Promise<Request> {
+    const body = JSON.stringify({
+        action: "opened",
+        installation: { id: installationID },
+        repository: { id: repositoryID },
+        pull_request: { number: 1 },
+    });
+    const key = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode("unused"),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+    );
+    const signature = new Uint8Array(await crypto.subtle.sign(
+        "HMAC",
+        key,
+        new TextEncoder().encode(body)
+    ));
+    const hexadecimal = [...signature]
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
+    return new Request("https://example.invalid/webhooks/github", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-GitHub-Delivery": deliveryID,
+            "X-GitHub-Event": "pull_request",
+            "X-Hub-Signature-256": `sha256=${hexadecimal}`,
+        },
+        body,
+    });
 }
 
 async function deliveryState(deliveryID: string): Promise<string | null> {
@@ -491,13 +644,13 @@ async function seedCompletedAutomationDelivery(): Promise<void> {
         ).bind(now),
         testEnv.DB.prepare(
             `INSERT INTO project_automations (
-                id, user_id, oauth_credential_id, installation_id, repository_id,
-                repository_name_with_owner, project_owner_login, project_number,
+                id, user_id, oauth_credential_id, installation_id,
+                project_owner_login, project_number,
                 project_node_id, status_field_node_id, in_progress_option_id,
                 in_review_option_id, done_option_id, enabled, health_state,
                 created_at, updated_at
              ) VALUES (
-                'automation', 'user', 'credential', 7, 11, 'owner/repository',
+                'automation', 'user', 'credential', 7,
                 'owner', 1, 'PROJECT', 'FIELD', 'PROGRESS', 'REVIEW', 'DONE',
                 1, 'ACTIVE', ?, ?
              )`
@@ -578,21 +731,21 @@ async function seedConfigurableSetup(suffix: string, installationID: number) {
 function completionInput(
     session: Awaited<ReturnType<typeof seedConfigurableSetup>>,
     repositoryID: number,
-    managementToken: string
+    managementToken: string,
+    reviewStatusPolicy: ReviewStatusPolicy = "USE_CONFIGURED_OPTION"
 ) {
     return {
         session,
         selection: {
-            sourceRepositoryID: repositoryID,
             projectNodeID: `PROJECT-${repositoryID}`,
             projectNumber: repositoryID,
             statusFieldNodeID: `FIELD-${repositoryID}`,
             inProgressOptionID: `PROGRESS-${repositoryID}`,
             inReviewOptionID: `REVIEW-${repositoryID}`,
             doneOptionID: `DONE-${repositoryID}`,
+            reviewStatusPolicy,
         },
         managementToken,
-        repositoryNameWithOwner: `owner/repository-${repositoryID}`,
         projectOwnerLogin: "owner",
         healthState: "ACTIVE" as const,
     };

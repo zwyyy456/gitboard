@@ -11,11 +11,6 @@ actor AutomationService {
         let state: String
     }
 
-    struct Repository: Decodable, Identifiable, Sendable {
-        let id: Int64
-        let nameWithOwner: String
-    }
-
     struct Project: Decodable, Identifiable, Sendable {
         let nodeID: String
         let number: Int
@@ -38,38 +33,41 @@ actor AutomationService {
     }
 
     struct SetupOptions: Decodable, Sendable {
-        let repositories: [Repository]
         let projects: [Project]
     }
 
+    enum ReviewStatusPolicy: String, Encodable, Sendable, CaseIterable, Identifiable {
+        case ensureInReview = "ENSURE_IN_REVIEW"
+        case useInProgress = "USE_IN_PROGRESS"
+
+        var id: Self { self }
+    }
+
     struct SetupSelection: Encodable, Sendable {
-        let sourceRepositoryID: Int64
         let projectNodeID: String
         let projectNumber: Int
         let statusFieldNodeID: String
         let inProgressOptionID: String
-        let inReviewOptionID: String
         let doneOptionID: String
+        let reviewStatusPolicy: ReviewStatusPolicy
     }
 
     private struct CompletionRequest: Encodable {
-        let sourceRepositoryID: Int64
         let projectNodeID: String
         let projectNumber: Int
         let statusFieldNodeID: String
         let inProgressOptionID: String
-        let inReviewOptionID: String
         let doneOptionID: String
+        let reviewStatusPolicy: ReviewStatusPolicy
         let managementToken: String?
 
         init(selection: SetupSelection, managementToken: String?) {
-            sourceRepositoryID = selection.sourceRepositoryID
             projectNodeID = selection.projectNodeID
             projectNumber = selection.projectNumber
             statusFieldNodeID = selection.statusFieldNodeID
             inProgressOptionID = selection.inProgressOptionID
-            inReviewOptionID = selection.inReviewOptionID
             doneOptionID = selection.doneOptionID
+            reviewStatusPolicy = selection.reviewStatusPolicy
             self.managementToken = managementToken
         }
     }
@@ -82,12 +80,17 @@ actor AutomationService {
 
     struct Automation: Decodable, Identifiable, Sendable {
         let id: String
-        let repositoryNameWithOwner: String
-        let projectOwnerLogin: String
-        let projectNumber: Int
+        let accountLogin: String
+        let repositoryCount: Int
+        let mappingProjectNumber: Int
         let enabled: Bool
         let healthState: String
         let lastDelivery: DeliveryStatus?
+    }
+
+    struct ProjectChangeEvent: Decodable, Sendable {
+        let type: String
+        let revision: Int
     }
 
     private struct ProjectFieldsRequest: Encodable {
@@ -143,11 +146,10 @@ actor AutomationService {
         return AutomationService(baseURL: url)
     }
 
-    func createSetupSession(managementToken: String? = nil) async throws -> SetupSession {
+    func createSetupSession() async throws -> SetupSession {
         try await send(
             path: "api/setup/sessions",
-            method: "POST",
-            bearerToken: managementToken
+            method: "POST"
         )
     }
 
@@ -228,6 +230,56 @@ actor AutomationService {
             method: "POST",
             bearerToken: managementToken
         )
+    }
+
+    func projectChangeEvents(
+        managementToken: String
+    ) -> AsyncThrowingStream<ProjectChangeEvent, Error> {
+        var request = URLRequest(url: baseURL.appending(path: "api/events"))
+        request.setValue("Bearer \(managementToken)", forHTTPHeaderField: "Authorization")
+        let socket = session.webSocketTask(with: request)
+        let decoder = self.decoder
+
+        return AsyncThrowingStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            let receiveTask = Task {
+                socket.resume()
+                do {
+                    while Task.isCancelled == false {
+                        let message = try await socket.receive()
+                        let data: Data
+                        switch message {
+                        case .data(let value):
+                            data = value
+                        case .string(let value):
+                            data = Data(value.utf8)
+                        @unknown default:
+                            throw AutomationServiceError.invalidResponse
+                        }
+                        let event: ProjectChangeEvent
+                        do {
+                            event = try decoder.decode(ProjectChangeEvent.self, from: data)
+                        } catch {
+                            throw AutomationServiceError.invalidResponse
+                        }
+                        guard event.type == "ready"
+                                || event.type == "project_data_changed"
+                                || event.type == "automation_changed" else {
+                            continue
+                        }
+                        continuation.yield(event)
+                    }
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in
+                receiveTask.cancel()
+                socket.cancel(with: .goingAway, reason: nil)
+            }
+        }
     }
 
     private func send<ResponseBody: Decodable>(

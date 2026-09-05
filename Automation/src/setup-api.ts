@@ -11,11 +11,8 @@ import {
     OAuthCredentialProvider,
 } from "./oauth-credential-provider";
 import { SetupProjectClient, SetupProjectError } from "./setup-project-client";
+import type { ReviewStatusPolicy } from "./personal-project-gateway";
 import type { Env } from "./index";
-import {
-    authenticateManagementRequest,
-    ManagementAuthenticationError,
-} from "./management-auth";
 
 const setupLifetimeMilliseconds = 30 * 60 * 1000;
 const githubOAuthEndpoint = "https://github.com/login/oauth";
@@ -32,7 +29,7 @@ interface SetupSessionRecord {
     installation_id: number | null;
     state: SetupState;
     expires_at: string;
-    purpose?: "INITIAL" | "ADD" | "REAUTHORIZE";
+    purpose?: "INITIAL" | "REAUTHORIZE";
     automation_id?: string | null;
     management_token_id?: string | null;
     github_user_database_id?: number;
@@ -53,14 +50,18 @@ interface GitHubUser {
     scopes: string[];
 }
 
-interface SetupSelection {
-    sourceRepositoryID: number;
+interface SetupSelectionInput {
     projectNodeID: string;
     projectNumber: number;
     statusFieldNodeID: string;
     inProgressOptionID: string;
-    inReviewOptionID: string;
+    inReviewOptionID: string | null;
     doneOptionID: string;
+    reviewStatusPolicy: ReviewStatusPolicy;
+}
+
+interface SetupSelection extends Omit<SetupSelectionInput, "inReviewOptionID"> {
+    inReviewOptionID: string;
 }
 
 export async function handleSetupRequest(request: Request, env: Env): Promise<Response> {
@@ -101,23 +102,7 @@ export async function handleSetupRequest(request: Request, env: Env): Promise<Re
     }
 }
 
-async function createSetupSession(request: Request, env: Env): Promise<Response> {
-    let userID: string | null = null;
-    let managementTokenID: string | null = null;
-    let purpose: "INITIAL" | "ADD" = "INITIAL";
-    if (request.headers.has("Authorization")) {
-        try {
-            const identity = await authenticateManagementRequest(request, env.DB);
-            userID = identity.userID;
-            managementTokenID = identity.tokenID;
-            purpose = "ADD";
-        } catch (error) {
-            if (error instanceof ManagementAuthenticationError) {
-                throw new SetupRequestError(401, "MANAGEMENT_AUTH_REQUIRED");
-            }
-            throw error;
-        }
-    }
+async function createSetupSession(_request: Request, env: Env): Promise<Response> {
     const id = crypto.randomUUID();
     const setupToken = randomToken();
     const now = new Date();
@@ -130,9 +115,9 @@ async function createSetupSession(request: Request, env: Env): Promise<Response>
     ).bind(
         id,
         await hashToken(setupToken),
-        userID,
-        managementTokenID,
-        purpose,
+        null,
+        null,
+        "INITIAL",
         expiresAt,
         now.toISOString(),
         now.toISOString()
@@ -214,21 +199,10 @@ async function finishOAuth(url: URL, env: Env): Promise<Response> {
     if (session.purpose === "REAUTHORIZE") {
         return finishReauthorizationOAuth(session, token, user, env);
     }
-    if (session.purpose === "ADD") {
-        if (!session.user_id) throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
-        const expectedUser = await env.DB.prepare(
-            "SELECT github_user_database_id FROM users WHERE id = ?"
-        ).bind(session.user_id).first<{ github_user_database_id: number }>();
-        if (!expectedUser || expectedUser.github_user_database_id !== user.databaseID) {
-            throw new SetupRequestError(403, "OAUTH_ACCOUNT_MISMATCH");
-        }
-    }
     const existingUser = await env.DB.prepare(
         "SELECT id FROM users WHERE github_user_database_id = ?"
     ).bind(user.databaseID).first<{ id: string }>();
-    const userID = session.purpose === "ADD"
-        ? session.user_id!
-        : existingUser?.id ?? crypto.randomUUID();
+    const userID = existingUser?.id ?? crypto.randomUUID();
     const credentialID = crypto.randomUUID();
     const now = new Date().toISOString();
     const encryptedAccessToken = await encryptCredentialToken(
@@ -424,22 +398,12 @@ async function connectInstallation(
 
 async function listSetupOptions(session: SetupSessionRecord, env: Env): Promise<Response> {
     requireState(session, "CONFIGURATION_PENDING");
-    const context = requireConfigurationContext(session);
-    const repositories = await env.DB.prepare(
-        `SELECT repository_id, name_with_owner
-         FROM installation_repositories
-         WHERE installation_id = ?
-         ORDER BY name_with_owner COLLATE NOCASE`
-    ).bind(context.installationID).all<{ repository_id: number; name_with_owner: string }>();
+    requireConfigurationContext(session);
     const projects = await withSetupAccessToken(session, env, (token, ownerLogin, client) => (
         client.listProjects(token, ownerLogin)
     ));
     return Response.json({
         state: session.state,
-        repositories: repositories.results.map((repository) => ({
-            id: repository.repository_id,
-            nameWithOwner: repository.name_with_owner,
-        })),
         projects,
     });
 }
@@ -468,64 +432,55 @@ async function completeSetup(
     env: Env
 ): Promise<Response> {
     const body = await readJSONObject(request);
-    const selection = parseSelection(body);
+    const selectionInput = parseSelection(body);
     const managementToken = secretToken(body.managementToken);
     if (session.purpose === "INITIAL" && !managementToken) {
         throw new SetupRequestError(400, "MANAGEMENT_TOKEN_REQUIRED");
     }
-    if (session.purpose !== "INITIAL" && session.purpose !== "ADD") {
+    if (session.purpose !== "INITIAL") {
         throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
     }
     if (session.state === "COMPLETE") {
         const automationID = await requireMatchingCompletion(
-            env.DB, session, selection, managementToken
+            env.DB, session, selectionInput, managementToken
         );
         return Response.json({ automationID });
     }
     requireState(session, "CONFIGURATION_PENDING");
-    const context = requireConfigurationContext(session);
-    const repository = await env.DB.prepare(
-        `SELECT name_with_owner FROM installation_repositories
-         WHERE installation_id = ? AND repository_id = ?`
-    ).bind(context.installationID, selection.sourceRepositoryID)
-        .first<{ name_with_owner: string }>();
-    if (!repository) throw new SetupRequestError(400, "INVALID_SOURCE_REPOSITORY");
-    const installationToken = await appClient(env).createInstallationAccessToken(
-        context.installationID
-    );
+    requireConfigurationContext(session);
     const configuration = await withSetupAccessToken(session, env, async (token, login, client) => {
         await requireSelectedProject(
-            client, token, login, selection.projectNodeID, selection.projectNumber
+            client, token, login, selectionInput.projectNodeID, selectionInput.projectNumber
         );
-        const fields = await client.listStatusFields(token, login, selection.projectNumber);
-        const field = fields.find((candidate) => candidate.nodeID === selection.statusFieldNodeID);
+        const fields = await client.listStatusFields(token, login, selectionInput.projectNumber);
+        const field = fields.find(
+            (candidate) => candidate.nodeID === selectionInput.statusFieldNodeID
+        );
         const optionIDs = new Set(field?.options.map((option) => option.id));
         if (!field
-            || !optionIDs.has(selection.inProgressOptionID)
-            || !optionIDs.has(selection.inReviewOptionID)
-            || !optionIDs.has(selection.doneOptionID)) {
+            || !optionIDs.has(selectionInput.inProgressOptionID)
+            || (selectionInput.inReviewOptionID !== null
+                && !optionIDs.has(selectionInput.inReviewOptionID))
+            || !optionIDs.has(selectionInput.doneOptionID)) {
             throw new SetupRequestError(400, "INVALID_STATUS_MAPPING");
         }
-        await client.requireProjectWriteAccess(token, selection.projectNodeID);
-        const visibility = await client.probeContentVisibility(
-            token,
-            installationToken,
-            login,
-            selection.projectNumber,
-            repository.name_with_owner
-        );
-        return { ownerLogin: login, visibility };
+        await client.requireProjectWriteAccess(token, selectionInput.projectNodeID);
+        return {
+            ownerLogin: login,
+            selection: {
+                ...selectionInput,
+                inReviewOptionID: selectionInput.inReviewOptionID
+                    ?? selectionInput.inProgressOptionID,
+            },
+        };
     });
 
     const automationID = await persistSetupCompletion(env.DB, {
         session,
-        selection,
+        selection: configuration.selection,
         managementToken,
-        repositoryNameWithOwner: repository.name_with_owner,
         projectOwnerLogin: configuration.ownerLogin,
-        healthState: configuration.visibility === "VERIFIED"
-            ? "ACTIVE"
-            : "CONTENT_VISIBILITY_UNVERIFIED",
+        healthState: "CONTENT_VISIBILITY_UNVERIFIED",
     });
     return Response.json({ automationID });
 }
@@ -534,7 +489,6 @@ interface CompletionInput {
     session: SetupSessionRecord;
     selection: SetupSelection;
     managementToken: string | null;
-    repositoryNameWithOwner: string;
     projectOwnerLogin: string;
     healthState: "ACTIVE" | "CONTENT_VISIBILITY_UNVERIFIED";
 }
@@ -545,13 +499,13 @@ interface CompletedSetupRecord {
     management_token_id: string | null;
     token_hash: string | null;
     installation_id: number | null;
-    repository_id: number | null;
     project_node_id: string | null;
     project_number: number | null;
     status_field_node_id: string | null;
     in_progress_option_id: string | null;
     in_review_option_id: string | null;
     done_option_id: string | null;
+    review_status_policy: string | null;
 }
 
 export async function persistSetupCompletion(
@@ -584,22 +538,22 @@ export async function persistSetupCompletion(
         database.prepare(
             `INSERT INTO project_automations (
                 id, user_id, oauth_credential_id, installation_id,
-                repository_id, repository_name_with_owner,
                 project_owner_login, project_number, project_node_id,
                 status_field_node_id, in_progress_option_id, in_review_option_id,
-                done_option_id, enabled, health_state, created_at, updated_at
+                done_option_id, review_status_policy, enabled, health_state,
+                created_at, updated_at
              )
              SELECT ?, user_id, oauth_credential_id, installation_id,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?
              FROM setup_sessions
              WHERE id = ? AND state = 'CONFIGURATION_PENDING'`
         ).bind(
             automationID,
-            input.selection.sourceRepositoryID, input.repositoryNameWithOwner,
             input.projectOwnerLogin, input.selection.projectNumber,
             input.selection.projectNodeID, input.selection.statusFieldNodeID,
             input.selection.inProgressOptionID, input.selection.inReviewOptionID,
-            input.selection.doneOptionID, input.healthState, now, now,
+            input.selection.doneOptionID, input.selection.reviewStatusPolicy,
+            input.healthState, now, now,
             input.session.id
         ),
         database.prepare(
@@ -616,13 +570,13 @@ export async function persistSetupCompletion(
             database, input.session, input.selection, managementTokenHash
         );
         if (completed) return completed;
-        const source = await database.prepare(
+        const existing = await database.prepare(
             `SELECT id FROM project_automations
-             WHERE installation_id = ? AND repository_id = ?`
-        ).bind(context.installationID, input.selection.sourceRepositoryID)
+             WHERE installation_id = ?`
+        ).bind(context.installationID)
             .first<{ id: string }>();
-        if (source) {
-            throw new SetupRequestError(409, "SOURCE_REPOSITORY_ALREADY_CONFIGURED");
+        if (existing) {
+            throw new SetupRequestError(409, "ACCOUNT_AUTOMATION_ALREADY_CONFIGURED");
         }
         throw error;
     }
@@ -637,7 +591,7 @@ export async function persistSetupCompletion(
 async function requireMatchingCompletion(
     database: D1Database,
     session: SetupSessionRecord,
-    selection: SetupSelection,
+    selection: SetupSelectionInput,
     managementToken: string | null
 ): Promise<string> {
     const tokenHash = managementToken ? await hashToken(managementToken) : null;
@@ -649,15 +603,16 @@ async function requireMatchingCompletion(
 async function matchingCompletion(
     database: D1Database,
     session: SetupSessionRecord,
-    selection: SetupSelection,
+    selection: SetupSelectionInput,
     managementTokenHash: string | null
 ): Promise<string | null> {
     const completed = await database.prepare(
         `SELECT session.state, session.automation_id, session.management_token_id,
-                token.token_hash, automation.installation_id, automation.repository_id,
+                token.token_hash, automation.installation_id,
                 automation.project_node_id, automation.project_number,
                 automation.status_field_node_id, automation.in_progress_option_id,
-                automation.in_review_option_id, automation.done_option_id
+                automation.in_review_option_id, automation.done_option_id,
+                automation.review_status_policy
          FROM setup_sessions session
          LEFT JOIN project_automations automation ON automation.id = session.automation_id
          LEFT JOIN management_tokens token ON token.id = session.management_token_id
@@ -667,13 +622,14 @@ async function matchingCompletion(
         || completed.state !== "COMPLETE"
         || !completed.automation_id
         || completed.installation_id !== session.installation_id
-        || completed.repository_id !== selection.sourceRepositoryID
         || completed.project_node_id !== selection.projectNodeID
         || completed.project_number !== selection.projectNumber
         || completed.status_field_node_id !== selection.statusFieldNodeID
         || completed.in_progress_option_id !== selection.inProgressOptionID
-        || completed.in_review_option_id !== selection.inReviewOptionID
-        || completed.done_option_id !== selection.doneOptionID) {
+        || (selection.inReviewOptionID !== null
+            && completed.in_review_option_id !== selection.inReviewOptionID)
+        || completed.done_option_id !== selection.doneOptionID
+        || completed.review_status_policy !== selection.reviewStatusPolicy) {
         return null;
     }
     if (session.purpose === "INITIAL") {
@@ -864,20 +820,46 @@ function requireNotExpired(session: SetupSessionRecord): void {
     }
 }
 
-function parseSelection(body: Record<string, unknown>): SetupSelection {
+function parseSelection(body: Record<string, unknown>): SetupSelectionInput {
+    const inProgressOptionID = nonEmptyString(body.inProgressOptionID);
+    const inReviewOptionID = body.inReviewOptionID === undefined
+        || body.inReviewOptionID === null
+        ? null
+        : nonEmptyString(body.inReviewOptionID);
+    const reviewStatusPolicy = parseReviewStatusPolicy(
+        body.reviewStatusPolicy,
+        inReviewOptionID
+    );
     const selection = {
-        sourceRepositoryID: positiveInteger(body.sourceRepositoryID),
         projectNodeID: nonEmptyString(body.projectNodeID),
         projectNumber: positiveInteger(body.projectNumber),
         statusFieldNodeID: nonEmptyString(body.statusFieldNodeID),
-        inProgressOptionID: nonEmptyString(body.inProgressOptionID),
-        inReviewOptionID: nonEmptyString(body.inReviewOptionID),
+        inProgressOptionID,
+        inReviewOptionID,
         doneOptionID: nonEmptyString(body.doneOptionID),
+        reviewStatusPolicy,
     };
-    if (Object.values(selection).some((value) => value === null)) {
+    if (!selection.projectNodeID
+        || !selection.projectNumber
+        || !selection.statusFieldNodeID
+        || !selection.inProgressOptionID
+        || !selection.doneOptionID) {
         throw new SetupRequestError(400, "INVALID_SELECTION");
     }
-    return selection as SetupSelection;
+    return selection as SetupSelectionInput;
+}
+
+function parseReviewStatusPolicy(
+    value: unknown,
+    legacyReviewOptionID: string | null
+): ReviewStatusPolicy {
+    if (value === undefined) {
+        return legacyReviewOptionID === null
+            ? "ENSURE_IN_REVIEW"
+            : "USE_CONFIGURED_OPTION";
+    }
+    if (value === "ENSURE_IN_REVIEW" || value === "USE_IN_PROGRESS") return value;
+    throw new SetupRequestError(400, "INVALID_SELECTION");
 }
 
 async function readJSONObject(request: Request): Promise<Record<string, unknown>> {

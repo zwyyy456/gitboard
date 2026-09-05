@@ -4,12 +4,34 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-02",
   "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    }
+  },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "gitboard-automation",
       "database_id": "4aacb44d-f927-4018-9738-9214c7539004",
       "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AUTOMATION_EVENTS",
+        "class_name": "AutomationEvents"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["AutomationEvents"]
     }
   ],
   "queues": {

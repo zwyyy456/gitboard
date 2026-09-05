@@ -24,7 +24,7 @@
 - Views 只持有搜索文本、输入草稿、表单校验、焦点、局部展开状态等 surface-local presentation state；不得复制可写的项目集合、当前项目或远程 mutation 状态。
 - 菜单栏和看板可以采用不同的局部展示状态，但共享项目选择和远程数据。一个 surface 的出现或消失不得重建全局 store。
 - `GitHubService`、`ProjectMonitor` 和 `ProjectCache` 以 actor 隔离外部副作用或后台任务，不发布第二套可观察业务状态。
-- `AutomationService` 是桌面 App 与 Automation Worker 的唯一 HTTP 边界。View 不拼接 Worker 请求、不解析响应，也不接触 management token。
+- `AutomationService` 是桌面 App 与 Automation Worker 的唯一 HTTP/WebSocket 边界。View 不拼接 Worker 请求、不解析响应，也不接触 management token。
 
 ## 异步任务与轮询
 
@@ -64,6 +64,11 @@
 ## Automation Worker 边界
 
 - `Automation/` 中的 Worker 独立承担 webhook 验证、Queue 编排、GitHub App installation 读取、个人 Project Item 定位、状态写入、OAuth 轮换与管理 API。
+- 每个个人账号的 GitHub App installation 只对应一条账户级 automation。其来源范围由 installation 当前可访问仓库集合决定，仓库增删不创建或复制 automation。
+- setup 中选择的个人 Project、Status 字段和选项只定义语义映射模板。运行时按 Issue 身份在该账号的个人 Projects 中定位实际 Project item，并按字段名和选项名解析每个 Project 自己的 node ID；目标 Project 集合不持久化为配置。
+- setup 提交时，模板 Project 的所选 Status 字段必须包含 `In Progress` 和 `Done`，并记录用户选择的 Ready PR 策略；只是浏览、选择或 Enable 不得修改远程字段。
+- 运行时目标 Project 的 Status 选项先按模板名称精确匹配，再做仅忽略大小写的匹配；空格及其它字符仍须一致。用户选择 `Move to In review` 时，Worker 仅在 Ready PR 的 closing Issue 已精确定位于该 Project 后，才复用对应选项，或在缺失时保留全部现有 option identity 并添加橙色 `In review`；用户选择 `Keep in In progress` 时不得添加选项。任何策略都不得自动添加 `Backlog`。
+- Worker 确认至少一次 Project Status 写入或 automation 连接健康发生变化后，通过按 automation 隔离的 Durable Object WebSocket 只发送带单调 revision 的分类失效事件，不发送 Project 或 Issue 内容。App 收到任一事件后重新加载 automation 连接状态；Project 数据变化或初次连接事件还会刷新当前和 followed Project 快照，以补偿 App 未运行期间错过的事件。
 - 桌面 App 原有 `gh` 认证继续只服务交互式浏览与编辑；后台 automation 不读取或复制本机 `gh` token。
 - Worker 为完成自动化会瞬时接收 GitHub Project Item 响应，但应用层只传播必要 identity 字段，不持久化或记录私人 Issue 内容，也不保存 Issue 到 Project Item 的映射。
 - Webhook 与运行日志只能包含 delivery ID、automation ID、处理阶段、状态码和稳定错误码，不得包含完整 payload、Issue 标题/正文或凭据。
