@@ -1,3 +1,4 @@
+import { findStatusOption } from "./status-option";
 import type { AccessTokenProvider } from "./oauth-credential-provider";
 import {
     GitHubProjectsRESTClient,
@@ -400,14 +401,6 @@ function projectConfiguration(
         shouldEnsureInReview: template.reviewStatusPolicy === "ENSURE_IN_REVIEW"
             && existingInReview === undefined,
     };
-}
-
-function findStatusOption<T extends { name: string }>(
-    options: T[],
-    name: string
-): T | undefined {
-    return options.find((option) => option.name === name)
-        ?? options.find((option) => option.name.toLowerCase() === name.toLowerCase());
 }
 
 function projectItemsURL(

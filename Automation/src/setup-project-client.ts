@@ -1,3 +1,4 @@
+import { findStatusOption } from "./status-option";
 import {
     GitHubGraphQLError,
     type GraphQLRequester,
@@ -255,14 +256,6 @@ function parseStatusOptions(values: unknown[]): StatusOptionDetails[] {
             description: value.description,
         };
     });
-}
-
-function findStatusOption<T extends { name: string }>(
-    options: T[],
-    name: string
-): T | undefined {
-    return options.find((option) => option.name === name)
-        ?? options.find((option) => option.name.toLowerCase() === name.toLowerCase());
 }
 
 function mapRESTError(error: GitHubProjectsRESTError): SetupProjectError {
