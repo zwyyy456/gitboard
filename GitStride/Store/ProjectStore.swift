@@ -82,7 +82,6 @@ private struct ProjectState {
     var mutationRevision: UInt64 = 0
     var mutations: Set<UUID> = []
     var needsRefresh = false
-    var lastRefreshedAt: Date?
 
     var phase: ProjectContentPhase {
         switch load {
@@ -867,8 +866,7 @@ final class ProjectStore {
             projectStates[id]?.snapshot = snapshot
             projectStates[id]?.source = .remote
             projectStates[id]?.load = .idle
-            projectStates[id]?.lastRefreshedAt = Date()
-            lastUpdated = projectStates[id]?.lastRefreshedAt
+            lastUpdated = Date()
             await persistCache()
             return canCommit(ticket) ? snapshot : nil
         } catch {
@@ -1108,7 +1106,7 @@ final class ProjectStore {
             } else {
                 try await self.gitHubService.removeAssignee(issueUrl: url, userLogin: user.login)
             }
-        } apply: { _ in
+        } apply: {
             self.updateContent(contentID: contentID) { item in
                 item.assignees.removeAll { $0.login.caseInsensitiveCompare(user.login) == .orderedSame }
                 if assigned { item.assignees.append(user) }
@@ -1291,11 +1289,11 @@ final class ProjectStore {
         }
     }
 
-    private func performContentMutation<Result>(
+    private func performContentMutation(
         _ contentIDs: Set<String>,
-        operation: () async throws -> Result,
-        apply: (Result) -> Void = { _ in }
-    ) async throws -> Result {
+        operation: () async throws -> Void,
+        apply: () -> Void = {}
+    ) async throws {
         guard contentIDs.allSatisfy({ pendingContentMutations[$0] == nil }) else {
             throw ProjectStoreError.operationInProgress
         }
@@ -1313,11 +1311,10 @@ final class ProjectStore {
             scheduleReconciliation()
         }
         do {
-            let result = try await operation()
+            try await operation()
             guard contentIDs.allSatisfy({ pendingContentMutations[$0] == operationID }) else { throw CancellationError() }
-            apply(result)
+            apply()
             lastUpdated = Date()
-            return result
         } catch {
             if contentIDs.allSatisfy({ pendingContentMutations[$0] == operationID }),
                requiresReconciliation(error) {
