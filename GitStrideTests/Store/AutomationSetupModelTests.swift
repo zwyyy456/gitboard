@@ -13,15 +13,6 @@ struct AutomationSetupModelTests {
         #expect(model.phase == .unavailable)
     }
 
-    @Test func savedTokenStartsConnectionLoad() {
-        let model = AutomationSetupModel(
-            service: AutomationService(baseURL: URL(string: "https://example.invalid")!),
-            tokenStore: StubManagementTokenStore(token: "saved-token")
-        )
-
-        #expect(model.phase == .loadingConnection)
-    }
-
     @Test func savesManagementTokenBeforeCompletingInitialSetup() async throws {
         let recorder = EventRecorder()
         let baseURL = URL(string: "https://initial-setup.invalid")!
@@ -98,6 +89,7 @@ struct AutomationSetupModelTests {
         AutomationURLProtocol.register(host: baseURL.host!) { request in
             switch (request.httpMethod, request.url?.path) {
             case ("GET", "/api/automations"):
+                #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer saved-token")
                 recorder.record("automations")
                 return response(request, body: """
                     {"automations":[{"id":"automation","accountLogin":"owner","repositoryCount":2,"mappingProjectNumber":8,"enabled":true,"healthState":"CONTENT_VISIBILITY_UNVERIFIED","lastDelivery":null}]}
@@ -126,6 +118,9 @@ struct AutomationSetupModelTests {
         )
 
         await model.loadConnection()
+        #expect(recorder.snapshot() == ["automations"])
+        #expect(model.phase == .connected)
+        #expect(model.automations.first?.id == "automation")
         _ = await model.reauthorizeAutomation(id: "automation")
         recorder.clear()
         withObservationTracking {

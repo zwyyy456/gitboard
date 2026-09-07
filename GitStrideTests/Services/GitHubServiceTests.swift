@@ -491,41 +491,6 @@ struct ProjectStoreTests {
         #expect(await runner.recordedArguments().count == callCount)
     }
 
-    @Test func failedStatusMoveKeepsAConcurrentAssigneeUpdate() async throws {
-        let runner = SuspendingGitHubCommandRunner(steps:
-            Self.mutationProjectResponses.map { .response($0) } + [
-                .suspended("status-move", Self.graphQLFailureResponse),
-                .response("")
-            ]
-        )
-        let (store, cleanup) = makeStore(runner: runner)
-        defer { cleanup() }
-        await store.loadProjects()
-
-        let project = try #require(store.selectedProject)
-        let item = try #require(project.items.first)
-        let review = try #require(project.statusOptions.first { $0.id == "REVIEW" })
-        let moveTask = Task { try await store.moveItem(item, toStatus: review, in: project.id) }
-        await runner.waitUntilSuspended("status-move")
-
-        let assignee = Assignee(
-            login: "octocat",
-            avatarUrl: "https://example.invalid/avatar",
-            name: nil
-        )
-        try await store.addAssignee(to: item, in: project.id, user: assignee)
-        await runner.release("status-move")
-        do {
-            try await moveTask.value
-            Issue.record("Expected the status move to fail.")
-        } catch {}
-
-        let updatedItem = try #require(store.project(id: project.id)?.items.first)
-        #expect(updatedItem.status == "Todo")
-        #expect(updatedItem.statusOptionId == "TODO")
-        #expect(updatedItem.assignees == [assignee])
-    }
-
     @Test func itemRejectsASecondStatusMoveWhileOneIsPending() async throws {
         let runner = SuspendingGitHubCommandRunner(steps:
             Self.mutationProjectResponses.map { .response($0) } + [
@@ -909,6 +874,7 @@ struct ProjectStoreTests {
         await runner.release("status")
         await #expect(throws: GitHubError.self) { try await moving.value }
         #expect(store.selectedProject?.items.first?.status == "Todo")
+        #expect(store.selectedProject?.items.first?.statusOptionId == "TODO")
         #expect(store.selectedProject?.items.first?.assignees == [user])
     }
 
