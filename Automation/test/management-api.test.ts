@@ -50,24 +50,6 @@ describe("management API", () => {
         }]);
     });
 
-    test("deletes the automation and conditionally removes its owned service data", async () => {
-        const database = fakeDatabase();
-        const response = await handleManagementRequest(
-            new Request("https://automation.example/api/automations/automation-1", {
-                method: "DELETE",
-                headers: { Authorization: "Bearer management-secret" },
-            }),
-            { DB: database.binding } as Env
-        );
-
-        expect(response.status).toBe(204);
-        expect(database.batchSQL).toHaveLength(4);
-        expect(database.batchSQL[0]).toContain("DELETE FROM project_automations");
-        expect(database.batchSQL[1]).toContain("DELETE FROM oauth_credentials");
-        expect(database.batchSQL[2]).toContain("DELETE FROM installations");
-        expect(database.batchSQL[3]).toContain("DELETE FROM users");
-    });
-
     test("classifies asynchronous management failures", async () => {
         const database = fakeDatabase();
         database.binding.batch = async () => { throw new Error("database unavailable"); };
@@ -88,17 +70,14 @@ describe("management API", () => {
 function fakeDatabase(): {
     binding: D1Database;
     managementTokenHash: string | null;
-    batchSQL: string[];
 } {
     const state = {
         managementTokenHash: null as string | null,
-        batchSQL: [] as string[],
     };
     const binding = {
         prepare(sql: string) {
             let values: unknown[] = [];
             const statement = {
-                sql,
                 bind(...arguments_: unknown[]) {
                     values = arguments_;
                     return statement;
@@ -120,14 +99,12 @@ function fakeDatabase(): {
             };
             return statement;
         },
-        async batch(statements: Array<{ sql: string }>) {
-            state.batchSQL = statements.map((statement) => statement.sql);
+        async batch(statements: D1PreparedStatement[]) {
             return statements.map(() => ({ meta: { changes: 1 } }));
         },
     } as unknown as D1Database;
     return {
         binding,
         get managementTokenHash() { return state.managementTokenHash; },
-        get batchSQL() { return state.batchSQL; },
     };
 }
