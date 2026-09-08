@@ -78,6 +78,7 @@ struct GitStrideApp: App {
             CommandPaletteView(model: model)
         }
         .windowResizability(.contentSize)
+        .commandsRemoved()
 
         WindowGroup("Item Details", id: "item-detail", for: ItemInspectorReference.self) { $reference in
             NavigationStack {
@@ -103,8 +104,15 @@ struct GitStrideApp: App {
             height: AddProjectItemView.windowDefaultSize.height
         )
         .windowResizability(.contentMinSize)
+        .commandsRemoved()
 
-        Window("Settings", id: "settings") {
+        Window("About GitStride", id: "about") {
+            AboutView()
+        }
+        .windowResizability(.contentSize)
+        .commandsRemoved()
+
+        Settings {
             SettingsView(model: model)
         }
         .windowResizability(.contentSize)
@@ -117,6 +125,12 @@ private struct GitStrideCommands: Commands {
     @FocusedValue(\.workspaceCommandContext) private var workspaceCommandContext
 
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About GitStride") {
+                openWindow(id: "about")
+            }
+        }
+
         CommandGroup(after: .sidebar) {
             if let toggleInspector = workspaceCommandContext?.toggleInspector {
                 Button(toggleInspector.title, action: toggleInspector.perform)
@@ -125,13 +139,15 @@ private struct GitStrideCommands: Commands {
             }
         }
 
-        CommandMenu("GitStride") {
+        CommandGroup(after: .toolbar) {
             Button("Command Palette…") {
                 openWindow(id: "command-palette")
             }
             .keyboardShortcut("k", modifiers: .command)
+        }
 
-            Button("Quick Add…") {
+        CommandGroup(after: .newItem) {
+            Button("Add to Project…") {
                 openWindow(id: "quick-add")
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
