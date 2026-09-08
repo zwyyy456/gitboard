@@ -77,7 +77,7 @@ struct KanbanBoardView: View {
         } else {
             boardSurface.searchable(
                 text: $searchText,
-                placement: .automatic,
+                placement: .toolbar,
                 prompt: "Search title, #number, or @assignee"
             )
         }
@@ -107,6 +107,63 @@ struct KanbanBoardView: View {
             ProjectSelectorView(store: store)
         }
 
+        if #available(macOS 26.0, *) {
+            ToolbarSpacer(.fixed)
+        }
+
+        ToolbarItemGroup(placement: .automatic) {
+            Button(action: refresh) {
+                Label {
+                    Text("Refresh Project")
+                } icon: {
+                    ZStack {
+                        Image(systemName: "arrow.clockwise")
+                            .opacity(isRefreshing ? 0 : 1)
+
+                        if isRefreshing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .frame(width: 16, height: 16)
+                }
+            }
+            .labelStyle(.iconOnly)
+            .disabled(isRefreshing)
+            .help(refreshHelp)
+            .accessibilityValue(isRefreshing ? "Refreshing" : "")
+
+            if let project = store.selectedProject {
+                if projectURL != nil {
+                    Button(
+                        "Open Project in GitHub",
+                        systemImage: "arrow.up.right.square",
+                        action: openProjectInGitHub
+                    )
+                    .labelStyle(.iconOnly)
+                    .help("Open Project in GitHub")
+                }
+                let isFollowing = myWorkStore.isFollowing(project.id)
+                let followLabel = isFollowing
+                    ? "Remove \(project.title) from My Work"
+                    : "Add \(project.title) to My Work"
+                Button(
+                    followLabel,
+                    systemImage: "briefcase",
+                    action: toggleFollowingProject
+                )
+                .labelStyle(.iconOnly)
+                .help(followLabel)
+            }
+        }
+
+        if isSelecting || showsProjectEditingActions {
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.fixed)
+            }
+        }
+
         if isSelecting {
             ToolbarItemGroup(placement: .automatic) {
                 Text("\(selectedItemIDs.count) Selected")
@@ -129,89 +186,44 @@ struct KanbanBoardView: View {
                 Button("Done", action: toggleSelectionMode)
                     .keyboardShortcut(.cancelAction)
             }
-        } else {
+        } else if showsProjectEditingActions {
             ToolbarItemGroup(placement: .automatic) {
-                Button(action: refresh) {
-                    Label {
-                        Text("Refresh Project")
-                    } icon: {
-                        ZStack {
-                            Image(systemName: "arrow.clockwise")
-                                .opacity(isRefreshing ? 0 : 1)
+                Button("Add Item", systemImage: "plus", action: showAddItem)
+                    .labelStyle(.iconOnly)
+                    .disabled(canEditSelectedProject == false)
+                    .help("Add Item")
 
-                            if isRefreshing {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                        .frame(width: 16, height: 16)
-                    }
-                }
-                .labelStyle(.iconOnly)
-                .disabled(isRefreshing)
-                .help(refreshHelp)
-                .accessibilityValue(isRefreshing ? "Refreshing" : "")
-
-                if showsProjectEditingActions {
-                    Button("Add Item", systemImage: "plus", action: showAddItem)
-                        .labelStyle(.iconOnly)
-                        .disabled(canEditSelectedProject == false)
-                        .help("Add Item")
-                }
-
-                if let project = store.selectedProject {
-                    if projectURL != nil {
-                        Button(
-                            "Open Project in GitHub",
-                            systemImage: "arrow.up.right.square",
-                            action: openProjectInGitHub
-                        )
-                        .labelStyle(.iconOnly)
-                        .help("Open Project in GitHub")
-                    }
-
-                    if showsProjectEditingActions {
-                        Button(
-                            "Select Multiple Items",
-                            systemImage: "checkmark.circle",
-                            action: toggleSelectionMode
-                        )
+                if store.selectedProject != nil {
+                    Button("Select Multiple Items", systemImage: "checkmark.circle", action: toggleSelectionMode)
                         .labelStyle(.iconOnly)
                         .disabled(canEditSelectedProject == false)
                         .help("Select Multiple Items")
-                    }
-
-                    let isFollowing = myWorkStore.isFollowing(project.id)
-                    let followLabel = isFollowing
-                        ? "Remove \(project.title) from My Work"
-                        : "Add \(project.title) to My Work"
-                    Button(
-                        followLabel,
-                        systemImage: "briefcase",
-                        action: toggleFollowingProject
-                    )
-                    .labelStyle(.iconOnly)
-                    .help(followLabel)
                 }
             }
+        }
 
-            if let project = store.selectedProject,
-               project.statusOptions.isEmpty == false {
-                ToolbarItem(placement: .automatic) {
-                    Button(
-                        "Filter Statuses",
-                        systemImage: statusFilterSystemImage(for: project),
-                        action: toggleStatusFilter
-                    )
-                    .labelStyle(.iconOnly)
-                    .help(statusFilterHelp(for: project))
-                    .accessibilityValue(statusFilterAccessibilityValue(for: project))
-                    .popover(isPresented: $showsStatusFilter, arrowEdge: .top) {
-                        StatusColumnFilterView(store: store, project: project)
-                    }
+        if let project = store.selectedProject,
+           project.statusOptions.isEmpty == false {
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.fixed)
+            }
+            ToolbarItem(placement: .automatic) {
+                Button(
+                    "Filter Statuses",
+                    systemImage: statusFilterSystemImage(for: project),
+                    action: toggleStatusFilter
+                )
+                .labelStyle(.iconOnly)
+                .help(statusFilterHelp(for: project))
+                .accessibilityValue(statusFilterAccessibilityValue(for: project))
+                .popover(isPresented: $showsStatusFilter, arrowEdge: .top) {
+                    StatusColumnFilterView(store: store, project: project)
                 }
             }
+        }
+        if #available(macOS 26.0, *), !isSelecting {
+            ToolbarSpacer(.flexible)
+            DefaultToolbarItem(kind: .search)
         }
     }
 
