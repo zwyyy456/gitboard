@@ -31,6 +31,65 @@ beforeAll(async () => {
     await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
 });
 
+test("recovers an existing account only from a verified setup, preserving mapping and pause state", async () => {
+    const setup = await seedConfigurableSetup("recovery", 951);
+    const automationID = await persistSetupCompletion(testEnv.DB, completionInput(setup, 1951, "old-recovery-token"));
+    await testEnv.DB.prepare("UPDATE project_automations SET enabled = 0 WHERE id = ?").bind(automationID).run();
+    const before = await testEnv.DB.prepare("SELECT project_node_id, status_field_node_id, in_progress_option_id, done_option_id, review_status_policy, enabled FROM project_automations WHERE id = ?")
+        .bind(automationID).first();
+    const secret = "recovery-session-secret";
+    const now = new Date().toISOString();
+    await testEnv.DB.prepare(
+        `INSERT INTO setup_sessions (id, setup_token_hash, user_id, oauth_credential_id,
+            installation_id, state, expires_at, created_at, updated_at, purpose)
+         VALUES ('recover-session', ?, ?, ?, 951, 'OAUTH_PENDING', ?, ?, ?, 'INITIAL')`
+    ).bind(await tokenHash(secret), setup.user_id, setup.oauth_credential_id,
+        new Date(Date.now() + 60_000).toISOString(), now, now).run();
+    const managementToken = "r".repeat(43);
+    const request = (method: string, suffix = "", bearer = secret) => new Request(
+        `https://example.invalid/api/setup/sessions/recover-session${suffix}`, {
+            method,
+            headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json" },
+            ...(method === "POST" ? { body: JSON.stringify({ managementToken }) } : {}),
+        }
+    );
+    expect((await handleSetupRequest(request("POST", "/recover", "wrong"), testEnv)).status).toBe(401);
+    expect((await handleSetupRequest(request("POST", "/recover"), testEnv)).status).toBe(409);
+    await testEnv.DB.prepare("UPDATE setup_sessions SET state = 'CONFIGURATION_PENDING' WHERE id = 'recover-session'").run();
+    const status = await handleSetupRequest(request("GET"), testEnv);
+    expect(await status.json()).toMatchObject({ state: "RECOVERY_PENDING" });
+    expect((await handleSetupRequest(request("POST", "/complete"), testEnv)).status).toBe(409);
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await handleSetupRequest(request("POST", "/recover"), testEnv);
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ automationID });
+    }
+    expect(await setupCompletionCounts("recovery")).toEqual({ automations: 1, tokens: 2 });
+    expect(await testEnv.DB.prepare("SELECT project_node_id, status_field_node_id, in_progress_option_id, done_option_id, review_status_policy, enabled FROM project_automations WHERE id = ?")
+        .bind(automationID).first()).toEqual(before);
+    const managed = await handleManagementRequest(new Request("https://example.invalid/api/automations", {
+        headers: { Authorization: `Bearer ${managementToken}` },
+    }), testEnv);
+    expect(managed.status).toBe(200);
+    expect(await managed.json()).toMatchObject({ automations: [{ id: automationID, enabled: false }] });
+});
+
+test("does not grant recovery access to a different account", async () => {
+    const owner = await seedConfigurableSetup("recovery-owner", 952);
+    const other = await seedConfigurableSetup("recovery-other", 953);
+    const automationID = await persistSetupCompletion(testEnv.DB, completionInput(owner, 1952, "owner-token"));
+    await testEnv.DB.prepare(
+        "UPDATE setup_sessions SET state = 'RECOVERY_PENDING', automation_id = ?, installation_id = 952, setup_token_hash = ? WHERE id = ?"
+    ).bind(automationID, await tokenHash("other-secret"), other.id).run();
+    const response = await handleSetupRequest(new Request(`https://example.invalid/api/setup/sessions/${other.id}/recover`, {
+        method: "POST",
+        headers: { Authorization: "Bearer other-secret", "Content-Type": "application/json" },
+        body: JSON.stringify({ managementToken: "s".repeat(43) }),
+    }), testEnv);
+    expect(response.status).toBe(409);
+    expect(await setupCompletionCounts("recovery-other")).toEqual({ automations: 0, tokens: 0 });
+});
+
 test("keeps a received delivery when Queue send fails and schedules it again", async () => {
     const now = new Date().toISOString();
     await testEnv.DB.prepare(

@@ -13,9 +13,10 @@ struct AutomationSetupModelTests {
         #expect(model.phase == .unavailable)
     }
 
-    @Test func savesManagementTokenBeforeCompletingInitialSetup() async throws {
+    @Test(arguments: ["Status", "STATUS"])
+    func selectsStatusDefaultsAndSavesTokenBeforeCompletingSetup(fieldName: String) async throws {
         let recorder = EventRecorder()
-        let baseURL = URL(string: "https://initial-setup.invalid")!
+        let baseURL = URL(string: "https://initial-setup-\(fieldName == "Status" ? "exact" : "case").invalid")!
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AutomationURLProtocol.self]
         AutomationURLProtocol.register(host: baseURL.host!) { request in
@@ -35,7 +36,7 @@ struct AutomationSetupModelTests {
                     """)
             case ("POST", "/api/setup/sessions/setup/project-fields"):
                 return response(request, body: """
-                    {"fields":[{"nodeID":"FIELD","name":"Status","options":[{"id":"PROGRESS","name":"In Progress"},{"id":"REVIEW","name":"In Review"},{"id":"DONE","name":"Done"}]}]}
+                    {"fields":[{"nodeID":"CUSTOM","name":"Priority","options":[{"id":"HIGH","name":"High"}]},{"nodeID":"FIELD","name":"\(fieldName)","options":[{"id":"PROGRESS","name":"In progress"},{"id":"REVIEW","name":"In Review"},{"id":"DONE","name":"Done"}]},{"nodeID":"AMBIGUOUS","name":"Other","options":[{"id":"P1","name":"in progress"},{"id":"P2","name":"IN PROGRESS"},{"id":"D1","name":"done"}]}]}
                     """)
             case ("POST", "/api/setup/sessions/setup/complete"):
                 let body = try requestBody(request)
@@ -67,9 +68,28 @@ struct AutomationSetupModelTests {
 
         _ = await model.startSetup()
         await model.observeSetup()
-        model.inProgressOptionID = "PROGRESS"
-        model.doneOptionID = "DONE"
+        #expect(model.selectedStatusFieldID == "FIELD")
+        #expect(model.inProgressOptionID == "PROGRESS")
+        #expect(model.doneOptionID == "DONE")
         #expect(model.canComplete)
+
+        model.inProgressOptionID = "REVIEW"
+        model.selectStatusField("FIELD")
+        #expect(model.inProgressOptionID == "REVIEW")
+
+        model.selectStatusField("CUSTOM")
+        #expect(model.inProgressOptionID == nil)
+        #expect(model.doneOptionID == nil)
+        #expect(!model.canComplete)
+
+        model.selectStatusField("AMBIGUOUS")
+        #expect(model.inProgressOptionID == nil)
+        #expect(model.doneOptionID == "D1")
+        #expect(!model.canComplete)
+
+        model.selectStatusField("FIELD")
+        #expect(model.inProgressOptionID == "PROGRESS")
+        #expect(model.doneOptionID == "DONE")
         await model.completeSetup()
 
         #expect(recorder.snapshot() == [
@@ -79,6 +99,65 @@ struct AutomationSetupModelTests {
             "complete",
         ])
         #expect(model.phase == .connected)
+    }
+
+    @Test(arguments: ["RECOVERY_PENDING", "CONFIGURATION_PENDING"])
+    func existingConnectionUsesRecoveryInsteadOfRepeatingCreation(initialState: String) async throws {
+        let recorder = EventRecorder()
+        let baseURL = URL(string: "https://recovery-\(initialState == "RECOVERY_PENDING" ? "early" : "late").invalid")!
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AutomationURLProtocol.self]
+        AutomationURLProtocol.register(host: baseURL.host!) { request in
+            switch (request.httpMethod, request.url?.path) {
+            case ("POST", "/api/setup/sessions"):
+                return response(request, body: """
+                    {"id":"setup","setupToken":"setup-token","authorizationURL":"https://example.invalid/authorize"}
+                    """)
+            case ("GET", "/api/setup/sessions/setup"):
+                return response(request, body: "{\"state\":\"\(initialState)\"}")
+            case ("GET", "/api/setup/sessions/setup/options"):
+                return response(request, body: """
+                    {"projects":[{"nodeID":"PROJECT","number":1,"title":"Board"}]}
+                    """)
+            case ("POST", "/api/setup/sessions/setup/project-fields"):
+                return response(request, body: """
+                    {"fields":[{"nodeID":"FIELD","name":"Status","options":[{"id":"PROGRESS","name":"In Progress"},{"id":"DONE","name":"Done"}]}]}
+                    """)
+            case ("POST", "/api/setup/sessions/setup/complete"):
+                return response(request, status: 409, body: "{\"error\":\"ACCOUNT_AUTOMATION_ALREADY_CONFIGURED\"}")
+            case ("POST", "/api/setup/sessions/setup/recover"):
+                let object = try #require(try JSONSerialization.jsonObject(with: requestBody(request)) as? [String: String])
+                #expect(object["managementToken"] == recorder.savedToken())
+                recorder.record("recover")
+                return response(request, body: "{\"automationID\":\"existing\"}")
+            case ("GET", "/api/automations"):
+                return response(request, body: """
+                    {"automations":[{"id":"existing","accountLogin":"owner","repositoryCount":2,"mappingProjectNumber":8,"enabled":false,"healthState":"ACTIVE","lastDelivery":null}]}
+                    """)
+            default:
+                throw AutomationServiceError.invalidResponse
+            }
+        }
+        defer { AutomationURLProtocol.unregister(host: baseURL.host!) }
+        let model = AutomationSetupModel(
+            service: AutomationService(baseURL: baseURL, session: URLSession(configuration: configuration)),
+            tokenStore: RecordingManagementTokenStore(recorder: recorder),
+            makeManagementToken: { "recovered-token" }
+        )
+        _ = await model.startSetup()
+        #expect(model.isPresentingSetup)
+        await model.observeSetup()
+        if initialState == "CONFIGURATION_PENDING" { await model.completeSetup() }
+        #expect(model.phase == .existingConnection)
+        #expect(!model.canComplete)
+        #expect(model.errorMessage == nil)
+        await model.recoverConnection()
+        #expect(model.phase == .connected)
+        #expect(!model.isPresentingSetup)
+        #expect(model.setupSessionID == nil)
+        #expect(model.automations.first?.id == "existing")
+        #expect(model.automations.first?.enabled == false)
+        #expect(recorder.snapshot().contains("recover"))
     }
 
     @Test func reloadsAutomationBeforeEndingCompletedReauthorizationSession() async throws {

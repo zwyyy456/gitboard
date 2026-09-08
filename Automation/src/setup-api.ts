@@ -19,7 +19,7 @@ const githubOAuthEndpoint = "https://github.com/login/oauth";
 const githubAPI = "https://api.github.com";
 const setupCookieName = "gb_setup";
 
-type SetupState = "OAUTH_PENDING" | "INSTALLATION_PENDING" | "CONFIGURATION_PENDING" | "COMPLETE";
+type SetupState = "OAUTH_PENDING" | "INSTALLATION_PENDING" | "CONFIGURATION_PENDING" | "RECOVERY_PENDING" | "COMPLETE";
 
 interface SetupSessionRecord {
     id: string;
@@ -79,19 +79,29 @@ export async function handleSetupRequest(request: Request, env: Env): Promise<Re
         if (request.method === "GET" && url.pathname === "/setup/github-app") {
             return await finishInstallation(request, url, env);
         }
-        const setupMatch = url.pathname.match(/^\/api\/setup\/sessions\/([^/]+)(?:\/(options|project-fields|complete))?$/);
+        const setupMatch = url.pathname.match(/^\/api\/setup\/sessions\/([^/]+)(?:\/(options|project-fields|complete|recover))?$/);
         if (setupMatch) {
-            const session = await authenticateSetupSession(request, setupMatch[1], env.DB);
+            let session = await authenticateSetupSession(request, setupMatch[1], env.DB);
+            session = await recognizeExistingAutomation(session, env.DB);
             if (request.method === "GET" && !setupMatch[2]) {
                 return Response.json(publicSession(session));
             }
             if (request.method === "GET" && setupMatch[2] === "options") {
+                if (session.state === "RECOVERY_PENDING") {
+                    throw new SetupRequestError(409, "ACCOUNT_AUTOMATION_ALREADY_CONFIGURED");
+                }
                 return await listSetupOptions(session, env);
             }
             if (request.method === "POST" && setupMatch[2] === "project-fields") {
                 return await listProjectFields(request, session, env);
             }
+            if (request.method === "POST" && setupMatch[2] === "recover") {
+                return await recoverSetup(request, session, env);
+            }
             if (request.method === "POST" && setupMatch[2] === "complete") {
+                if (session.state === "RECOVERY_PENDING") {
+                    throw new SetupRequestError(409, "ACCOUNT_AUTOMATION_ALREADY_CONFIGURED");
+                }
                 return await completeSetup(request, session, env);
             }
         }
@@ -394,6 +404,79 @@ async function connectInstallation(
          WHERE id = ? AND state = 'INSTALLATION_PENDING'`
     ).bind(installation.id, now, session.id).run();
     if (result.meta.changes !== 1) throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+}
+
+async function recognizeExistingAutomation(
+    session: SetupSessionRecord,
+    database: D1Database
+): Promise<SetupSessionRecord> {
+    if (session.state !== "CONFIGURATION_PENDING" || session.purpose !== "INITIAL") return session;
+    const existing = await database.prepare(
+        "SELECT id FROM project_automations WHERE installation_id = ? AND user_id = ?"
+    ).bind(session.installation_id, session.user_id).first<{ id: string }>();
+    if (!existing) return session;
+    await database.prepare(
+        `UPDATE setup_sessions SET state = 'RECOVERY_PENDING', automation_id = ?
+         WHERE id = ? AND state = 'CONFIGURATION_PENDING'`
+    ).bind(existing.id, session.id).run();
+    return loadSession(database, session.id);
+}
+
+async function recoverSetup(
+    request: Request,
+    session: SetupSessionRecord,
+    env: Env
+): Promise<Response> {
+    const body = await readJSONObject(request);
+    const token = secretToken(body.managementToken);
+    if (!token) throw new SetupRequestError(400, "MANAGEMENT_TOKEN_REQUIRED");
+    if (session.purpose !== "INITIAL") throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+    const tokenHash = await hashToken(token);
+    if (session.state !== "COMPLETE") {
+        requireState(session, "RECOVERY_PENDING");
+        const context = requireConfigurationContext(session);
+        const now = new Date().toISOString();
+        // Only the account proven by OAuth and installation ownership can grant access.
+        // Keep the existing automation's mapping and enabled state intact.
+        await env.DB.batch([
+            env.DB.prepare(
+                `INSERT INTO management_tokens (id, user_id, token_hash, created_at)
+                 SELECT ?, s.user_id, ?, ? FROM setup_sessions s
+                 JOIN project_automations a ON a.id = s.automation_id
+                    AND a.user_id = s.user_id AND a.installation_id = s.installation_id
+                 WHERE s.id = ? AND s.state = 'RECOVERY_PENDING'
+                 ON CONFLICT(token_hash) DO NOTHING`
+            ).bind(crypto.randomUUID(), tokenHash, now, session.id),
+            env.DB.prepare(
+                `UPDATE project_automations
+                 SET oauth_credential_id = ?, updated_at = ?,
+                     health_state = CASE WHEN health_state IN ('OAUTH_REAUTH_REQUIRED', 'OAUTH_SCOPE_MISSING')
+                        THEN 'CONTENT_VISIBILITY_UNVERIFIED' ELSE health_state END
+                 WHERE id = ? AND user_id = ? AND installation_id = ?
+                    AND EXISTS (SELECT 1 FROM setup_sessions s JOIN management_tokens t
+                        ON t.user_id = s.user_id AND t.token_hash = ? AND t.revoked_at IS NULL
+                        WHERE s.id = ? AND s.state = 'RECOVERY_PENDING')`
+            ).bind(context.credentialID, now, session.automation_id, context.userID,
+                context.installationID, tokenHash, session.id),
+            env.DB.prepare(
+                `UPDATE setup_sessions SET state = 'COMPLETE', updated_at = ?,
+                    management_token_id = (SELECT id FROM management_tokens
+                        WHERE token_hash = ? AND user_id = setup_sessions.user_id AND revoked_at IS NULL)
+                 WHERE id = ? AND state = 'RECOVERY_PENDING'
+                    AND EXISTS (SELECT 1 FROM management_tokens WHERE token_hash = ?
+                        AND user_id = setup_sessions.user_id AND revoked_at IS NULL)
+                    AND EXISTS (SELECT 1 FROM project_automations WHERE id = setup_sessions.automation_id
+                        AND user_id = setup_sessions.user_id AND installation_id = setup_sessions.installation_id)`
+            ).bind(now, tokenHash, session.id, tokenHash),
+        ]);
+    }
+    const completed = await env.DB.prepare(
+        `SELECT s.automation_id FROM setup_sessions s JOIN management_tokens t
+         ON t.id = s.management_token_id AND t.user_id = s.user_id
+         WHERE s.id = ? AND s.state = 'COMPLETE' AND t.token_hash = ? AND t.revoked_at IS NULL`
+    ).bind(session.id, tokenHash).first<{ automation_id: string }>();
+    if (!completed) throw new SetupRequestError(409, "SETUP_STATE_CHANGED");
+    return Response.json({ automationID: completed.automation_id });
 }
 
 async function listSetupOptions(session: SetupSessionRecord, env: Env): Promise<Response> {
@@ -980,8 +1063,8 @@ function classifySetupError(error: unknown): SetupRequestError {
 
 const setupCompleteHTML = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>GitStride setup</title></head><body><main><h1>GitStride is connected</h1>
-<p>Return to GitStride to choose a repository and project workflow.</p></main></body></html>`;
+<title>GitStride setup</title></head><body><main><h1>Authorization complete</h1>
+<p>Return to GitStride to finish connecting automation.</p></main></body></html>`;
 
 const reauthorizationCompleteHTML = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">

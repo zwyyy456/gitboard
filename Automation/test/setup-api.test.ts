@@ -254,7 +254,7 @@ describe("setup session", () => {
         } as Env);
 
         expect(callbackResponse.status).toBe(200);
-        await expect(callbackResponse.text()).resolves.toContain("GitStride is connected");
+        await expect(callbackResponse.text()).resolves.toContain("Authorization complete");
         expect(installationUpdate?.[0]).toBe(9);
     });
 

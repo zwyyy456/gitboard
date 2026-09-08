@@ -13,6 +13,7 @@ final class AutomationSetupModel {
         case waitingForBrowser
         case loadingConfiguration
         case configuring
+        case existingConnection
         case saving
         case connectionStorageFailed
         case connected
@@ -47,6 +48,7 @@ final class AutomationSetupModel {
     private var loadedProjectID: String?
     private var pendingManagementToken: String?
     private var setupIntent: SetupIntent?
+    private var isRecoveringConnection = false
     private let projectChangeContinuation: AsyncStream<Int>.Continuation
     private var eventTask: Task<Void, Never>?
 
@@ -73,6 +75,16 @@ final class AutomationSetupModel {
         } catch {
             phase = .connectionLoadFailed
             errorMessage = "GitStride could not access the saved automation connection in Keychain."
+        }
+    }
+
+    var isPresentingSetup: Bool {
+        switch phase {
+        case .starting, .waitingForBrowser, .loadingConfiguration, .configuring,
+             .existingConnection, .saving, .connectionStorageFailed:
+            true
+        default:
+            false
         }
     }
 
@@ -124,9 +136,13 @@ final class AutomationSetupModel {
                     id: sessionID,
                     setupToken: setupToken
                 )
+                guard self.setupSessionID == sessionID, !Task.isCancelled else { return }
                 switch status.state {
                 case "OAUTH_PENDING", "INSTALLATION_PENDING":
                     phase = .waitingForBrowser
+                case "RECOVERY_PENDING":
+                    phase = .existingConnection
+                    return
                 case "CONFIGURATION_PENDING":
                     try await loadConfiguration(
                         service: service,
@@ -150,6 +166,9 @@ final class AutomationSetupModel {
             }
         } catch is CancellationError {
             return
+        } catch AutomationServiceError.server("ACCOUNT_AUTOMATION_ALREADY_CONFIGURED") {
+            phase = .existingConnection
+            errorMessage = nil
         } catch {
             fail(error, fallback: setupIntent == .initial ? .disconnected : .connected)
         }
@@ -293,7 +312,11 @@ final class AutomationSetupModel {
             )
             guard selectedProjectID == projectID else { return }
             statusFields = fields
-            selectedStatusFieldID = fields.first?.id
+            let exactFields = fields.filter { $0.name == "Status" }
+            let matchingFields = exactFields.isEmpty
+                ? fields.filter { $0.name.caseInsensitiveCompare("Status") == .orderedSame }
+                : exactFields
+            selectStatusField(matchingFields.count == 1 ? matchingFields[0].id : nil)
             loadedProjectID = projectID
             loadingProjectID = nil
         } catch is CancellationError {
@@ -307,8 +330,18 @@ final class AutomationSetupModel {
     }
 
     func selectStatusField(_ fieldID: String?) {
+        guard fieldID != selectedStatusFieldID else { return }
         selectedStatusFieldID = fieldID
-        clearStatusMapping()
+        inProgressOptionID = defaultStatusOptionID(named: "In Progress")
+        doneOptionID = defaultStatusOptionID(named: "Done")
+    }
+
+    private func defaultStatusOptionID(named name: String) -> String? {
+        let exactOptions = selectedStatusOptions.filter { $0.name == name }
+        let matchingOptions = exactOptions.isEmpty
+            ? selectedStatusOptions.filter { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+            : exactOptions
+        return matchingOptions.count == 1 ? matchingOptions[0].id : nil
     }
 
     func completeSetup() async {
@@ -357,14 +390,45 @@ final class AutomationSetupModel {
         } catch is ManagementTokenStoreError {
             phase = .connectionStorageFailed
             errorMessage = "GitStride could not save the connection in Keychain."
+        } catch AutomationServiceError.server("ACCOUNT_AUTOMATION_ALREADY_CONFIGURED") {
+            errorMessage = nil
+            phase = .existingConnection
         } catch {
             fail(error, fallback: .configuring)
         }
     }
 
+    func recoverConnection() async {
+        guard let service, let sessionID = setupSessionID, let setupToken else { return }
+        isRecoveringConnection = true
+        phase = .saving
+        errorMessage = nil
+        do {
+            let token = try pendingManagementToken ?? makeManagementToken()
+            pendingManagementToken = token
+            try tokenStore.save(token)
+            try await service.recoverSetup(id: sessionID, setupToken: setupToken, managementToken: token)
+            pendingManagementToken = nil
+            clearSetupSession()
+            phase = .loadingConnection
+            await loadConnection()
+        } catch is CancellationError {
+            phase = .existingConnection
+        } catch is ManagementTokenStoreError {
+            phase = .connectionStorageFailed
+            errorMessage = "GitStride could not save the connection in Keychain."
+        } catch {
+            fail(error, fallback: .existingConnection)
+        }
+    }
+
     func retryTokenStorage() async {
         guard pendingManagementToken != nil else { return }
-        await completeSetup()
+        if isRecoveringConnection {
+            await recoverConnection()
+        } else {
+            await completeSetup()
+        }
     }
 
     func cancelSetup() async {
@@ -388,6 +452,7 @@ final class AutomationSetupModel {
     ) async throws {
         phase = .loadingConfiguration
         let options = try await service.setupOptions(id: sessionID, setupToken: setupToken)
+        guard setupSessionID == sessionID, !Task.isCancelled else { return }
         projects = options.projects
         phase = .configuring
         await selectProject(projects.first?.id)
@@ -407,6 +472,7 @@ final class AutomationSetupModel {
         loadingProjectID = nil
         loadedProjectID = nil
         setupIntent = nil
+        isRecoveringConnection = false
         selectedProjectID = nil
         selectedStatusFieldID = nil
         clearStatusMapping()

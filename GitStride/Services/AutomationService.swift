@@ -193,6 +193,15 @@ actor AutomationService {
         return response.automationID
     }
 
+    func recoverSetup(id: String, setupToken: String, managementToken: String) async throws {
+        let _: CompletionResponse = try await send(
+            path: "api/setup/sessions/\(id)/recover",
+            method: "POST",
+            bearerToken: setupToken,
+            body: ["managementToken": managementToken]
+        )
+    }
+
     func automations(managementToken: String) async throws -> [Automation] {
         let response: AutomationListResponse = try await send(
             path: "api/automations",

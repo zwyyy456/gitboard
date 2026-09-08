@@ -6,81 +6,44 @@ struct AutomationSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Pull Request Automation") {
-                switch setup.phase {
-                case .unavailable:
-                    ContentUnavailableView(
-                        "Automation Unavailable",
-                        systemImage: "gearshape.2",
-                        description: Text("This build does not have an automation service configured.")
-                    )
-                case .disconnected:
-                    Text("Connect once to keep closing Issues in matching personal Projects synchronized across every repository available to the GitHub App.")
-                        .foregroundStyle(.secondary)
-                    Button(
-                        "Connect GitHub Automation…",
-                        systemImage: "link",
-                        action: startSetup
-                    )
-                case .loadingConnection:
-                    ProgressView("Loading automation status…")
-                case .connectionLoadFailed:
-                    Text("The saved automation connection could not be loaded.")
-                        .foregroundStyle(.secondary)
-                    Button(
-                        "Retry Loading",
-                        systemImage: "arrow.clockwise",
-                        action: retryConnectionLoad
-                    )
-                case .starting:
-                    ProgressView("Starting secure setup…")
-                case .waitingForBrowser:
-                    Label("Finish authorization and app installation in your browser.", systemImage: "safari")
-                    Button("Open Setup Page", systemImage: "arrow.up.forward.app", action: reopenBrowser)
-                    Button("Cancel Setup", role: .cancel, action: cancelSetup)
-                case .loadingConfiguration:
-                    ProgressView("Loading Projects…")
-                    Button("Cancel Setup", role: .cancel, action: cancelSetup)
-                case .configuring:
-                    AutomationConfigurationForm(setup: setup)
-                    Button("Cancel Setup", role: .cancel, action: cancelSetup)
-                case .saving:
-                    ProgressView("Enabling account automation…")
-                case .connectionStorageFailed:
-                    Label("The connection could not be saved locally, so automation was not enabled.", systemImage: "key")
-                    Button("Retry Saving to Keychain", action: retryTokenStorage)
-                    Button("Cancel Setup", role: .cancel, action: cancelSetup)
-                case .connected:
-                    if setup.automations.isEmpty && setup.errorMessage != nil {
-                        Text("Connection status could not be loaded.")
+            Section {
+                if !setup.automations.isEmpty {
+                    AutomationConnectionList(setup: setup)
+                } else {
+                    switch setup.phase {
+                    case .unavailable:
+                        Text("Automation is not available in this build.")
                             .foregroundStyle(.secondary)
-                        Button(
-                            "Retry Loading",
-                            systemImage: "arrow.clockwise",
-                            action: reloadAutomations
-                        )
-                    } else if setup.automations.isEmpty {
-                        Text("No automation connections were found.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        AutomationConnectionList(setup: setup)
+                    case .loadingConnection:
+                        ProgressView("Loading connection…")
+                    case .connectionLoadFailed:
+                        Text("The saved connection could not be loaded.")
+                        Button("Retry") { Task { await setup.loadConnection() } }
+                    default:
+                        Text("Keep Issue statuses up to date as linked pull requests change.")
+                        Button("Set Up Automation…", action: startSetup)
+                            .disabled(setup.isPresentingSetup)
                     }
                 }
-
-                if let errorMessage = setup.errorMessage {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            } header: {
+                Text("Pull Request Automation")
+            } footer: {
+                Text("Private Issue content is not stored or logged by the automation service.")
             }
-
-            Section("Privacy") {
-                Text("The Worker temporarily processes GitHub Project Item responses to run automation, but does not persist or log private Issue content.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            if !setup.isPresentingSetup, let error = setup.errorMessage {
+                Section {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                }
             }
         }
         .formStyle(.grouped)
+        .sheet(isPresented: Binding(
+            get: { setup.isPresentingSetup },
+            set: { _ in }
+        )) {
+            AutomationSetupSheet(setup: setup)
+        }
         .task(id: setup.setupSessionID) {
             await setup.observeSetup()
         }
@@ -96,26 +59,74 @@ struct AutomationSettingsView: View {
             }
         }
     }
+}
 
-    private func reopenBrowser() {
-        if let url = setup.browserURL() {
-            NSWorkspace.shared.open(url)
+private struct AutomationSetupSheet: View {
+    @Bindable var setup: AutomationSetupModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(setup.phase == .existingConnection ? "Connect Existing Automation" : "Set Up Automation")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding(20)
+            Divider()
+            Form {
+                switch setup.phase {
+                case .configuring:
+                    AutomationConfigurationForm(setup: setup)
+                case .existingConnection:
+                    Section {
+                        Label("This GitHub account already has automation set up.", systemImage: "checkmark.circle")
+                        Text("Connect this Mac to manage it. Your existing status mapping and pause setting will be preserved.")
+                            .foregroundStyle(.secondary)
+                    }
+                case .waitingForBrowser:
+                    Section {
+                        Text("Finish authorization in your browser, then return to GitStride.")
+                        Button("Open Browser") {
+                            if let url = setup.browserURL() { NSWorkspace.shared.open(url) }
+                        }
+                    }
+                case .connectionStorageFailed:
+                    Section {
+                        Text("Save the connection to Keychain to continue.")
+                        Button("Retry Saving") { Task { await setup.retryTokenStorage() } }
+                    }
+                case .saving:
+                    ProgressView("Saving connection…")
+                default:
+                    ProgressView("Preparing setup…")
+                }
+                if let error = setup.errorMessage {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            Divider()
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { Task { await setup.cancelSetup() } }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(setup.phase == .saving || setup.phase == .starting)
+                if setup.phase == .configuring {
+                    Button("Enable Automation") { Task { await setup.completeSetup() } }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!setup.canComplete)
+                } else if setup.phase == .existingConnection {
+                    Button("Connect") { Task { await setup.recoverConnection() } }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(16)
         }
-    }
-
-    private func retryConnectionLoad() {
-        Task { await setup.loadConnection() }
-    }
-
-    private func reloadAutomations() {
-        Task { await setup.loadAutomations() }
-    }
-
-    private func retryTokenStorage() {
-        Task { await setup.retryTokenStorage() }
-    }
-
-    private func cancelSetup() {
-        Task { await setup.cancelSetup() }
+        .frame(width: 520, height: setup.phase == .configuring ? 580 : 320)
+        .interactiveDismissDisabled()
     }
 }

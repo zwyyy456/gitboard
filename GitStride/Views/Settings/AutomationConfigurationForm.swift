@@ -4,71 +4,72 @@ struct AutomationConfigurationForm: View {
     @Bindable var setup: AutomationSetupModel
 
     var body: some View {
-        Text("All repositories available to the GitHub App are included automatically. The Project below defines the Status names used across your personal Projects.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-        Picker("Mapping template Project", selection: $setup.selectedProjectID) {
-            Text("Choose a Project").tag(nil as String?)
-            ForEach(setup.projects) { project in
-                Text(project.title).tag(Optional(project.id))
+        Section {
+            Picker("Project", selection: $setup.selectedProjectID) {
+                Text("Choose a Project").tag(nil as String?)
+                ForEach(setup.projects) { project in
+                    Text(project.title).tag(Optional(project.id))
+                }
             }
-        }
-        .task(id: setup.selectedProjectID) {
-            await setup.selectProject(setup.selectedProjectID)
-        }
-
-        Picker("Status field", selection: $setup.selectedStatusFieldID) {
-            Text("Choose a field").tag(nil as String?)
-            ForEach(setup.statusFields) { field in
-                Text(field.name).tag(Optional(field.id))
+            .task(id: setup.selectedProjectID) {
+                await setup.selectProject(setup.selectedProjectID)
             }
+        } header: {
+            Text("Project Template")
+        } footer: {
+            Text("Use this Project’s status names across your personal Projects. All repositories accessible to the GitHub App are included.")
         }
-        .onChange(of: setup.selectedStatusFieldID) { _, fieldID in
-            setup.selectStatusField(fieldID)
+
+        Section {
+            Picker("Status field", selection: Binding(
+                get: { setup.selectedStatusFieldID },
+                set: { setup.selectStatusField($0) }
+            )) {
+                Text("Choose a field").tag(nil as String?)
+                ForEach(setup.statusFields) { field in
+                    Text(field.name).tag(Optional(field.id))
+                }
+            }
+
+            StatusOptionPicker(
+                title: "In progress",
+                selection: $setup.inProgressOptionID,
+                options: setup.selectedStatusOptions
+            )
+            .disabled(setup.selectedStatusFieldID == nil)
+            StatusOptionPicker(
+                title: "Done",
+                selection: $setup.doneOptionID,
+                options: setup.selectedStatusOptions
+            )
+            .disabled(setup.selectedStatusFieldID == nil)
+        } header: {
+            Text("Status Mapping")
+        } footer: {
+            Text("Matching statuses are selected automatically. You can change them before enabling automation.")
         }
 
-        StatusOptionPicker(
-            title: "In progress",
-            selection: $setup.inProgressOptionID,
-            options: setup.selectedStatusOptions
-        )
-        StatusOptionPicker(
-            title: "Done",
-            selection: $setup.doneOptionID,
-            options: setup.selectedStatusOptions
-        )
-
-        Picker("Ready pull requests", selection: $setup.reviewStatusPolicy) {
-            Text("Move to In review")
-                .tag(AutomationService.ReviewStatusPolicy.ensureInReview)
-            Text("Keep in In progress")
-                .tag(AutomationService.ReviewStatusPolicy.useInProgress)
+        Section {
+            Picker("When a pull request is ready", selection: $setup.reviewStatusPolicy) {
+                Text("Move to In review")
+                    .tag(AutomationService.ReviewStatusPolicy.ensureInReview)
+                Text("Keep in In progress")
+                    .tag(AutomationService.ReviewStatusPolicy.useInProgress)
+            }
+            .pickerStyle(.menu)
+        } header: {
+            Text("Pull Request Behavior")
+        } footer: {
+            Text(reviewPolicyDescription)
         }
-        .pickerStyle(.radioGroup)
-
-        Text(reviewPolicyDescription)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-        HStack {
-            Spacer()
-            Button("Enable Account Automation", action: completeSetup)
-                .buttonStyle(.borderedProminent)
-                .disabled(!setup.canComplete)
-        }
-    }
-
-    private func completeSetup() {
-        Task { await setup.completeSetup() }
     }
 
     private var reviewPolicyDescription: String {
         switch setup.reviewStatusPolicy {
         case .ensureInReview:
-            "GitStride reuses an existing In review option, ignoring case, or adds In review in Orange when a matching Project first needs it."
+            "Linked Issues move to In review. This status is added to a Project when first needed."
         case .useInProgress:
-            "GitStride keeps ready pull requests in In progress and does not add a Status option."
+            "Linked Issues stay in the selected In progress status. No review status is added."
         }
     }
 }
