@@ -318,6 +318,8 @@ struct MenuBarPopoverView: View {
             Text("No projects found")
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
+
+            NewProjectButton()
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)

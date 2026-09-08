@@ -3,6 +3,8 @@ import SwiftUI
 struct ProjectSelectorView: View {
     @Bindable var store: ProjectStore
     var compact = false
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissMenuBar) private var dismissMenuBar
 
     var body: some View {
         HStack(spacing: compact ? 6 : 10) {
@@ -38,11 +40,19 @@ struct ProjectSelectorView: View {
                         }
                     }
                 }
+                Divider()
+                NewProjectButton()
+                if let project = store.selectedProject, project.viewerCanUpdate, !store.isShowingCachedData {
+                    Button("Link Repository…", systemImage: "link") {
+                        dismissMenuBar()
+                        openWindow(id: "link-project-repository", value: project.id)
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
+                }
             } label: {
                 Text(store.selectedProject?.title ?? "Select Project")
                     .lineLimit(1)
             }
-            .disabled(store.projects.isEmpty)
             .help("Select project")
             .accessibilityLabel("Select project, current project \(store.selectedProject?.title ?? "none")")
 

@@ -3,6 +3,7 @@ import SwiftUI
 struct MainWorkspaceView: View {
     @Bindable var model: GitStrideModel
     @Binding var requestedItemReference: ItemInspectorReference?
+    @Binding var requestsProjectBoard: Bool
     @State private var destination: Destination = .project
     @State private var detailPath = NavigationPath()
     @State private var projectSearchText = ""
@@ -120,6 +121,12 @@ struct MainWorkspaceView: View {
             guard destination != .project else { return }
             projectSearchText = ""
             isSelectingProjectItems = false
+        }
+        .onChange(of: requestsProjectBoard, initial: true) { _, requested in
+            guard requested else { return }
+            destination = .project
+            detailPath = NavigationPath()
+            requestsProjectBoard = false
         }
         .onChange(of: requestedItemReference, initial: true) { _, reference in
             guard let reference else { return }

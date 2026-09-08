@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CA461A15C72B4DBDAAB413CC /* ProjectManagementViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D749BF94B5164F1385503B20 /* ProjectManagementViews.swift */; };
 		A0000001 /* GitStrideApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001 /* GitStrideApp.swift */; };
 		A0000002 /* Project.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002 /* Project.swift */; };
 		A0000003 /* ProjectItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000003 /* ProjectItem.swift */; };
@@ -72,6 +73,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		D749BF94B5164F1385503B20 /* ProjectManagementViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectManagementViews.swift; sourceTree = "<group>"; };
 		A1000000 /* GitStride.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GitStride.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000001 /* GitStrideApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitStrideApp.swift; sourceTree = "<group>"; };
 		A1000002 /* Project.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Project.swift; sourceTree = "<group>"; };
@@ -252,6 +254,7 @@
 		A3000008 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				D749BF94B5164F1385503B20 /* ProjectManagementViews.swift */,
 				A1000025 /* AddProjectItemView.swift */,
 				A1000038 /* CommandPaletteView.swift */,
 				A1000037 /* EngineeringSignalsView.swift */,
@@ -454,6 +457,7 @@
 				A0000050 /* KanbanItemViews.swift in Sources */,
 				A0000030 /* MainWorkspaceView.swift in Sources */,
 				A0000031 /* MyWorkView.swift in Sources */,
+				CA461A15C72B4DBDAAB413CC /* ProjectManagementViews.swift in Sources */,
 				A0000025 /* AddProjectItemView.swift in Sources */,
 				A0000038 /* CommandPaletteView.swift in Sources */,
 				A0000037 /* EngineeringSignalsView.swift in Sources */,

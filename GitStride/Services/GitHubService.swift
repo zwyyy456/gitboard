@@ -131,6 +131,52 @@ actor GitHubService {
         return [userOwner] + organizations
     }
 
+    func createProject(owner: ProjectOwner, title: String, repositoryID: String? = nil) async throws -> Project {
+        var variables = ["ownerId": owner.id, "title": title]
+        variables["repositoryId"] = repositoryID
+        let payload: CreateProjectPayload = try await request(
+            GraphQLQueries.createProject,
+            variables: variables,
+            as: CreateProjectPayload.self
+        )
+        let project = payload.createProjectV2.projectV2
+        return Project(
+            id: project.id, owner: owner, title: project.title,
+            number: project.number, url: project.url,
+            viewerCanUpdate: project.viewerCanUpdate
+        )
+    }
+
+    func fetchRepositories(owner: ProjectOwner) async throws -> [ProjectRepository] {
+        var after: String?
+        var repositories: [ProjectRepository] = []
+        repeat {
+            try Task.checkCancellation()
+            var variables = cursorVariables(after)
+            variables["login"] = owner.login
+            let payload: OwnerRepositoriesPayload = try await request(
+                GraphQLQueries.ownerRepositories, variables: variables,
+                as: OwnerRepositoriesPayload.self
+            )
+            guard let connection = payload.repositoryOwner?.repositories else {
+                throw GitHubError.graphQLError("Repositories are not accessible for this owner.")
+            }
+            repositories += connection.nodes.map {
+                ProjectRepository(id: $0.id, nameWithOwner: $0.nameWithOwner, ownerID: owner.id)
+            }
+            after = try nextCursor(from: connection.pageInfo)
+        } while after != nil
+        return repositories
+    }
+
+    func linkProjectRepository(projectID: String, repositoryID: String) async throws {
+        let _: LinkProjectRepositoryPayload = try await request(
+            GraphQLQueries.linkProjectRepository,
+            variables: ["projectId": projectID, "repositoryId": repositoryID],
+            as: LinkProjectRepositoryPayload.self
+        )
+    }
+
     func fetchProjects(owner: ProjectOwner) async throws -> [Project] {
         let query = owner.kind == .user
             ? GraphQLQueries.userProjects
@@ -1317,4 +1363,38 @@ private struct DraftIssuePayload: Decodable {
 
 private struct GraphQLErrorResponse: Decodable {
     let errors: [GraphQLIssue]?
+}
+
+private struct CreateProjectPayload: Decodable {
+    let createProjectV2: Result
+
+    struct Result: Decodable {
+        let projectV2: ProjectsPayload.ProjectNode
+    }
+}
+
+private struct OwnerRepositoriesPayload: Decodable {
+    let repositoryOwner: Owner?
+
+    struct Owner: Decodable {
+        let repositories: Connection
+    }
+    struct Connection: Decodable {
+        let nodes: [Repository]
+        let pageInfo: PageInfo
+    }
+    struct Repository: Decodable {
+        let id: String
+        let nameWithOwner: String
+    }
+}
+
+private struct LinkProjectRepositoryPayload: Decodable {
+    let linkProjectV2ToRepository: Result
+    struct Result: Decodable {
+        let repository: Repository
+    }
+    struct Repository: Decodable {
+        let id: String
+    }
 }
