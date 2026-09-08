@@ -4,6 +4,7 @@ struct MenuBarPopoverView: View {
     @Bindable var store: ProjectStore
     @Binding var requestedItemReference: ItemInspectorReference?
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var showSettings
     @Environment(\.dismissMenuBar) private var dismissMenuBar
     @State private var isRefreshing = false
     @State private var isMoreHovered = false
@@ -192,13 +193,8 @@ struct MenuBarPopoverView: View {
 
     private func openSettings() {
         dismissMenuBar()
-        openWindow(id: "settings")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            NSApp.activate(ignoringOtherApps: true)
-            for window in NSApp.windows where window.title == "Settings" {
-                window.makeKeyAndOrderFront(nil)
-            }
-        }
+        NSApp.activate(ignoringOtherApps: true)
+        showSettings()
     }
 
     private func openKanbanBoard() {

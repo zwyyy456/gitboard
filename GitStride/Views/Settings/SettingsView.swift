@@ -5,7 +5,19 @@ import Sparkle
 
 struct SettingsView: View {
     @Bindable var model: GitStrideModel
-    @State private var selectedTab = 1  // Default to About tab
+    private enum Pane: String {
+        case general, automation, shortcuts
+
+        var height: CGFloat {
+            switch self {
+            case .general: 360
+            case .automation: 280
+            case .shortcuts: 500
+            }
+        }
+    }
+
+    @AppStorage("selectedSettingsPane") private var selectedTab = Pane.general
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -13,21 +25,21 @@ struct SettingsView: View {
                 .tabItem {
                     Label("General", systemImage: "gear")
                 }
-                .tag(0)
+                .tag(Pane.general)
 
             AutomationSettingsView(setup: model.automationSetup)
                 .tabItem {
                     Label("Automation", systemImage: "arrow.triangle.branch")
                 }
-                .tag(2)
+                .tag(Pane.automation)
 
-            AboutView()
+            ShortcutsSettingsView()
                 .tabItem {
-                    Label("About", systemImage: "info.circle")
+                    Label("Shortcuts", systemImage: "keyboard")
                 }
-                .tag(1)
+                .tag(Pane.shortcuts)
         }
-        .frame(width: 520, height: 560)
+        .frame(width: 520, height: selectedTab.height)
     }
 }
 
@@ -63,33 +75,42 @@ struct GeneralSettingsView: View {
                 }
                 .disabled(!model.monitoringEnabled)
 
-                HStack {
-                    Picker(
-                        "Quiet from",
-                        selection: Binding(
-                            get: { model.quietStartHour },
-                            set: { hour in
-                                Task { await model.updateMonitoringSchedule(quietStartHour: hour) }
+                LabeledContent("Quiet hours") {
+                    HStack(spacing: 8) {
+                        Picker(
+                            "Start time",
+                            selection: Binding(
+                                get: { model.quietStartHour },
+                                set: { hour in
+                                    Task { await model.updateMonitoringSchedule(quietStartHour: hour) }
+                                }
+                            )
+                        ) {
+                            ForEach(0..<24, id: \.self) { hour in
+                                Text(hourLabel(hour)).tag(hour)
                             }
-                        )
-                    ) {
-                        ForEach(0..<24, id: \.self) { hour in
-                            Text(hourLabel(hour)).tag(hour)
                         }
-                    }
+                        .labelsHidden()
+                        .fixedSize()
 
-                    Picker(
-                        "to",
-                        selection: Binding(
-                            get: { model.quietEndHour },
-                            set: { hour in
-                                Task { await model.updateMonitoringSchedule(quietEndHour: hour) }
+                        Text("to")
+                            .foregroundStyle(.secondary)
+
+                        Picker(
+                            "End time",
+                            selection: Binding(
+                                get: { model.quietEndHour },
+                                set: { hour in
+                                    Task { await model.updateMonitoringSchedule(quietEndHour: hour) }
+                                }
+                            )
+                        ) {
+                            ForEach(0..<24, id: \.self) { hour in
+                                Text(hourLabel(hour)).tag(hour)
                             }
-                        )
-                    ) {
-                        ForEach(0..<24, id: \.self) { hour in
-                            Text(hourLabel(hour)).tag(hour)
                         }
+                        .labelsHidden()
+                        .fixedSize()
                     }
                 }
                 .disabled(!model.monitoringEnabled)
@@ -118,31 +139,15 @@ struct GeneralSettingsView: View {
                     }
 
                 #if canImport(Sparkle)
-                HStack {
-                    Text("Check for Updates")
-                    Spacer()
-                    Button("Check Now") {
-                        UpdateController.shared.checkForUpdates()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                Button("Check for Updates…") {
+                    UpdateController.shared.checkForUpdates()
                 }
+                .buttonStyle(.bordered)
                 #endif
             } header: {
                 Text("Updates")
             }
 
-            Section {
-                KeyboardShortcutRow(keys: ["⌥", "⌘", "K"], description: "Open Command Palette globally")
-                KeyboardShortcutRow(keys: ["⌘", "K"], description: "Open Command Palette")
-                KeyboardShortcutRow(keys: ["⇧", "⌘", "N"], description: "Quick Add")
-                KeyboardShortcutRow(keys: ["⌘", "R"], description: "Refresh")
-                KeyboardShortcutRow(keys: ["⌘", "←"], description: "Previous status tab")
-                KeyboardShortcutRow(keys: ["⌘", "→"], description: "Next status tab")
-                KeyboardShortcutRow(keys: [">"], description: "Open Quick Add from search")
-            } header: {
-                Text("Keyboard Shortcuts")
-            }
         }
         .formStyle(.grouped)
         .onAppear {
@@ -159,30 +164,43 @@ struct GeneralSettingsView: View {
     }
 }
 
-struct KeyboardShortcutRow: View {
+struct ShortcutsSettingsView: View {
+    var body: some View {
+        Form {
+            Section("Global") {
+                KeyboardShortcutRow(keys: ["⌥", "⌘", "K"], description: "Open Command Palette")
+            }
+            Section("In GitStride") {
+                KeyboardShortcutRow(keys: ["⌘", "K"], description: "Open Command Palette")
+                KeyboardShortcutRow(keys: ["⇧", "⌘", "N"], description: "Add to Project")
+                KeyboardShortcutRow(keys: ["⌘", ","], description: "Open Settings")
+                KeyboardShortcutRow(keys: ["⌘", "R"], description: "Refresh")
+                KeyboardShortcutRow(keys: ["⌥", "⌘", "I"], description: "Show or hide inspector")
+            }
+            Section {
+                KeyboardShortcutRow(keys: ["⌘", "←"], description: "Previous status tab")
+                KeyboardShortcutRow(keys: ["⌘", "→"], description: "Next status tab")
+                KeyboardShortcutRow(keys: [">"], description: "Add to Project from search")
+            } header: {
+                Text("In the Menu Bar Popover")
+            } footer: {
+                Text("Type > into the empty search field when a project is editable. Shortcuts are shown for reference and can’t be edited here.")
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct KeyboardShortcutRow: View {
     let keys: [String]
     let description: String
 
     var body: some View {
-        HStack {
-            HStack(spacing: 4) {
-                ForEach(keys, id: \.self) { key in
-                    Text(key)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Color(nsColor: .controlBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .stroke(Color.secondary.opacity(0.3), lineWidth: 0.5)
-                        )
-                }
-            }
-            Spacer()
-            Text(description)
-                .font(.system(size: 12))
+        LabeledContent(description) {
+            Text(keys.joined())
+                .font(.body.monospaced())
                 .foregroundStyle(.secondary)
+                .fixedSize()
         }
     }
 }
@@ -193,9 +211,10 @@ struct AboutView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "rectangle.split.3x1")
-                .font(.system(size: 48))
-                .foregroundStyle(.blue)
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .frame(width: 64, height: 64)
+                .accessibilityHidden(true)
 
             Text("GitStride")
                 .font(.system(size: 24, weight: .bold))
@@ -242,14 +261,12 @@ struct AboutView: View {
             .foregroundStyle(.blue)
             .padding(.top, 8)
 
-            Spacer()
-
             Text("© 2025 Yogesh · MIT License")
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
-                .padding(.bottom, 16)
+                .padding(.top, 8)
         }
-        .padding(.top, 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
+        .frame(width: 420)
     }
 }

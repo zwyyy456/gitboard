@@ -4,6 +4,7 @@ struct CommandPaletteView: View {
     @Bindable var model: GitStrideModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @State private var query = ""
     @State private var selection: String?
     @State private var keyMonitor: Any?
@@ -27,7 +28,7 @@ struct CommandPaletteView: View {
 
     private var entries: [Entry] {
         var entries = [
-            Entry(id: "action:add", title: "Quick Add", subtitle: "Create or add an item", icon: "plus", target: .quickAdd),
+            Entry(id: "action:add", title: "Add to Project", subtitle: "Create or add an item", icon: "plus", target: .quickAdd),
             Entry(id: "action:refresh", title: "Refresh", subtitle: "Reload the current workspace", icon: "arrow.clockwise", target: .refresh),
             Entry(id: "action:settings", title: "Settings", subtitle: nil, icon: "gearshape", target: .settings)
         ]
@@ -164,7 +165,7 @@ struct CommandPaletteView: View {
                 dismiss()
             }
         case .settings:
-            openWindow(id: "settings")
+            openSettings()
             dismiss()
         case .project(let id):
             guard let project = paletteProjects.first(where: { $0.id == id }) else { return }
