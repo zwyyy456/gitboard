@@ -3,6 +3,95 @@ import Testing
 @testable import GitStride
 
 struct GitHubServiceTests {
+    private static let createdProjectResponse = """
+        {"data":{"createProjectV2":{"projectV2":{"id":"NEW","title":"New project","number":9,"url":"https://github.com/users/me/projects/9","viewerCanUpdate":true}}}}
+        """
+
+    @Test(arguments: [ProjectOwnerKind.user, .organization], [nil, "REPO"] as [String?])
+    func createsProjectForSelectedOwner(_ kind: ProjectOwnerKind, repositoryID: String?) async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [Self.createdProjectResponse])
+        let owner = ProjectOwner(id: "OWNER", login: "me", name: nil, kind: kind)
+        let title = "Plan \"Q4\"\n新项目"
+        let project = try await GitHubService(runner: runner).createProject(owner: owner, title: title, repositoryID: repositoryID)
+        #expect(project.id == "NEW")
+        #expect(project.owner == owner)
+        #expect(project.number == 9)
+        #expect(project.viewerCanUpdate)
+        let arguments = try #require(await runner.recordedArguments().first)
+        #expect(arguments.contains("ownerId=OWNER"))
+        #expect(arguments.contains("title=\(title)"))
+        #expect(arguments.contains("repositoryId=REPO") == (repositoryID != nil))
+    }
+
+    @Test func repositoryChoicesFollowPagination() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [
+            #"{"data":{"repositoryOwner":{"repositories":{"nodes":[{"id":"R1","nameWithOwner":"me/one"}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"#,
+            #"{"data":{"repositoryOwner":{"repositories":{"nodes":[{"id":"R2","nameWithOwner":"me/two"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+        ])
+        let owner = ProjectOwner(id: "OWNER", login: "me", name: nil, kind: .user)
+        let repositories = try await GitHubService(runner: runner).fetchRepositories(owner: owner)
+        #expect(repositories.map(\.id) == ["R1", "R2"])
+        #expect(repositories.allSatisfy { $0.ownerID == owner.id })
+        let calls = await runner.recordedArguments()
+        #expect(calls[1].contains("after=next"))
+        #expect(calls[0].contains("login=me"))
+    }
+
+    @Test(arguments: [true, false])
+    func linkingRepositoryReportsGitHubOutcome(_ succeeds: Bool) async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [
+            succeeds ? #"{"data":{"linkProjectV2ToRepository":{"repository":{"id":"R1"}}}}"#
+                     : #"{"errors":[{"message":"Link permission denied"}]}"#
+        ])
+        do {
+            try await GitHubService(runner: runner).linkProjectRepository(projectID: "P1", repositoryID: "R1")
+            #expect(succeeds)
+        } catch let error as GitHubError {
+            #expect(!succeeds)
+            #expect(error == .graphQLError("Link permission denied"))
+        }
+        let calls = await runner.recordedArguments()
+        #expect(calls.count == 1)
+        #expect(calls[0].contains("projectId=P1"))
+        #expect(calls[0].contains("repositoryId=R1"))
+    }
+
+    @Test @MainActor func creationRejectsRepositoryFromAnotherOwner() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [])
+        let store = ProjectStore(gitHubService: GitHubService(runner: runner))
+        let owner = ProjectOwner(id: "OWNER", login: "me", name: nil, kind: .user)
+        do {
+            try await store.createProject(
+                owner: owner, title: "Project",
+                repository: ProjectRepository(id: "R", nameWithOwner: "other/repo", ownerID: "OTHER")
+            )
+            Issue.record("Expected a repository ownership error")
+        } catch ProjectStoreError.repositoryOwnerMismatch {}
+        #expect(await runner.recordedArguments().isEmpty)
+        #expect(!store.isCreatingProject)
+    }
+
+    @Test @MainActor func createdProjectSurvivesFollowupReadFailure() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [
+            Self.createdProjectResponse,
+            #"{"errors":[{"message":"List unavailable"}]}"#,
+            #"{"errors":[{"message":"Details unavailable"}]}"#
+        ])
+        let suite = "CreateProjectTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProjectStore(gitHubService: GitHubService(runner: runner), defaults: defaults)
+        let owner = ProjectOwner(id: "OWNER", login: "me", name: nil, kind: .user)
+        try await store.createProject(owner: owner, title: "New project")
+        #expect(store.selectedProjectId == "NEW")
+        #expect(store.selectedOwnerId == "OWNER")
+        #expect(store.projects.map(\.id) == ["NEW"])
+        #expect(!store.isCreatingProject)
+        #expect(!store.isLoading)
+        #expect(store.operationErrorMessage != nil)
+        #expect(await runner.recordedArguments().count == 3)
+    }
+
     @Test func processWritesInputAndClosesItWhileDrainingOutput() async throws {
         let runner = ProcessGitHubCommandRunner(executableURL: URL(fileURLWithPath: "/bin/cat"))
         let input = Data(repeating: 65, count: 256 * 1024)

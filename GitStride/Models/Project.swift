@@ -112,3 +112,21 @@ struct Project: Identifiable, Codable, Hashable {
     }
 
 }
+
+struct ProjectRepository: Identifiable, Hashable {
+    let id: String
+    let nameWithOwner: String
+    let ownerID: String
+}
+
+enum RepositoryListState {
+    case idle
+    case loading
+    case loaded([ProjectRepository])
+    case failed(String)
+
+    var repositories: [ProjectRepository] {
+        if case .loaded(let repositories) = self { return repositories }
+        return []
+    }
+}

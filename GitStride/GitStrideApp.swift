@@ -17,13 +17,15 @@ extension EnvironmentValues {
 struct GitStrideApp: App {
     @State private var model = GitStrideModel()
     @State private var menuBarWindow: NSWindow?
+    @State private var requestsProjectBoard = false
     @State private var requestedItemReference: ItemInspectorReference?
 
     var body: some Scene {
         Window("GitStride", id: "kanban-board") {
             MainWorkspaceView(
                 model: model,
-                requestedItemReference: $requestedItemReference
+                requestedItemReference: $requestedItemReference,
+                requestsProjectBoard: $requestsProjectBoard
             )
                 .onAppear {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -106,6 +108,22 @@ struct GitStrideApp: App {
         .windowResizability(.contentMinSize)
         .commandsRemoved()
 
+        Window("New Project", id: "new-project") {
+            CreateProjectView(store: model.projectStore) { requestsProjectBoard = true }
+        }
+        .defaultSize(width: 480, height: 240)
+        .windowResizability(.contentSize)
+        .commandsRemoved()
+
+        WindowGroup("Link Repository", id: "link-project-repository", for: String.self) { $projectID in
+            if let projectID {
+                LinkProjectRepositoryView(store: model.projectStore, projectID: projectID)
+            }
+        }
+        .defaultSize(width: 480, height: 260)
+        .windowResizability(.contentSize)
+        .commandsRemoved()
+
         Window("About GitStride", id: "about") {
             AboutView()
         }
@@ -147,6 +165,8 @@ private struct GitStrideCommands: Commands {
         }
 
         CommandGroup(after: .newItem) {
+            NewProjectButton()
+                .keyboardShortcut("n", modifiers: .command)
             Button("Add to Project…") {
                 openWindow(id: "quick-add")
             }

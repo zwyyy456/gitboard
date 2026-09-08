@@ -1,6 +1,34 @@
 import Foundation
 
 enum GraphQLQueries {
+    static let createProject = """
+        mutation($ownerId: ID!, $title: String!, $repositoryId: ID) {
+            createProjectV2(input: { ownerId: $ownerId, title: $title, repositoryId: $repositoryId }) {
+                projectV2 { id title number url viewerCanUpdate }
+            }
+        }
+        """
+
+    static let ownerRepositories = """
+        query($login: String!, $after: String) {
+            repositoryOwner(login: $login) {
+                repositories(first: 100, after: $after, ownerAffiliations: [OWNER],
+                             orderBy: { field: NAME, direction: ASC }) {
+                    nodes { id nameWithOwner }
+                    pageInfo { hasNextPage endCursor }
+                }
+            }
+        }
+        """
+
+    static let linkProjectRepository = """
+        mutation($projectId: ID!, $repositoryId: ID!) {
+            linkProjectV2ToRepository(input: {
+                projectId: $projectId, repositoryId: $repositoryId
+            }) { repository { id } }
+        }
+        """
+
     static let sessionProbe = """
         query {
             viewer {

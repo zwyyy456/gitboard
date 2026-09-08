@@ -375,6 +375,8 @@ struct KanbanBoardView: View {
             Text("Select a project to view its board")
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
+
+            NewProjectButton()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

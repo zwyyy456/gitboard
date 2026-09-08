@@ -19,6 +19,7 @@ enum SelectedProjectContentState: Equatable {
 }
 
 enum ProjectStoreError: LocalizedError {
+    case repositoryOwnerMismatch
     case noProjectSelected
     case readOnlyProject
     case itemUnavailable
@@ -28,6 +29,8 @@ enum ProjectStoreError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .repositoryOwnerMismatch:
+            "Choose a repository owned by the same account as the project."
         case .noProjectSelected:
             "No project is selected."
         case .readOnlyProject:
@@ -131,6 +134,10 @@ final class ProjectStore {
         }
     }
 
+    private var repositoryLists: [String: RepositoryListState] = [:]
+    private var repositoryReadIDs: [String: UUID] = [:]
+    private(set) var linkingRepositoryProjectIDs: Set<String> = []
+    private(set) var isCreatingProject = false
     var isLoading = false
     var error: Error?
     private(set) var operationErrorMessage: String?
@@ -562,6 +569,8 @@ final class ProjectStore {
 
         if let cachedAccountLogin, cachedAccountLogin != account.login {
             owners = []
+            repositoryLists = [:]
+            repositoryReadIDs = [:]
             projectStates = [:]
             reconciliationTasks.values.forEach { $0.task.cancel() }
             reconciliationTasks = [:]
@@ -718,6 +727,71 @@ final class ProjectStore {
         return snapshots
     }
 
+    func repositoryListState(ownerID: String) -> RepositoryListState {
+        repositoryLists[ownerID] ?? .idle
+    }
+
+    func loadRepositories(owner: ProjectOwner) async {
+        let readID = UUID()
+        repositoryReadIDs[owner.id] = readID
+        repositoryLists[owner.id] = .loading
+        do {
+            let repositories = try await gitHubService.fetchRepositories(owner: owner)
+            try Task.checkCancellation()
+            guard repositoryReadIDs[owner.id] == readID else { return }
+            repositoryLists[owner.id] = .loaded(repositories)
+        } catch {
+            guard repositoryReadIDs[owner.id] == readID else { return }
+            repositoryLists[owner.id] = error is CancellationError ? .idle : .failed(error.localizedDescription)
+        }
+    }
+
+    func linkRepository(_ repository: ProjectRepository, to projectID: String) async throws {
+        guard let project = project(id: projectID) else { throw ProjectStoreError.noProjectSelected }
+        guard project.viewerCanUpdate, projectStates[projectID]?.source != .cache else { throw ProjectStoreError.readOnlyProject }
+        guard repository.ownerID == project.owner.id else { throw ProjectStoreError.repositoryOwnerMismatch }
+        guard linkingRepositoryProjectIDs.insert(projectID).inserted else {
+            throw ProjectStoreError.operationInProgress
+        }
+        defer { linkingRepositoryProjectIDs.remove(projectID) }
+        try await gitHubService.linkProjectRepository(projectID: projectID, repositoryID: repository.id)
+    }
+
+    func createProject(owner: ProjectOwner, title: String, repository: ProjectRepository? = nil) async throws {
+        if let repository, repository.ownerID != owner.id { throw ProjectStoreError.repositoryOwnerMismatch }
+        guard !isCreatingProject else { throw ProjectStoreError.operationInProgress }
+        isCreatingProject = true
+        defer { isCreatingProject = false }
+        let project = try await gitHubService.createProject(owner: owner, title: title, repositoryID: repository?.id)
+
+        // The mutation succeeded. Subsequent read failures must not invite creation again.
+        cancelProjectLoad()
+        catalogGeneration += 1
+        let generation = catalogGeneration
+        let existing = selectedOwnerId == owner.id ? projects : []
+        selectedOwnerId = owner.id
+        replaceCatalog(with: [project] + existing.filter { $0.id != project.id })
+        selectedProjectId = project.id
+        selectedStatusFilter = nil
+        error = nil
+        operationErrorMessage = nil
+        isLoading = true
+        do {
+            let catalog = try await gitHubService.fetchProjects(owner: owner)
+            guard generation == catalogGeneration else { return }
+            replaceCatalog(with: [project] + mergingCatalog(catalog.filter { $0.id != project.id }))
+        } catch {
+            guard generation == catalogGeneration else { return }
+            operationErrorMessage = "Project created, but the project list could not refresh: \(error.localizedDescription)"
+        }
+        guard generation == catalogGeneration else { return }
+        isLoading = false
+        // Uses the normal detail state and retry UI if fields or items cannot load.
+        let catalogError = operationErrorMessage
+        await loadProjectDetails(id: project.id)
+        if operationErrorMessage == nil { operationErrorMessage = catalogError }
+    }
+
     func selectProject(_ project: Project) async {
         let phase = projectStates[project.id]?.phase ?? .summary
         guard project.id != selectedProjectId || phase != .loaded else { return }
@@ -742,26 +816,7 @@ final class ProjectStore {
         do {
             let loadedProjects = try await gitHubService.fetchProjects(owner: owner)
             guard generation == catalogGeneration, selectedOwnerId == owner.id else { return }
-            let detailedProjects = projectStates.compactMapValues(\.snapshot)
-            let mergedProjects = loadedProjects.map { project in
-                guard let source = projectStates[project.id]?.source, source != .catalog,
-                      let detailed = detailedProjects[project.id] else {
-                    return project
-                }
-                return Project(
-                    id: project.id,
-                    owner: project.owner,
-                    title: project.title,
-                    number: project.number,
-                    url: project.url,
-                    viewerCanUpdate: projectStates[project.id]?.source == .cache
-                        ? false
-                        : project.viewerCanUpdate,
-                    fields: detailed.fields,
-                    statusField: detailed.statusField,
-                    items: detailed.items
-                )
-            }
+            let mergedProjects = mergingCatalog(loadedProjects)
             replaceCatalog(with: mergedProjects)
 
             let selectedProject = loadedProjects.first { $0.id == selectedProjectId }
@@ -927,6 +982,29 @@ final class ProjectStore {
         pendingStatusMoves = pendingStatusMoves.filter { $0.key.projectID != id }
         pendingItemMutations = pendingItemMutations.filter { $0.key.projectID != id }
         reconciliationTasks.removeValue(forKey: id)?.task.cancel()
+    }
+
+    private func mergingCatalog(_ loadedProjects: [Project]) -> [Project] {
+        let detailedProjects = projectStates.compactMapValues(\.snapshot)
+        return loadedProjects.map { project in
+            guard let source = projectStates[project.id]?.source, source != .catalog,
+                  let detailed = detailedProjects[project.id] else {
+                return project
+            }
+            return Project(
+                id: project.id,
+                owner: project.owner,
+                title: project.title,
+                number: project.number,
+                url: project.url,
+                viewerCanUpdate: projectStates[project.id]?.source == .cache
+                    ? false
+                    : project.viewerCanUpdate,
+                fields: detailed.fields,
+                statusField: detailed.statusField,
+                items: detailed.items
+            )
+        }
     }
 
     private func replaceCatalog(with projects: [Project]) {
