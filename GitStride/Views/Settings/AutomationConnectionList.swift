@@ -8,52 +8,45 @@ struct AutomationConnectionList: View {
 
     var body: some View {
         ForEach(setup.automations) { automation in
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(automation.accountLogin)
-                            .font(.headline)
-                        Text("Repositories: \(automation.repositoryCount) · Status mapping from Project #\(automation.mappingProjectNumber)")
-                            .foregroundStyle(.secondary)
-                    }
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(automation.accountLogin)
+                        .font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer()
-                    Label(
-                        statusTitle(for: automation),
-                        systemImage: statusIcon(for: automation)
+                    Button(
+                        automation.enabled ? "Pause" : "Resume",
+                        action: { setEnabled(automation) }
                     )
-                    .foregroundStyle(statusColor(for: automation))
+                    .disabled(!automation.enabled && !canResume(automation))
+                    Button("Reauthorize…", action: { reauthorize(automation) })
+                    Button("Delete…", role: .destructive) {
+                        pendingDeletion = automation
+                        isShowingDeletionConfirmation = true
+                    }
                 }
+                .disabled(setup.busyAutomationIDs.contains(automation.id))
+
+                Label(
+                    statusTitle(for: automation),
+                    systemImage: statusIcon(for: automation)
+                )
+                .foregroundStyle(statusColor(for: automation))
+                .fixedSize(horizontal: false, vertical: true)
+
+                VStack(spacing: 4) {
+                    LabeledContent("Repositories", value: "\(automation.repositoryCount)")
+                    LabeledContent("Status template", value: "Project #\(automation.mappingProjectNumber)")
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
 
                 if let delivery = automation.lastDelivery {
                     Text(lastDeliveryText(delivery))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                HStack {
-                    Button(
-                        automation.enabled ? "Pause" : "Resume",
-                        systemImage: automation.enabled ? "pause" : "play",
-                        action: { setEnabled(automation) }
-                    )
-                    .disabled(!automation.enabled && !canResume(automation))
-                    Button(
-                        "Reauthorize",
-                        systemImage: "person.badge.key",
-                        action: { reauthorize(automation) }
-                    )
-                    Spacer()
-                    Button(
-                        "Delete",
-                        systemImage: "trash",
-                        role: .destructive,
-                        action: {
-                            pendingDeletion = automation
-                            isShowingDeletionConfirmation = true
-                        }
-                    )
-                }
-                .disabled(setup.busyAutomationIDs.contains(automation.id))
             }
             .padding(.vertical, 4)
         }
