@@ -2,6 +2,7 @@ import SwiftUI
 
 struct KanbanColumn: View {
     let projectID: String
+    var preferenceID: String? = nil
     let status: StatusOption?
     let items: [ProjectItem]
     let emptyMessage: String
@@ -37,11 +38,8 @@ struct KanbanColumn: View {
 
                 Text("\(items.count)")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(statusColor)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(statusColor.opacity(0.15))
-                    .clipShape(Capsule())
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -60,6 +58,7 @@ struct KanbanColumn: View {
                             if isSelecting {
                                 KanbanCard(
                                     projectID: projectID,
+                                    preferenceID: preferenceID,
                                     item: item,
                                     allStatuses: allStatuses,
                                     store: store,
@@ -75,11 +74,12 @@ struct KanbanColumn: View {
                             } else {
                                 KanbanCard(
                                     projectID: projectID,
+                                    preferenceID: preferenceID,
                                     item: item,
                                     allStatuses: allStatuses,
                                     store: store,
                                     isSelecting: false,
-                                    isSelected: false,
+                                    isSelected: selectedItemIDs.contains(item.id),
                                     onSelect: {},
                                     showInspector: {
                                         showInspector(
@@ -142,6 +142,7 @@ struct KanbanColumn: View {
 
 struct KanbanCard: View {
     let projectID: String
+    var preferenceID: String? = nil
     let item: ProjectItem
     let allStatuses: [StatusOption]
     @Bindable var store: ProjectStore
@@ -157,7 +158,8 @@ struct KanbanCard: View {
 
     var body: some View {
         Button(action: activateCard) {
-            KanbanCardContent(item: item)
+            KanbanCardContent(item: item, project: store.project(id: projectID), preferenceID: preferenceID)
+                .padding(.trailing, isSelecting ? 20 : 0)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(cardBackground)
@@ -252,6 +254,11 @@ struct KanbanCard: View {
         if let status = item.status {
             parts.append("Status \(status)")
         }
+        if let repository = item.repositoryName { parts.append(repository) }
+        if !item.isWorkComplete && item.signals.blockedByCount > 0 {
+            parts.append("Blocked by \(item.signals.blockedByCount) issues")
+        }
+        if !item.assignees.isEmpty { parts.append("Assigned to " + item.assignees.map(\.login).joined(separator: ", ")) }
         return parts.joined(separator: ", ")
     }
 

@@ -22,6 +22,7 @@
 - `AutomationSetupModel` 负责自动化的 setup session、配置草稿、连接健康和管理操作；它由 `GitStrideModel` 持有，设置窗口不得创建竞争实例。
 - `ProjectStore` 保持 `@MainActor` 隔离。所有会改变可观察 UI 状态的结果必须回到该 owner 应用。
 - Views 只持有搜索文本、输入草稿、表单校验、焦点、局部展开状态等 surface-local presentation state；不得复制可写的项目集合、当前项目或远程 mutation 状态。
+- 工作区的已保存视图只持久化用户命名、筛选身份和显示偏好；筛选与交付统计从 `ProjectStore` 的完整项目投影派生。看板隐藏列只影响看板呈现，不缩小表格或交付统计的数据范围。
 - 菜单栏和看板可以采用不同的局部展示状态，但共享项目选择和远程数据。一个 surface 的出现或消失不得重建全局 store。
 - `GitHubService`、`ProjectMonitor` 和 `ProjectCache` 以 actor 隔离外部副作用或后台任务，不发布第二套可观察业务状态。
 - `AutomationService` 是桌面 App 与 Automation Worker 的唯一 HTTP/WebSocket 边界。View 不拼接 Worker 请求、不解析响应，也不接触 management token。

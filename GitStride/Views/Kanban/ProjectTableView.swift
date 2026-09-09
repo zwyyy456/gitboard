@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ProjectTableView: View {
     let project: Project
+    let workControls: ProjectWorkControls
     let items: [ProjectItem]
     @Bindable var store: ProjectStore
     let isSelecting: Bool
@@ -19,18 +20,21 @@ struct ProjectTableView: View {
 
     init(
         project: Project, items: [ProjectItem], store: ProjectStore,
+        preferenceID: String? = nil,
+        workControls: ProjectWorkControls,
         isSelecting: Bool, selectedItemIDs: Binding<Set<String>>,
         showItemDetail: @escaping (ItemInspectorReference) -> Void,
         reportError: @escaping (Error) -> Void
     ) {
         self.project = project
+        self.workControls = workControls
         self.items = items
         self.store = store
         self.isSelecting = isSelecting
         _selectedItemIDs = selectedItemIDs
         self.showItemDetail = showItemDetail
         self.reportError = reportError
-        let prefix = "projectTable.\(project.id)."
+        let prefix = "projectTable.\(preferenceID ?? project.id)."
         _columns = AppStorage(wrappedValue: TableColumnCustomization(), prefix + "columns")
         _sortColumn = AppStorage(wrappedValue: "", prefix + "sortColumn")
         _sortAscending = AppStorage(wrappedValue: true, prefix + "sortAscending")
@@ -45,8 +49,10 @@ struct ProjectTableView: View {
     private var sortOrder: Binding<[ProjectTableSort]> {
         Binding(get: {
             guard !sortColumn.isEmpty else { return [] }
+            let selectedFieldID = sortColumn.hasPrefix("field:") ? String(sortColumn.dropFirst(6)) : fieldID
+            let optionOrder = project.fields.first { $0.id == selectedFieldID }?.options.map(\.id) ?? []
             return [ProjectTableSort(column: sortColumn, fieldID: fieldID,
-                                     order: sortAscending ? .forward : .reverse)]
+                                     order: sortAscending ? .forward : .reverse, optionOrder: optionOrder)]
         }, set: { values in
             sortColumn = values.first?.column ?? ""
             sortAscending = values.first?.order != .reverse
@@ -81,7 +87,15 @@ struct ProjectTableView: View {
                 selectedItemIDs.formIntersection(ids)
             }
             .overlay {
-                if items.isEmpty { ContentUnavailableView.search }
+                if items.isEmpty {
+                    ContentUnavailableView {
+                        Label("No Matching Items", systemImage: "line.3.horizontal.decrease.circle")
+                    } description: {
+                        Text("Try removing filters or changing your search.")
+                    } actions: {
+                        Button("Clear Filters", action: workControls.clearAll)
+                    }
+                }
             }
             .onChange(of: availableFields.map(\.id), initial: true) { _, ids in
                 if !fieldID.isEmpty && !ids.contains(fieldID) {
@@ -326,7 +340,8 @@ struct ProjectTableView: View {
     }
 
     private var displayOptions: some View {
-        Menu("Display Options", systemImage: "slider.horizontal.3") {
+        Menu("Filter and Display Options", systemImage: "slider.horizontal.3") {
+            workControls.menuContents
             Picker("Group By", selection: $groupsByStatus) {
                 Text("None").tag(false)
                 Text("Status").tag(true)
@@ -372,7 +387,7 @@ struct ProjectTableView: View {
                 sortColumn = ""
             }
         }
-        .help("Grouping, visible fields, and sorting")
+        .help("Filter items, group, sort, and choose visible fields")
     }
 
     private func sortOption(_ title: String, id: String) -> some View {
@@ -459,6 +474,7 @@ struct ProjectTableSort: SortComparator {
     var column: String
     var fieldID: String = ""
     var order: SortOrder = .forward
+    var optionOrder: [String] = []
 
     private var customFieldID: String? {
         if column.hasPrefix("field:") { return String(column.dropFirst(6)) }
@@ -468,7 +484,14 @@ struct ProjectTableSort: SortComparator {
     func compare(_ lhs: ProjectTableRow, _ rhs: ProjectTableRow) -> ComparisonResult {
         guard let lhs = lhs.item, let rhs = rhs.item else { return .orderedSame }
         let result: ComparisonResult
-        if let id = customFieldID, case .number(let left) = lhs.fieldValues[id],
+        if let id = customFieldID, !optionOrder.isEmpty {
+            func rank(_ item: ProjectItem) -> Int {
+                guard case .singleSelect(let optionID, _) = item.fieldValues[id] else { return optionOrder.count }
+                return optionOrder.firstIndex(of: optionID) ?? optionOrder.count
+            }
+            let left = rank(lhs), right = rank(rhs)
+            result = left == right ? .orderedSame : left < right ? .orderedAscending : .orderedDescending
+        } else if let id = customFieldID, case .number(let left) = lhs.fieldValues[id],
            case .number(let right) = rhs.fieldValues[id] {
             result = left == right ? .orderedSame : left < right ? .orderedAscending : .orderedDescending
         } else if column == "number" {

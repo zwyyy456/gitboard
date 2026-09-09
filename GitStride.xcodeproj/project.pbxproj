@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BA0000000000000000000002 /* ProjectWorkControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000002 /* ProjectWorkControls.swift */; };
+		BA0000000000000000000001 /* ProjectWorkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000001 /* ProjectWorkView.swift */; };
 		B9000003 /* Views/ProjectTableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000004 /* Views/ProjectTableTests.swift */; };
 		B9000001 /* ProjectTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000002 /* ProjectTableView.swift */; };
 		CA461A15C72B4DBDAAB413CC /* ProjectManagementViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D749BF94B5164F1385503B20 /* ProjectManagementViews.swift */; };
@@ -50,7 +52,6 @@
 		A0000045 /* KanbanCardContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000045 /* KanbanCardContextMenu.swift */; };
 		A0000046 /* KanbanCardContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000046 /* KanbanCardContent.swift */; };
 		A0000047 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A1000047 /* AppIcon.icon */; };
-		A0000048 /* StatusColumnFilterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000048 /* StatusColumnFilterView.swift */; };
 		A0000049 /* MenuBarItemRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000049 /* MenuBarItemRow.swift */; };
 		A0000050 /* KanbanItemViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000050 /* KanbanItemViews.swift */; };
 		A0000051 /* IssueRelationEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000051 /* IssueRelationEditorView.swift */; };
@@ -75,6 +76,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		BB0000000000000000000002 /* ProjectWorkControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectWorkControls.swift; sourceTree = "<group>"; };
+		BB0000000000000000000001 /* ProjectWorkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectWorkView.swift; sourceTree = "<group>"; };
 		B9000004 /* Views/ProjectTableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ProjectTableTests.swift; sourceTree = "<group>"; };
 		B9000002 /* ProjectTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTableView.swift; sourceTree = "<group>"; };
 		D749BF94B5164F1385503B20 /* ProjectManagementViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectManagementViews.swift; sourceTree = "<group>"; };
@@ -121,7 +124,6 @@
 		A1000045 /* KanbanCardContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardContextMenu.swift; sourceTree = "<group>"; };
 		A1000046 /* KanbanCardContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardContent.swift; sourceTree = "<group>"; };
 		A1000047 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
-		A1000048 /* StatusColumnFilterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusColumnFilterView.swift; sourceTree = "<group>"; };
 		A1000049 /* MenuBarItemRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarItemRow.swift; sourceTree = "<group>"; };
 		A1000050 /* KanbanItemViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanItemViews.swift; sourceTree = "<group>"; };
 		A1000051 /* IssueRelationEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IssueRelationEditorView.swift; sourceTree = "<group>"; };
@@ -187,6 +189,7 @@
 				A1000028 /* MyWork.swift */,
 				A1000002 /* Project.swift */,
 				A1000003 /* ProjectItem.swift */,
+				BB0000000000000000000001 /* ProjectWorkView.swift */,
 				A1000039 /* ProjectItemDetail.swift */,
 				A1000004 /* StatusOption.swift */,
 			);
@@ -248,10 +251,10 @@
 			children = (
 				A1000012 /* KanbanBoardView.swift */,
 				B9000002 /* ProjectTableView.swift */,
+				BB0000000000000000000002 /* ProjectWorkControls.swift */,
 				A1000050 /* KanbanItemViews.swift */,
 				A1000045 /* KanbanCardContextMenu.swift */,
 				A1000046 /* KanbanCardContent.swift */,
-				A1000048 /* StatusColumnFilterView.swift */,
 			);
 			path = Kanban;
 			sourceTree = "<group>";
@@ -440,6 +443,7 @@
 				A0000035 /* QuickCreate.swift in Sources */,
 				A0000002 /* Project.swift in Sources */,
 				A0000003 /* ProjectItem.swift in Sources */,
+				BA0000000000000000000001 /* ProjectWorkView.swift in Sources */,
 				A0000039 /* ProjectItemDetail.swift in Sources */,
 				A0000004 /* StatusOption.swift in Sources */,
 				A0000005 /* GitHubService.swift in Sources */,
@@ -457,9 +461,9 @@
 				A0000010 /* ProjectSelectorView.swift in Sources */,
 				A0000012 /* KanbanBoardView.swift in Sources */,
 				B9000001 /* ProjectTableView.swift in Sources */,
+				BA0000000000000000000002 /* ProjectWorkControls.swift in Sources */,
 				A0000045 /* KanbanCardContextMenu.swift in Sources */,
 				A0000046 /* KanbanCardContent.swift in Sources */,
-				A0000048 /* StatusColumnFilterView.swift in Sources */,
 				A0000049 /* MenuBarItemRow.swift in Sources */,
 				A0000050 /* KanbanItemViews.swift in Sources */,
 				A0000030 /* MainWorkspaceView.swift in Sources */,

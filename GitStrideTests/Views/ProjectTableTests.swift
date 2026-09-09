@@ -41,6 +41,61 @@ struct ProjectTableTests {
                 == [.item("b"), .item("a")])
     }
 
+    @Test func workFiltersUseStableIdentityAndDoNotTreatUnknownUserAsEveryone() throws {
+        var first = item("a", title: "First")
+        first.assignees = [Assignee(login: "Octocat", avatarUrl: "", name: nil)]
+        first.milestone = ProjectPlanningReference(id: "m1", title: "v1", repository: "acme/one", number: nil)
+        first.parentIssue = ProjectPlanningReference(id: "parent", title: "Ship", repository: "acme/plan", number: 1)
+        var second = item("b", title: "Second")
+        second.milestone = ProjectPlanningReference(id: "m2", title: "v1", repository: "acme/two", number: nil)
+        var filter = ProjectWorkFilter()
+        filter.milestoneID = "m1"
+        #expect(filter.apply(to: [first, second], currentUserLogin: nil).map(\.id) == ["a"])
+        filter.assignedToMe = true
+        #expect(filter.apply(to: [first, second], currentUserLogin: nil).isEmpty)
+        #expect(filter.apply(to: [first, second], currentUserLogin: "octocat").map(\.id) == ["a"])
+        filter.milestoneID = nil
+        filter.parentIssueID = "parent"
+        #expect(filter.deliveryItems(in: [first, second]).map(\.id) == ["a"])
+        filter.statusIDs = ["deleted-status"]
+        #expect(filter.apply(to: [first], currentUserLogin: "octocat").isEmpty)
+
+        let view = SavedProjectWorkView(projectID: "project", name: "Delivery", filter: filter,
+                                       usesTable: true, hiddenStatusIDs: ["done"])
+        let restored = try JSONDecoder().decode(SavedProjectWorkView.self, from: JSONEncoder().encode(view))
+        #expect(restored.id == view.id)
+        #expect(restored.filter == filter)
+        #expect(restored.hiddenStatusIDs == ["done"])
+    }
+
+    @Test func blockedFilterExcludesClosedIssuesAndCompletionDoesNotGuessStatusNames() {
+        func issue(_ id: String, state: IssueState, blocked: Int, status: String) -> ProjectItem {
+            ProjectItem(id: id, contentId: id, contentType: .issue, title: id, number: nil,
+                        url: nil, issueState: state, prState: nil, status: status, statusOptionId: nil,
+                        assignees: [], engineeringSignals: EngineeringSignals(blockedByCount: blocked))
+        }
+        let items = [issue("open", state: .open, blocked: 1, status: "Done"),
+                     issue("closed", state: .closed, blocked: 1, status: "Todo"),
+                     issue("free", state: .open, blocked: 0, status: "Todo")]
+        var filter = ProjectWorkFilter()
+        filter.completion = .blocked
+        #expect(filter.apply(to: items, currentUserLogin: nil).map(\.id) == ["open"])
+        filter.completion = .unfinished
+        #expect(filter.apply(to: items, currentUserLogin: nil).map(\.id) == ["open", "free"])
+        #expect(items.filter(\.isWorkComplete).map(\.id) == ["closed"])
+    }
+
+    @Test func prioritySortUsesProjectOptionOrderInsteadOfAlphabeticalLabels() {
+        var urgent = item("urgent", title: "Urgent")
+        urgent.fieldValues["priority"] = .singleSelect(optionId: "p0", name: "Urgent")
+        var low = item("low", title: "Low")
+        low.fieldValues["priority"] = .singleSelect(optionId: "p2", name: "Low")
+        let unassigned = item("none", title: "None")
+        let rows = [low, unassigned, urgent].map(ProjectTableRow.init(item:))
+        let sorted = rows.sorted(using: [ProjectTableSort(column: "field:priority", optionOrder: ["p0", "p2"])])
+        #expect(sorted.map(\.id) == [.item("urgent"), .item("low"), .item("none")])
+    }
+
     private func item(_ id: String, title: String, status: StatusOption? = nil) -> ProjectItem {
         ProjectItem(id: id, contentId: nil, contentType: .draftIssue, title: title,
                     number: nil, url: nil, issueState: nil, prState: nil,

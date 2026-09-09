@@ -771,11 +771,11 @@ actor GitHubService {
             subIssueProgress: content.subIssuesSummary.flatMap {
                 $0.total > 0 ? SubIssueProgress(completed: $0.completed, total: $0.total) : nil
             },
-            blockedByCount: content.blockedBy?.totalCount ?? 0,
-            blockingCount: content.blocking?.totalCount ?? 0
+            blockedByCount: content.issueDependenciesSummary?.blockedBy ?? 0,
+            blockingCount: content.issueDependenciesSummary?.blocking ?? 0
         )
 
-        return ProjectItem(
+        var item = ProjectItem(
             id: node.id,
             contentId: content.id,
             contentType: contentType,
@@ -793,6 +793,14 @@ actor GitHubService {
             linkedPR: linkedPullRequest,
             engineeringSignals: engineeringSignals
         )
+        item.milestone = content.milestone.map {
+            ProjectPlanningReference(id: $0.id, title: $0.title, repository: item.repositoryName ?? "", number: nil)
+        }
+        item.parentIssue = content.parent.map {
+            ProjectPlanningReference(id: $0.id, title: $0.title, repository: $0.repository?.nameWithOwner ?? "", number: $0.number)
+        }
+        item.issueType = content.issueType
+        return item
     }
 
     private func makeProjectField(from node: FieldNode) -> ProjectField? {
@@ -1210,8 +1218,10 @@ private struct ItemNode: Decodable {
         let reviewRequests: ReviewRequestsConnection?
         let statusCheckRollup: StatusCheckRollup?
         let subIssuesSummary: SubIssuesSummary?
-        let blockedBy: CountConnection?
-        let blocking: CountConnection?
+        let milestone: PlanningNode?
+        let parent: PlanningNode?
+        let issueType: ProjectIssueType?
+        let issueDependenciesSummary: DependenciesSummary?
 
         enum CodingKeys: String, CodingKey {
             case typename = "__typename"
@@ -1225,8 +1235,21 @@ private struct ItemNode: Decodable {
             case labels
             case closedByPullRequestsReferences
             case isDraft, mergeable, reviewDecision, reviewRequests, statusCheckRollup
-            case subIssuesSummary, blockedBy, blocking
+            case subIssuesSummary, milestone, parent, issueType, issueDependenciesSummary
         }
+    }
+
+    struct PlanningNode: Decodable {
+        let id: String
+        let title: String
+        let number: Int?
+        let repository: RepositoryName?
+    }
+
+    struct RepositoryName: Decodable { let nameWithOwner: String }
+    struct DependenciesSummary: Decodable {
+        let blockedBy: Int
+        let blocking: Int
     }
 
     struct ReviewRequestsConnection: Decodable {
@@ -1248,10 +1271,6 @@ private struct ItemNode: Decodable {
     struct SubIssuesSummary: Decodable {
         let completed: Int
         let total: Int
-    }
-
-    struct CountConnection: Decodable {
-        let totalCount: Int
     }
 
     struct AssigneesConnection: Decodable {

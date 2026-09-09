@@ -8,8 +8,12 @@ struct KanbanBoardView: View {
     @Binding var searchText: String
     @Binding var isSelecting: Bool
     @AppStorage("projectTableLayouts") private var tableLayoutsData = Data()
+    @AppStorage("savedProjectWorkViews") private var savedViewsData = Data()
+    @State private var workFilter = ProjectWorkFilter()
+    @State private var selectedViewID: String?
+    @State private var showsSaveView = false
+    @State private var viewName = ""
     @State private var showsAddItem = false
-    @State private var showsStatusFilter = false
     @State private var selectedItemIDs: Set<String> = []
     @State private var isBulkWorking = false
     @State private var operationErrorMessage: String?
@@ -24,16 +28,23 @@ struct KanbanBoardView: View {
     }
 
     private var usesTable: Bool {
-        store.selectedProjectId.map { tableProjectIDs.contains($0) } ?? false
+        selectedSavedView?.usesTable ?? (store.selectedProjectId.map { tableProjectIDs.contains($0) } ?? false)
     }
 
     private var layoutSelection: Binding<Bool> {
         Binding(get: { usesTable }, set: { useTable in
             guard let id = store.selectedProjectId else { return }
+            if let selectedViewID {
+                var views = savedViews
+                if let index = views.firstIndex(where: { $0.id == selectedViewID }) {
+                    views[index].usesTable = useTable
+                    persistViews(views)
+                }
+                return
+            }
             var ids = tableProjectIDs
             if useTable { ids.insert(id) } else { ids.remove(id) }
             if let data = try? JSONEncoder().encode(ids) { tableLayoutsData = data }
-            showsStatusFilter = false
         })
     }
 
@@ -73,12 +84,30 @@ struct KanbanBoardView: View {
             }
             .onChange(of: store.selectedProjectId) { _, _ in
                 searchText = ""
+                workFilter = ProjectWorkFilter()
+                selectedViewID = nil
                 isSelecting = false
-                showsStatusFilter = false
                 selectedItemIDs.removeAll()
             }
+            .sheet(isPresented: $showsSaveView) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Save Work View").font(.headline)
+                    TextField("View name", text: $viewName)
+                    Text("Saves filters, layout, sorting, and visible fields on this Mac. Search text is temporary. GitHub views are unchanged.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    HStack {
+                        Spacer()
+                        Button("Cancel") { showsSaveView = false }.keyboardShortcut(.cancelAction)
+                        Button("Save", action: saveCurrentView)
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(viewName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }.padding(24).frame(width: 420)
+            }
+            .onChange(of: workFilter) { _, _ in selectedItemIDs.removeAll() }
+            .onChange(of: searchText) { _, _ in selectedItemIDs.removeAll() }
+            .onChange(of: usesTable) { _, _ in selectedItemIDs.removeAll() }
             .onChange(of: isSelecting) { _, isSelecting in
-                showsStatusFilter = false
                 if isSelecting == false {
                     selectedItemIDs.removeAll()
                 }
@@ -90,17 +119,12 @@ struct KanbanBoardView: View {
             }
     }
 
-    @ViewBuilder
     private var projectSurface: some View {
-        if isSelecting {
-            boardSurface
-        } else {
-            boardSurface.searchable(
-                text: $searchText,
-                placement: .toolbar,
-                prompt: "Search title, #number, or @assignee"
-            )
-        }
+        boardSurface.searchable(
+            text: $searchText,
+            placement: .toolbar,
+            prompt: "Search title, #number, or @assignee"
+        )
     }
 
     private var boardSurface: some View {
@@ -110,6 +134,9 @@ struct KanbanBoardView: View {
                 dismiss: dismissOperationError
             )
 
+            if let project = store.selectedProject {
+                workControls(project)
+            }
             if store.isLoading && store.projects.isEmpty {
                 loadingView
             } else if let error = store.error {
@@ -147,26 +174,15 @@ struct KanbanBoardView: View {
             .accessibilityValue(isRefreshing ? "Refreshing" : "")
 
             if let project = store.selectedProject {
-                if projectURL != nil {
-                    Button(
-                        "Open Project in GitHub",
-                        systemImage: "arrow.up.right.square",
-                        action: openProjectInGitHub
-                    )
-                    .labelStyle(.iconOnly)
-                    .help("Open Project in GitHub")
-                }
-                let isFollowing = myWorkStore.isFollowing(project.id)
-                let followLabel = isFollowing
-                    ? "Remove \(project.title) from My Work"
-                    : "Add \(project.title) to My Work"
-                Button(
-                    followLabel,
-                    systemImage: "briefcase",
-                    action: toggleFollowingProject
-                )
-                .labelStyle(.iconOnly)
-                .help(followLabel)
+                Menu("Project Actions", systemImage: "ellipsis") {
+                    if projectURL != nil {
+                        Button("Open Project in GitHub", systemImage: "arrow.up.right.square", action: openProjectInGitHub)
+                    }
+                    Button(myWorkStore.isFollowing(project.id) ? "Remove from My Work" : "Add to My Work",
+                           systemImage: "briefcase", action: toggleFollowingProject)
+                    Button("Select Multiple Items", systemImage: "checkmark.circle", action: toggleSelectionMode)
+                        .disabled(!canEditSelectedProject)
+                }.help("Project Actions")
             }
         }
 
@@ -204,13 +220,6 @@ struct KanbanBoardView: View {
                     .labelStyle(.iconOnly)
                     .disabled(canEditSelectedProject == false)
                     .help("Add Item")
-
-                if store.selectedProject != nil {
-                    Button("Select Multiple Items", systemImage: "checkmark.circle", action: toggleSelectionMode)
-                        .labelStyle(.iconOnly)
-                        .disabled(canEditSelectedProject == false)
-                        .help("Select Multiple Items")
-                }
             }
         }
 
@@ -225,29 +234,132 @@ struct KanbanBoardView: View {
                 .help("Change project layout")
             }
         }
-        if let project = store.selectedProject,
-           project.statusOptions.isEmpty == false {
-            if #available(macOS 26.0, *) {
-                ToolbarSpacer(.fixed)
-            }
+        if !usesTable, let project = store.selectedProject {
             ToolbarItem(placement: .automatic) {
-                Button(
-                    "Filter Statuses",
-                    systemImage: statusFilterSystemImage(for: project),
-                    action: toggleStatusFilter
-                )
-                .labelStyle(.iconOnly)
-                .help(statusFilterHelp(for: project))
-                .accessibilityValue(statusFilterAccessibilityValue(for: project))
-                .popover(isPresented: $showsStatusFilter, arrowEdge: .top) {
-                    StatusColumnFilterView(store: store, project: project)
-                }
+                BoardDisplayOptions(project: project, preferenceID: tablePreferenceID,
+                                    workControls: workControls(project), visibleStatusIDs: visibleStatusBinding(project))
+                    .id(tablePreferenceID)
             }
         }
         if #available(macOS 26.0, *), !isSelecting {
             ToolbarSpacer(.flexible)
             DefaultToolbarItem(kind: .search)
         }
+    }
+
+    private var savedViews: [SavedProjectWorkView] {
+        guard !savedViewsData.isEmpty else { return [] }
+        return (try? JSONDecoder().decode([SavedProjectWorkView].self, from: savedViewsData)) ?? []
+    }
+
+    private var selectedSavedView: SavedProjectWorkView? {
+        savedViews.first { $0.id == selectedViewID && $0.projectID == store.selectedProjectId }
+    }
+
+    private var tablePreferenceID: String {
+        let projectID = store.selectedProjectId ?? ""
+        return selectedViewID.map { "\(projectID).view.\($0)" } ?? projectID
+    }
+
+    private func workControls(_ project: Project) -> ProjectWorkControls {
+        ProjectWorkControls(
+            project: project, items: project.items,
+            displayedCount: displayedItems(in: project).count,
+            currentUserLogin: store.currentUserLogin,
+            savedViews: savedViews.filter { $0.projectID == project.id }, selectedViewID: selectedViewID,
+            filter: $workFilter, searchText: $searchText,
+            selectView: selectWorkView,
+            saveView: { viewName = selectedSavedView?.name ?? ""; showsSaveView = true },
+            updateView: updateCurrentView, deleteView: deleteCurrentView,
+            hiddenStatusCount: usesTable ? 0 : project.statusOptions.count - visibleStatuses(in: project).count,
+            showAllColumns: { visibleStatusBinding(project).wrappedValue = Set(project.statusOptions.map(\.id)) }
+        )
+    }
+
+    private func visibleStatuses(in project: Project) -> [StatusOption] {
+        guard let view = selectedSavedView else { return store.visibleKanbanStatuses(in: project) }
+        return project.statusOptions.filter { !view.hiddenStatusIDs.contains($0.id) }
+    }
+
+    private func visibleStatusBinding(_ project: Project) -> Binding<Set<String>> {
+        Binding(get: { Set(visibleStatuses(in: project).map(\.id)) }, set: { ids in
+            if let selectedViewID {
+                var views = savedViews
+                guard let index = views.firstIndex(where: { $0.id == selectedViewID }) else { return }
+                views[index].hiddenStatusIDs = Set(project.statusOptions.map(\.id)).subtracting(ids)
+                persistViews(views)
+            } else {
+                store.showAllKanbanStatuses(in: project)
+                for status in project.statusOptions where !ids.contains(status.id) {
+                    store.setKanbanStatus(status, visible: false, in: project)
+                }
+            }
+        })
+    }
+
+    private func displayedItems(in project: Project) -> [ProjectItem] {
+        let items = filteredItems(for: project.items)
+        guard !usesTable else { return items }
+        let visibleIDs = Set(visibleStatuses(in: project).map(\.id))
+        let knownIDs = Set(project.statusOptions.map(\.id))
+        return items.filter { item in
+            guard let id = item.statusOptionId, knownIDs.contains(id) else { return true }
+            return visibleIDs.contains(id)
+        }
+    }
+
+    private func clearFilters(_ project: Project) {
+        workFilter = ProjectWorkFilter()
+        searchText = ""
+        visibleStatusBinding(project).wrappedValue = Set(project.statusOptions.map(\.id))
+    }
+
+    private func selectWorkView(_ view: SavedProjectWorkView?) {
+        selectedViewID = view?.id
+        workFilter = view?.filter ?? ProjectWorkFilter()
+        searchText = ""
+        selectedItemIDs.removeAll()
+    }
+
+    private func persistViews(_ views: [SavedProjectWorkView]) {
+        do { savedViewsData = try JSONEncoder().encode(views) }
+        catch { report(error) }
+    }
+
+    private func saveCurrentView() {
+        guard let projectID = store.selectedProjectId else { return }
+        let view = SavedProjectWorkView(projectID: projectID,
+            name: viewName.trimmingCharacters(in: .whitespacesAndNewlines),
+            filter: workFilter, usesTable: usesTable,
+            hiddenStatusIDs: Set(store.selectedProject?.statusOptions.map(\.id) ?? []).subtracting(
+                store.selectedProject.map { Set(visibleStatuses(in: $0).map(\.id)) } ?? []))
+        let oldPrefix = "projectTable.\(tablePreferenceID)."
+        let newPrefix = "projectTable.\(projectID).view.\(view.id)."
+        for key in ["columns", "sortColumn", "sortAscending", "fieldID", "groupsByStatus", "cardFields"] {
+            if let value = UserDefaults.standard.object(forKey: oldPrefix + key) {
+                UserDefaults.standard.set(value, forKey: newPrefix + key)
+            }
+        }
+        persistViews(savedViews + [view])
+        selectedViewID = view.id
+        showsSaveView = false
+    }
+
+    private func updateCurrentView() {
+        var views = savedViews
+        guard let index = views.firstIndex(where: { $0.id == selectedViewID }) else { return }
+        views[index].filter = workFilter
+        persistViews(views)
+    }
+
+    private func deleteCurrentView() {
+        guard let selectedViewID else { return }
+        let prefix = "projectTable.\(tablePreferenceID)."
+        for key in ["columns", "sortColumn", "sortAscending", "fieldID", "groupsByStatus", "cardFields"] {
+            UserDefaults.standard.removeObject(forKey: prefix + key)
+        }
+        persistViews(savedViews.filter { $0.id != selectedViewID })
+        selectWorkView(nil)
     }
 
     private var projectURL: URL? {
@@ -337,7 +449,6 @@ struct KanbanBoardView: View {
     private func toggleSelectionMode() {
         isSelecting.toggle()
         if isSelecting {
-            searchText = ""
         } else {
             selectedItemIDs.removeAll()
         }
@@ -415,14 +526,24 @@ struct KanbanBoardView: View {
             if usesTable {
                 ProjectTableView(
                     project: project,
-                    items: filteredItems(for: store.visibleProjectItems(in: project)),
+                    items: filteredItems(for: project.items),
                     store: store,
+                    preferenceID: tablePreferenceID,
+                    workControls: workControls(project),
                     isSelecting: isSelecting,
                     selectedItemIDs: $selectedItemIDs,
-                    showItemDetail: showItemDetail,
+                    showItemDetail: openItemDetail,
                     reportError: report
                 )
-                .id(project.id)
+                .id(tablePreferenceID)
+            } else if displayedItems(in: project).isEmpty {
+                ContentUnavailableView {
+                    Label("No Matching Items", systemImage: "line.3.horizontal.decrease.circle")
+                } description: {
+                    Text("Try removing filters or changing your search.")
+                } actions: {
+                    Button("Clear Filters") { clearFilters(project) }
+                }
             } else {
                 boardContent(project)
             }
@@ -440,6 +561,7 @@ struct KanbanBoardView: View {
                 .foregroundStyle(.tertiary)
             Text("\(project.title) has no items")
                 .font(.headline)
+            Button("Add Item", action: showAddItem).disabled(!project.viewerCanUpdate)
             Text("Items added to this GitHub Project will appear here.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -468,13 +590,14 @@ struct KanbanBoardView: View {
     }
 
     private func filteredItems(for items: [ProjectItem]) -> [ProjectItem] {
-        items.matching(searchText, currentUserLogin: store.currentUserLogin)
+        workFilter.apply(to: items, currentUserLogin: store.currentUserLogin)
+            .matching(searchText, currentUserLogin: store.currentUserLogin)
     }
 
     private func boardContent(_ project: Project) -> some View {
         GeometryReader { geometry in
-            let visibleStatuses = store.visibleKanbanStatuses(in: project)
-            let visibleItems = store.visibleProjectItems(in: project)
+            let visibleStatuses = visibleStatuses(in: project)
+            let visibleItems = project.items
             let knownStatusIDs = Set(project.statusOptions.map(\.id))
             let noStatusItems = visibleItems.filter { item in
                 item.statusOptionId.map { !knownStatusIDs.contains($0) } ?? true
@@ -494,6 +617,7 @@ struct KanbanBoardView: View {
                         let statusItems = filteredItems(for: visibleItems.filter { $0.statusOptionId == status.id })
                         KanbanColumn(
                             projectID: project.id,
+                            preferenceID: tablePreferenceID,
                             status: status,
                             items: statusItems,
                             emptyMessage: searchText.isEmpty ? "No items" : "No matching items",
@@ -501,7 +625,7 @@ struct KanbanBoardView: View {
                             store: store,
                             isSelecting: isSelecting,
                             selectedItemIDs: $selectedItemIDs,
-                            showInspector: showItemDetail,
+                            showInspector: openItemDetail,
                             reportError: report
                         )
                         .frame(width: columnWidth, height: geometry.size.height - 32)
@@ -511,6 +635,7 @@ struct KanbanBoardView: View {
                     if !noStatusItems.isEmpty {
                         KanbanColumn(
                             projectID: project.id,
+                            preferenceID: tablePreferenceID,
                             status: nil,
                             items: noStatusFiltered,
                             emptyMessage: searchText.isEmpty ? "No items" : "No matching items",
@@ -518,7 +643,7 @@ struct KanbanBoardView: View {
                             store: store,
                             isSelecting: isSelecting,
                             selectedItemIDs: $selectedItemIDs,
-                            showInspector: showItemDetail,
+                            showInspector: openItemDetail,
                             reportError: report
                         )
                         .frame(width: columnWidth, height: geometry.size.height - 32)
@@ -534,36 +659,18 @@ struct KanbanBoardView: View {
         }
     }
 
-    private func statusFilterSystemImage(for project: Project) -> String {
-        store.visibleKanbanStatuses(in: project).count == project.statusOptions.count
-            ? "line.3.horizontal.decrease.circle"
-            : "line.3.horizontal.decrease.circle.fill"
-    }
-
-    private func statusFilterHelp(for project: Project) -> String {
-        let hiddenCount = project.statusOptions.count
-            - store.visibleKanbanStatuses(in: project).count
-        return hiddenCount == 0
-            ? "Filter Statuses"
-            : "Filter Statuses — \(hiddenCount) Hidden"
-    }
-
-    private func statusFilterAccessibilityValue(for project: Project) -> String {
-        let visibleCount = store.visibleKanbanStatuses(in: project).count
-        return "\(visibleCount) of \(project.statusOptions.count) statuses shown"
-    }
-
-    private func toggleStatusFilter() {
-        showsStatusFilter.toggle()
-    }
-
     private func boardScrollIdentity(
         project: Project,
         visibleStatuses: [StatusOption],
         includesNoStatus: Bool
     ) -> [String] {
-        [project.id, includesNoStatus ? "includes-no-status" : "statuses-only"]
+        [tablePreferenceID, includesNoStatus ? "includes-no-status" : "statuses-only"]
             + visibleStatuses.map(\.id)
+    }
+
+    private func openItemDetail(_ reference: ItemInspectorReference) {
+        selectedItemIDs = [reference.itemID]
+        showItemDetail(reference)
     }
 
     private var selectedItems: [ProjectItem] {

@@ -165,7 +165,7 @@ struct GitHubServiceTests {
             {"data":{"node":{"title":"Work","number":7,"url":"https://github.com/users/me/projects/7","viewerCanUpdate":true,"fields":{"nodes":[{"__typename":"ProjectV2SingleSelectField","id":"F1","name":"Status","dataType":"SINGLE_SELECT","options":[{"id":"todo","name":"Todo","color":"GRAY"}]},{"__typename":"ProjectV2IterationField","id":"F2","name":"Iteration","dataType":"ITERATION","configuration":{"iterations":[{"id":"SPRINT1","title":"Sprint 1","startDate":"2026-08-24","duration":14}],"completedIterations":[]}},{"__typename":"ProjectV2Field","id":"F3","name":"Estimate","dataType":"NUMBER"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
             """,
             """
-            {"data":{"node":{"items":{"nodes":[{"id":"I1","content":{"__typename":"Issue","id":"CONTENT1","title":"First","number":1,"url":"https://github.com/acme/repo/issues/1","state":"OPEN","assignees":{"nodes":[]},"labels":{"nodes":[{"id":"L1","name":"bug","color":"d73a4a"}]},"closedByPullRequestsReferences":{"nodes":[]},"subIssuesSummary":{"completed":2,"total":3},"blockedBy":{"totalCount":1},"blocking":{"totalCount":4}},"fieldValueByName":{"name":"Todo","optionId":"todo"},"fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"id":"F1"}},{"__typename":"ProjectV2ItemFieldIterationValue","title":"Sprint 1","iterationId":"SPRINT1","field":{"id":"F2"}},{"__typename":"ProjectV2ItemFieldNumberValue","number":3,"field":{"id":"F3"}},{"__typename":"ProjectV2ItemFieldRepositoryValue"}]}}],"pageInfo":{"hasNextPage":true,"endCursor":"items-next"}}}}}
+            {"data":{"node":{"items":{"nodes":[{"id":"I1","content":{"__typename":"Issue","id":"CONTENT1","title":"First","number":1,"url":"https://github.com/acme/repo/issues/1","state":"OPEN","assignees":{"nodes":[]},"labels":{"nodes":[{"id":"L1","name":"bug","color":"d73a4a"}]},"closedByPullRequestsReferences":{"nodes":[]},"subIssuesSummary":{"completed":2,"total":3},"issueDependenciesSummary":{"blockedBy":1,"blocking":4},"milestone":{"id":"M1","title":"v1"},"parent":{"id":"P1","title":"Delivery","number":9,"repository":{"nameWithOwner":"acme/plan"}},"issueType":{"id":"T1","name":"Bug"}},"fieldValueByName":{"name":"Todo","optionId":"todo"},"fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"id":"F1"}},{"__typename":"ProjectV2ItemFieldIterationValue","title":"Sprint 1","iterationId":"SPRINT1","field":{"id":"F2"}},{"__typename":"ProjectV2ItemFieldNumberValue","number":3,"field":{"id":"F3"}},{"__typename":"ProjectV2ItemFieldRepositoryValue"}]}}],"pageInfo":{"hasNextPage":true,"endCursor":"items-next"}}}}}
             """,
             """
             {"data":{"node":{"items":{"nodes":[{"id":"I2","content":{"__typename":"PullRequest","id":"PR1","title":"Merge safely","number":2,"url":"https://github.com/acme/repo/pull/2","state":"OPEN","updatedAt":"2026-08-27T00:00:00Z","isDraft":false,"mergeable":"MERGEABLE","reviewDecision":"APPROVED","reviewRequests":{"nodes":[{"requestedReviewer":{"login":"octocat"}}]},"statusCheckRollup":{"state":"SUCCESS"},"assignees":{"nodes":[]},"labels":{"nodes":[]}},"fieldValueByName":{"name":"Todo","optionId":"todo"},"fieldValues":{"nodes":[]}},{"id":"I3","content":null,"fieldValueByName":null}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
@@ -193,6 +193,10 @@ struct GitHubServiceTests {
         #expect(project.items[0].signals.subIssueProgress == SubIssueProgress(completed: 2, total: 3))
         #expect(project.items[0].signals.blockedByCount == 1)
         #expect(project.items[0].signals.blockingCount == 4)
+        #expect(project.items[0].milestone?.id == "M1")
+        #expect(project.items[0].milestone?.repository == "acme/repo")
+        #expect(project.items[0].parentIssue?.repository == "acme/plan")
+        #expect(project.items[0].issueType?.name == "Bug")
         #expect(project.items[0].fieldValues["F2"] == .iteration(id: "SPRINT1", title: "Sprint 1"))
         #expect(project.items[0].fieldValues["F3"] == .number(3))
         #expect(project.items[1].signals.isReadyToMerge)
@@ -652,36 +656,6 @@ struct ProjectStoreTests {
             "In Progress",
             "In Review"
         ])
-    }
-
-    @Test func projectLayoutsShareStatusFilteringBeforeSearchAndGrouping() throws {
-        let (store, cleanup) = makeStore(runner: FixtureGitHubCommandRunner(responses: []))
-        defer { cleanup() }
-        var project = Self.kanbanProject()
-        let todo = try #require(project.statusOptions.first { $0.id == "TODO" })
-        let done = try #require(project.statusOptions.first { $0.id == "DONE" })
-        project.items = [todo, done].map { status in
-            ProjectItem(id: status.id, contentId: nil, contentType: .draftIssue,
-                        title: "Task \(status.name)", number: nil, url: nil,
-                        issueState: nil, prState: nil, status: status.name,
-                        statusOptionId: status.id, assignees: [])
-        }
-        project.items.append(ProjectItem(
-            id: "unassigned", contentId: nil, contentType: .draftIssue, title: "No status",
-            number: nil, url: nil, issueState: nil, prState: nil,
-            status: nil, statusOptionId: nil, assignees: []
-        ))
-
-        #expect(store.visibleProjectItems(in: project).map(\.id) == ["TODO", "unassigned"])
-        store.showAllKanbanStatuses(in: project)
-        #expect(store.visibleProjectItems(in: project).map(\.id) == ["TODO", "DONE", "unassigned"])
-        store.setKanbanStatus(todo, visible: false, in: project)
-        let visible = store.visibleProjectItems(in: project)
-        #expect(visible.map(\.id) == ["DONE", "unassigned"])
-        #expect(visible.matching("Task", currentUserLogin: nil).map(\.id) == ["DONE"])
-        let groups = ProjectTableGroup.make(items: visible, statuses: project.statusOptions, sortOrder: [])
-        #expect(groups.map(\.id) == [.status("DONE"), .status(nil)])
-        #expect(groups.flatMap { $0.rows.compactMap { $0.item?.id } } == visible.map(\.id))
     }
 
     @Test func kanbanVisibilityCanShowAllButCannotHideTheFinalColumn() throws {

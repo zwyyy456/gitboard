@@ -1,7 +1,7 @@
 import Foundation
 
 struct ProjectCacheSnapshot: Codable {
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     let version: Int
     let accountLogin: String
