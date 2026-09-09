@@ -67,9 +67,18 @@ struct ProjectTableView: View {
             .contextMenu(forSelectionType: ProjectTableRow.ID.self) { ids in
                 itemContextMenu(ids)
             } primaryAction: { ids in
-                guard !isSelecting, let id = ids.first?.itemID,
+                guard !isSelecting, ids.count == 1, let id = ids.first?.itemID,
                       let item = items.first(where: { $0.id == id }) else { return }
                 open(item)
+            }
+            .onKeyPress(.return) {
+                guard !isSelecting, selectedItemIDs.count == 1,
+                      let item = items.first(where: { selectedItemIDs.contains($0.id) }) else { return .ignored }
+                open(item)
+                return .handled
+            }
+            .onChange(of: items.map(\.id)) { _, ids in
+                selectedItemIDs.formIntersection(ids)
             }
             .overlay {
                 if items.isEmpty { ContentUnavailableView.search }
@@ -139,8 +148,8 @@ struct ProjectTableView: View {
                          Fields.TableColumnSortComparator == ProjectTableSort {
         Table(of: ProjectTableRow.self, selection: selection,
               sortOrder: sortOrder, columnCustomization: $columns) {
-            numberColumn
             titleColumn
+            numberColumn
             statusColumn
             assigneesColumn
             updatedColumn
@@ -151,8 +160,10 @@ struct ProjectTableView: View {
             if groupsByStatus {
                 ForEach(ProjectTableGroup.make(items: items, statuses: project.statusOptions,
                                               sortOrder: sortOrder.wrappedValue)) { group in
-                    DisclosureTableRow(group.header, isExpanded: expansion(for: group.id)) {
+                    Section(isExpanded: expansion(for: group.id)) {
                         ForEach(group.rows) { row in TableRow(row) }
+                    } header: {
+                        titleCell(group.header)
                     }
                 }
             } else {
@@ -174,9 +185,9 @@ struct ProjectTableView: View {
             Text(row.item?.number.map { "#\($0)" } ?? "")
                 .font(.system(size: 12).monospacedDigit())
                 .foregroundStyle(.secondary)
-                .frame(minHeight: 38)
+                .frame(minHeight: 26)
         }
-        .width(min: 65, ideal: 76, max: 110)
+        .width(min: 50, ideal: 60, max: 90)
         .customizationID("number")
         .disabledCustomizationBehavior(.visibility)
     }
@@ -187,7 +198,7 @@ struct ProjectTableView: View {
         }
         .width(min: 280, ideal: 500)
         .customizationID("title")
-        .disabledCustomizationBehavior(.visibility)
+        .disabledCustomizationBehavior([.visibility, .reorder])
     }
 
     private var statusColumn: some TableColumnContent<ProjectTableRow, ProjectTableSort> {
@@ -201,13 +212,14 @@ struct ProjectTableView: View {
         }
         .width(min: 100, ideal: 120, max: 180)
         .customizationID("status")
+        .defaultVisibility(groupsByStatus ? .hidden : .visible)
     }
 
     private var assigneesColumn: some TableColumnContent<ProjectTableRow, ProjectTableSort> {
         TableColumn("Assignees", sortUsing: ProjectTableSort(column: "assignees")) { (row: ProjectTableRow) in
             if let item = row.item { assigneeCell(item) }
         }
-        .width(min: 90, ideal: 130, max: 220)
+        .width(min: 80, ideal: 110, max: 180)
         .customizationID("assignees")
     }
 
@@ -259,29 +271,17 @@ struct ProjectTableView: View {
     @ViewBuilder
     private func titleCell(_ row: ProjectTableRow) -> some View {
         if let item = row.item {
-            Button {
-                if isSelecting {
-                    if selectedItemIDs.contains(item.id) { selectedItemIDs.remove(item.id) }
-                    else { selectedItemIDs.insert(item.id) }
-                } else {
-                    open(item)
-                }
-            } label: {
-                Text(item.title)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(item.title)
-            .accessibilityHint(isSelecting ? "Toggles selection" : "Shows details")
+            Text(item.title)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
+                .help(item.title)
         } else {
             HStack(spacing: 8) {
                 Circle().fill(row.status?.swiftUIColor ?? .secondary).frame(width: 8, height: 8)
                 Text(row.status?.name ?? "No Status").fontWeight(.semibold)
                 Text(row.count.formatted()).foregroundStyle(.secondary).monospacedDigit()
             }
-            .frame(minHeight: 38)
+            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
             .accessibilityElement(children: .combine)
         }
     }
@@ -300,7 +300,7 @@ struct ProjectTableView: View {
                 Text(assignee.name ?? assignee.login).lineLimit(1)
                 if item.assignees.count > 1 { Text("+\(item.assignees.count - 1)").font(.caption) }
             } else {
-                Image(systemName: "person.crop.circle.dashed").foregroundStyle(.tertiary)
+                Text("—").foregroundStyle(.tertiary)
                     .accessibilityLabel("Unassigned")
             }
         }
@@ -336,7 +336,7 @@ struct ProjectTableView: View {
             }
             Divider()
             Menu("Show Fields") {
-                columnToggle("Status", id: "status")
+                columnToggle("Status", id: "status", defaultVisible: !groupsByStatus)
                 columnToggle("Assignees", id: "assignees")
                 columnToggle("Updated", id: "updated")
                 columnToggle("Repository", id: "repository", defaultVisible: false)
