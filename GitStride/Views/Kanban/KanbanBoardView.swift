@@ -214,8 +214,19 @@ struct KanbanBoardView: View {
             }
         }
 
+        if store.selectedProject != nil {
+            ToolbarItem(placement: .automatic) {
+                Picker("Project Layout", selection: layoutSelection) {
+                    Text("Board").tag(false)
+                    Text("Table").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .help("Change project layout")
+            }
+        }
         if let project = store.selectedProject,
-           !usesTable, project.statusOptions.isEmpty == false {
+           project.statusOptions.isEmpty == false {
             if #available(macOS 26.0, *) {
                 ToolbarSpacer(.fixed)
             }
@@ -231,17 +242,6 @@ struct KanbanBoardView: View {
                 .popover(isPresented: $showsStatusFilter, arrowEdge: .top) {
                     StatusColumnFilterView(store: store, project: project)
                 }
-            }
-        }
-        if store.selectedProject != nil {
-            ToolbarItem(placement: .automatic) {
-                Picker("Project Layout", selection: layoutSelection) {
-                    Text("Board").tag(false)
-                    Text("Table").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-                .help("Change project layout")
             }
         }
         if #available(macOS 26.0, *), !isSelecting {
@@ -415,7 +415,7 @@ struct KanbanBoardView: View {
             if usesTable {
                 ProjectTableView(
                     project: project,
-                    items: filteredItems(for: project.items),
+                    items: filteredItems(for: store.visibleProjectItems(in: project)),
                     store: store,
                     isSelecting: isSelecting,
                     selectedItemIDs: $selectedItemIDs,
@@ -474,7 +474,12 @@ struct KanbanBoardView: View {
     private func boardContent(_ project: Project) -> some View {
         GeometryReader { geometry in
             let visibleStatuses = store.visibleKanbanStatuses(in: project)
-            let includesNoStatus = project.noStatusItems.isEmpty == false
+            let visibleItems = store.visibleProjectItems(in: project)
+            let knownStatusIDs = Set(project.statusOptions.map(\.id))
+            let noStatusItems = visibleItems.filter { item in
+                item.statusOptionId.map { !knownStatusIDs.contains($0) } ?? true
+            }
+            let includesNoStatus = !noStatusItems.isEmpty
             let columnCount = max(visibleStatuses.count + (includesNoStatus ? 1 : 0), 1)
             let totalSpacing = CGFloat(columnCount - 1) * Self.columnSpacing
             let availableWidth = geometry.size.width - 32 - totalSpacing
@@ -486,7 +491,7 @@ struct KanbanBoardView: View {
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: Self.columnSpacing) {
                     ForEach(visibleStatuses) { status in
-                        let statusItems = filteredItems(for: project.items(forStatus: status.name))
+                        let statusItems = filteredItems(for: visibleItems.filter { $0.statusOptionId == status.id })
                         KanbanColumn(
                             projectID: project.id,
                             status: status,
@@ -502,8 +507,8 @@ struct KanbanBoardView: View {
                         .frame(width: columnWidth, height: geometry.size.height - 32)
                     }
 
-                    let noStatusFiltered = filteredItems(for: project.noStatusItems)
-                    if !project.noStatusItems.isEmpty || !noStatusFiltered.isEmpty {
+                    let noStatusFiltered = filteredItems(for: noStatusItems)
+                    if !noStatusItems.isEmpty {
                         KanbanColumn(
                             projectID: project.id,
                             status: nil,
