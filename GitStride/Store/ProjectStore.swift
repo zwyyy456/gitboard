@@ -447,16 +447,6 @@ final class ProjectStore {
         return project.items.filter { $0.status == filter }
     }
 
-    // Both project layouts share status visibility; ungrouped items remain accessible.
-    func visibleProjectItems(in project: Project) -> [ProjectItem] {
-        let knownIDs = Set(project.statusOptions.map(\.id))
-        let visibleIDs = visibleKanbanStatusIDs(in: project)
-        return project.items.filter { item in
-            guard let id = item.statusOptionId, knownIDs.contains(id) else { return true }
-            return visibleIDs.contains(id)
-        }
-    }
-
     func visibleKanbanStatuses(in project: Project) -> [StatusOption] {
         let visibleIDs = visibleKanbanStatusIDs(in: project)
         return project.statusOptions.filter { visibleIDs.contains($0.id) }

@@ -112,6 +112,9 @@ struct ProjectItem: Identifiable, Codable, Hashable {
     var fieldValues: [String: ProjectFieldValue]
     let linkedPR: LinkedPR?
     let engineeringSignals: EngineeringSignals?
+    var milestone: ProjectPlanningReference?
+    var parentIssue: ProjectPlanningReference?
+    var issueType: ProjectIssueType?
 
     init(id: String, contentId: String?, contentType: ItemContentType, title: String, number: Int?, url: String?, issueState: IssueState?, prState: PullRequestState?, updatedAt: String? = nil, status: String?, statusOptionId: String?, assignees: [Assignee], labels: [IssueLabel] = [], fieldValues: [String: ProjectFieldValue] = [:], linkedPR: LinkedPR? = nil, engineeringSignals: EngineeringSignals? = nil) {
         self.id = id

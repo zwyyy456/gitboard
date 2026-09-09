@@ -2,6 +2,19 @@ import SwiftUI
 
 struct KanbanCardContent: View {
     let item: ProjectItem
+    let project: Project?
+    @AppStorage private var fields: String
+
+    init(item: ProjectItem, project: Project? = nil, preferenceID: String? = nil) {
+        self.item = item
+        self.project = project
+        _fields = AppStorage(wrappedValue: "assignees", "projectTable.\(preferenceID ?? project?.id ?? "").cardFields")
+    }
+
+    private var visibleFields: Set<String> { Set(fields.split(separator: ",").map(String.init)) }
+    private var showsRepository: Bool {
+        Set(project?.items.compactMap(\.repositoryName) ?? []).count > 1
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -10,20 +23,29 @@ struct KanbanCardContent: View {
 
                 Text(item.title)
                     .font(.system(size: 13, weight: .medium))
-                    .lineLimit(3)
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            EngineeringSignalsView(item: item, limit: 2)
+            if !item.isWorkComplete && item.signals.blockedByCount > 0 {
+                Label("Blocked by \(item.signals.blockedByCount)", systemImage: "hand.raised")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            if visibleFields.contains("signals") { EngineeringSignalsView(item: item, limit: 2) }
+            optionalFields
 
             HStack(spacing: 4) {
+                if showsRepository, let repository = item.repositoryName {
+                    Text(repository).lineLimit(1).truncationMode(.middle)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if let number = item.number {
                     Text("#\(number)")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
 
-                if let linkedPR = item.linkedPR {
+                if visibleFields.contains("signals"), let linkedPR = item.linkedPR {
                     Text("·")
                         .font(.system(size: 11))
                         .foregroundStyle(.quaternary)
@@ -34,7 +56,7 @@ struct KanbanCardContent: View {
 
                 Spacer()
 
-                if item.assignees.isEmpty == false {
+                if visibleFields.contains("assignees"), item.assignees.isEmpty == false {
                     HStack(spacing: -5) {
                         ForEach(item.assignees.prefix(3)) { assignee in
                             AsyncImage(url: URL(string: assignee.avatarUrl)) { image in
@@ -43,6 +65,7 @@ struct KanbanCardContent: View {
                                 Circle().fill(.secondary.opacity(0.3))
                             }
                             .frame(width: 20, height: 20)
+                            .help(assignee.login)
                             .clipShape(Circle())
                             .overlay(
                                 Circle().stroke(
@@ -61,6 +84,35 @@ struct KanbanCardContent: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var optionalFields: some View {
+        if visibleFields.contains("milestone"), let milestone = item.milestone {
+            Label(milestone.title, systemImage: "flag").font(.caption).foregroundStyle(.secondary)
+        }
+        if visibleFields.contains("labels"), !item.labels.isEmpty {
+            Text(item.labels.map(\.name).joined(separator: ", "))
+                .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+        }
+        ForEach(project?.fields.filter { field in
+            field.isEditable && field.id != project?.statusField?.id && visibleFields.contains("field:" + field.id)
+        } ?? []) { field in
+            if let value = item.fieldValues[field.id] {
+                Text("\(field.name): \(fieldText(value))")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+    }
+
+    private func fieldText(_ value: ProjectFieldValue) -> String {
+        switch value {
+        case .singleSelect(_, let name): name
+        case .iteration(_, let title): title
+        case .date(let date): date
+        case .number(let number): number.formatted()
+        case .text(let text): text
         }
     }
 

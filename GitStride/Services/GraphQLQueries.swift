@@ -195,8 +195,10 @@ enum GraphQLQueries {
                                         completed
                                         total
                                     }
-                                    blockedBy(first: 1) { totalCount }
-                                    blocking(first: 1) { totalCount }
+                                    milestone { id title }
+                                    parent { id title number repository { nameWithOwner } }
+                                    issueType { id name }
+                                    issueDependenciesSummary { blockedBy blocking }
                                 }
                                 ... on PullRequest {
                                     __typename
