@@ -131,6 +131,14 @@ actor GitHubService {
         return [userOwner] + organizations
     }
 
+    func deleteProject(id: String) async throws {
+        let _: DeleteProjectPayload = try await request(
+            GraphQLQueries.deleteProject,
+            variables: ["projectId": id],
+            as: DeleteProjectPayload.self
+        )
+    }
+
     func createProject(owner: ProjectOwner, title: String, repositoryID: String? = nil) async throws -> Project {
         var variables = ["ownerId": owner.id, "title": title]
         variables["repositoryId"] = repositoryID
@@ -1396,5 +1404,13 @@ private struct LinkProjectRepositoryPayload: Decodable {
     }
     struct Repository: Decodable {
         let id: String
+    }
+}
+
+
+private struct DeleteProjectPayload: Decodable {
+    let deleteProjectV2: Result
+    struct Result: Decodable {
+        let clientMutationId: String?
     }
 }

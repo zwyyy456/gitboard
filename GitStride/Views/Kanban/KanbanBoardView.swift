@@ -44,6 +44,7 @@ struct KanbanBoardView: View {
 
     var body: some View {
         projectSurface
+            .navigationTitle(store.selectedProject?.title ?? "Projects")
             .toolbar {
                 kanbanToolbar
             }
@@ -103,14 +104,6 @@ struct KanbanBoardView: View {
 
     @ToolbarContentBuilder
     private var kanbanToolbar: some ToolbarContent {
-        ToolbarItem(placement: .automatic) {
-            ProjectSelectorView(store: store)
-        }
-
-        if #available(macOS 26.0, *) {
-            ToolbarSpacer(.fixed)
-        }
-
         ToolbarItemGroup(placement: .automatic) {
             Button(action: refresh) {
                 Label {

@@ -14,62 +14,141 @@ struct MainWorkspaceView: View {
         case myWork(MyWorkFilter)
     }
 
+    private enum SidebarSelection: Hashable {
+        case project(String)
+        case myWork(MyWorkFilter)
+    }
+
+    private var sidebarSelection: Binding<SidebarSelection?> {
+        Binding(
+            get: {
+                switch destination {
+                case .project:
+                    model.projectStore.selectedProjectId.map(SidebarSelection.project)
+                case .myWork(let filter):
+                    .myWork(filter)
+                }
+            },
+            set: { selection in
+                switch selection {
+                case .project(let id):
+                    guard let project = model.projectStore.project(id: id) else { return }
+                    destination = .project
+                    detailPath = NavigationPath()
+                    Task { await model.projectStore.selectProject(project) }
+                case .myWork(let filter):
+                    destination = .myWork(filter)
+                case nil:
+                    break
+                }
+            }
+        )
+    }
+
     var body: some View {
         NavigationSplitView {
-            List(selection: $destination) {
-                Label("Project Board", systemImage: "rectangle.split.3x1")
-                    .tag(Destination.project)
-
-                Section {
-                    ForEach(model.myWorkStore.filters) { filter in
-                        Label(filter.rawValue, systemImage: filter.icon)
-                            .tag(Destination.myWork(filter))
-                            .contextMenu {
-                                Button("Move Up", systemImage: "arrow.up") {
-                                    moveFilterUp(filter)
-                                }
-                                .disabled(model.myWorkStore.filters.first == filter)
-
-                                Button("Move Down", systemImage: "arrow.down") {
-                                    moveFilterDown(filter)
-                                }
-                                .disabled(model.myWorkStore.filters.last == filter)
-
-                                Divider()
-
-                                Button("Hide from Sidebar", systemImage: "eye.slash") {
-                                    hideFilter(filter)
-                                }
-                                .disabled(model.myWorkStore.filters.count == 1)
-                            }
+            VStack(spacing: 0) {
+                Picker("Owner", selection: Binding(
+                    get: { model.projectStore.selectedOwnerId },
+                    set: { id in
+                        guard let owner = model.projectStore.owners.first(where: { $0.id == id }) else { return }
+                        destination = .project
+                        detailPath = NavigationPath()
+                        Task { await model.projectStore.selectOwner(owner) }
                     }
-                    .onMove { offsets, destination in
-                        model.myWorkStore.moveFilters(
-                            fromOffsets: offsets,
-                            toOffset: destination
-                        )
+                )) {
+                    if model.projectStore.selectedOwnerId == nil {
+                        Text("Select an owner").tag(String?.none)
                     }
-                } header: {
-                    HStack {
-                        Text("My Work")
-                        Spacer()
-                        Menu {
-                            filterVisibilityControls
-                        } label: {
-                            Label("Configure My Work", systemImage: "ellipsis.circle")
-                                .labelStyle(.iconOnly)
+                    ForEach(model.projectStore.owners) { owner in
+                        Label(owner.login, systemImage: owner.kind == .organization ? "building.2" : "person")
+                            .tag(Optional(owner.id))
+                    }
+                }
+                .padding(12)
+                .disabled(model.projectStore.owners.isEmpty)
+
+                List(selection: sidebarSelection) {
+                    Section {
+                        ForEach(model.projectStore.projects.filter { $0.owner.id == model.projectStore.selectedOwnerId }) { project in
+                            Label(project.title, systemImage: "rectangle.split.3x1")
+                                .lineLimit(1)
+                                .help(project.title)
+                                .tag(SidebarSelection.project(project.id))
+                                .contextMenu {
+                                    ProjectManagementMenu(model: model, projectID: project.id)
+                                }
                         }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-                        .help("Configure My Work views")
+                        if model.projectStore.isLoading {
+                            ProgressView("Loading projects…").controlSize(.small)
+                        } else if let error = model.projectStore.error {
+                            Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary)
+                            Button("Retry") { Task { await model.projectStore.loadProjects() } }
+                        } else if model.projectStore.projects.isEmpty {
+                            Text("No projects").foregroundStyle(.secondary)
+                        }
+                    } header: {
+                        HStack {
+                            Text("Projects")
+                            Spacer()
+                            NewProjectButton()
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .help("New Project")
+                        }
                     }
-                    .contextMenu {
-                        filterVisibilityControls
+
+                    Section {
+                        ForEach(model.myWorkStore.filters) { filter in
+                            Label(filter.rawValue, systemImage: filter.icon)
+                                .tag(SidebarSelection.myWork(filter))
+                                .contextMenu {
+                                    Button("Move Up", systemImage: "arrow.up") {
+                                        moveFilterUp(filter)
+                                    }
+                                    .disabled(model.myWorkStore.filters.first == filter)
+
+                                    Button("Move Down", systemImage: "arrow.down") {
+                                        moveFilterDown(filter)
+                                    }
+                                    .disabled(model.myWorkStore.filters.last == filter)
+
+                                    Divider()
+
+                                    Button("Hide from Sidebar", systemImage: "eye.slash") {
+                                        hideFilter(filter)
+                                    }
+                                    .disabled(model.myWorkStore.filters.count == 1)
+                                }
+                        }
+                        .onMove { offsets, destination in
+                            model.myWorkStore.moveFilters(
+                                fromOffsets: offsets,
+                                toOffset: destination
+                            )
+                        }
+                    } header: {
+                        HStack {
+                            Text("My Work")
+                            Spacer()
+                            Menu {
+                                filterVisibilityControls
+                            } label: {
+                                Label("Configure My Work", systemImage: "ellipsis.circle")
+                                    .labelStyle(.iconOnly)
+                            }
+                            .menuStyle(.borderlessButton)
+                            .menuIndicator(.hidden)
+                            .fixedSize()
+                            .help("Configure My Work views")
+                        }
+                        .contextMenu {
+                            filterVisibilityControls
+                        }
                     }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
+            .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
         } detail: {
             NavigationStack(path: $detailPath) {
                 Group {
@@ -112,6 +191,9 @@ struct MainWorkspaceView: View {
             if model.myWorkStore.followedProjects.isEmpty == false {
                 await model.refreshMyWork()
             }
+        }
+        .onChange(of: model.projectStore.selectedProjectId) { _, _ in
+            if destination == .project { detailPath = NavigationPath() }
         }
         .onChange(of: model.projectStore.currentUserLogin) { _, login in
             Task { await model.activateMyWork(accountLogin: login) }

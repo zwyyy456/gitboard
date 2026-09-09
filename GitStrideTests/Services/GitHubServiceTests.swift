@@ -464,6 +464,30 @@ struct QuickCreateParserTests {
 }
 
 struct ProjectCacheTests {
+    @Test func deletionRemovesOnlyTheTargetAndClearsTheLastSelection() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("DeleteCache-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let cache = ProjectCache(fileURL: url)
+        let owner = ProjectOwner(id: "U", login: "me", name: nil, kind: .user)
+        let projects = ["P1", "P2"].map {
+            Project(id: $0, owner: owner, title: $0, number: 1, url: "", viewerCanUpdate: true)
+        }
+        try await cache.save(ProjectCacheSnapshot(
+            accountLogin: "me", owner: owner, projects: projects,
+            detailedProjectIDs: ["P1", "P2"], selectedProjectId: "P1", selectedStatusFilter: "Todo"
+        ))
+        try await cache.removeProject(id: "P1")
+        let remaining = try #require(try await cache.load())
+        #expect(remaining.projects.map(\.id) == ["P2"])
+        #expect(remaining.detailedProjectIDs == ["P2"])
+        #expect(remaining.selectedProjectId == "P2")
+        #expect(remaining.selectedStatusFilter == nil)
+        try await cache.removeProject(id: "P2")
+        let empty = try #require(try await cache.load())
+        #expect(empty.projects.isEmpty)
+        #expect(empty.selectedProjectId == nil)
+    }
+
     @Test func roundTripPreservesTheDomainSnapshot() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("GitStrideTests-\(UUID().uuidString)", isDirectory: true)
@@ -525,6 +549,97 @@ struct ProjectCacheTests {
 
 @MainActor
 struct ProjectStoreTests {
+    @Test func managementPermissionsFollowTheLatestTargetSnapshot() async throws {
+        let fields = Self.mutationProjectResponses[3]
+        let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [
+            fields.replacingOccurrences(of: "\"viewerCanUpdate\":true", with: "\"viewerCanUpdate\":false"),
+            Self.emptyItemsResponse,
+            fields, Self.emptyItemsResponse
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let oldSnapshot = try #require(store.selectedProject)
+        #expect(store.canManageProject(id: oldSnapshot.id))
+        await store.loadProjectDetails(id: oldSnapshot.id)
+        #expect(oldSnapshot.viewerCanUpdate)
+        #expect(!store.canManageProject(id: oldSnapshot.id))
+        await store.loadProjectDetails(id: oldSnapshot.id)
+        store.selectedProjectId = nil
+        #expect(store.canManageProject(id: oldSnapshot.id))
+        #expect(!store.canManageProject(id: "missing"))
+    }
+
+
+    @Test(arguments: [true, false])
+    func deletionCommitsOnlyAfterGitHubSuccess(_ succeeds: Bool) async throws {
+        let response = succeeds ? #"{"data":{"deleteProjectV2":{"clientMutationId":null}}}"#
+                                : #"{"errors":[{"message":"Deletion denied"}]}"#
+        let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [response])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let project = try #require(store.selectedProject)
+        store.setFollowedProjects([FollowedProject(project: project)])
+        do {
+            try await store.deleteProject(id: project.id)
+            #expect(succeeds)
+        } catch let error as GitHubError {
+            #expect(!succeeds)
+            #expect(error == .graphQLError("Deletion denied"))
+        }
+        #expect(store.projects.isEmpty == succeeds)
+        #expect((store.selectedProjectId == nil) == succeeds)
+        #expect((store.followedProject(id: project.id) == nil) == succeeds)
+        #expect(store.deletingProjectIDs.isEmpty)
+        if succeeds {
+            store.setFollowedProjects([FollowedProject(project: project)])
+            #expect(store.project(id: project.id) == nil)
+        }
+        let calls = await runner.recordedArguments()
+        #expect(calls.last?.contains("projectId=P1") == true)
+    }
+
+    @Test func catalogResponseCannotRestoreDeletedProject() async throws {
+        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+            .response(Self.sessionResponse), .response(Self.ownersResponse),
+            .suspended("catalog", Self.mutationProjectResponses[2]),
+            .response(#"{"data":{"deleteProjectV2":{"clientMutationId":null}}}"#)
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let loading = Task { await store.loadProjects() }
+        await runner.waitUntilSuspended("catalog")
+        try await store.deleteProject(id: "P1")
+        await runner.release("catalog")
+        await loading.value
+        #expect(store.projects.isEmpty)
+        #expect(store.selectedProjectId == nil)
+        #expect(!store.isLoading)
+    }
+
+    @Test func deletingSelectedProjectLoadsTheNextProject() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [
+            Self.sessionResponse, Self.ownersResponse, Self.projectsResponse,
+            Self.firstProjectFieldsResponse, Self.emptyItemsResponse,
+            #"{"data":{"deleteProjectV2":{"clientMutationId":null}}}"#,
+            Self.firstProjectFieldsResponse, Self.emptyItemsResponse
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        try await store.deleteProject(id: "P1")
+        #expect(store.projects.map(\.id) == ["P2"])
+        #expect(store.selectedProjectId == "P2")
+        guard case .empty(let project, _, _) = store.selectedProjectContentState else {
+            Issue.record("Expected the next project to be loaded")
+            return
+        }
+        #expect(project.id == "P2")
+    }
+
+
     @Test func kanbanDefaultsToTheActiveWorkflowStatusesInProjectOrder() {
         let runner = FixtureGitHubCommandRunner(responses: [])
         let (store, cleanup) = makeStore(runner: runner)

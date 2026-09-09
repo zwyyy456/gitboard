@@ -221,3 +221,95 @@ struct LinkProjectRepositoryView: View {
         store.repositoryListState(ownerID: owner.id).repositories.first { $0.id == repositoryID }
     }
 }
+
+
+struct ProjectManagementMenu: View {
+    @Bindable var model: GitStrideModel
+    let projectID: String
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        if let project = model.projectStore.project(id: projectID) {
+            if let url = URL(string: project.url) {
+                Link("Open in GitHub", destination: url)
+            }
+            Button(model.myWorkStore.isFollowing(project.id) ? "Remove from My Work" : "Add to My Work") {
+                Task { await model.toggleFollowing(project) }
+            }
+            .disabled(model.projectStore.deletingProjectIDs.contains(project.id))
+
+            if model.projectStore.canManageProject(id: projectID) {
+                Button("Link Repository…", systemImage: "link") {
+                    openWindow(id: "link-project-repository", value: project.id)
+                }
+                .disabled(model.projectStore.deletingProjectIDs.contains(project.id))
+                Divider()
+                Button(role: .destructive) {
+                    openWindow(id: "delete-project", value: project.id)
+                } label: {
+                    Label("Delete Project…", systemImage: "trash")
+                        .foregroundStyle(.red)
+                }
+                .disabled(model.projectStore.deletingProjectIDs.contains(project.id))
+            }
+        }
+    }
+}
+
+struct DeleteProjectView: View {
+    @Bindable var model: GitStrideModel
+    let projectID: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmation = ""
+    @State private var errorMessage: String?
+    @FocusState private var confirmationFocused: Bool
+
+    private var isDeleting: Bool { model.projectStore.deletingProjectIDs.contains(projectID) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Delete Project").font(.title2.bold())
+            if let project = model.projectStore.project(id: projectID) {
+                Text("Permanently delete “\(project.title)” from \(project.owner.login)? This cannot be undone.")
+                    .fixedSize(horizontal: false, vertical: true)
+                TextField("Type the project name to confirm", text: $confirmation)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($confirmationFocused)
+                    .disabled(isDeleting)
+                if let errorMessage {
+                    Text(errorMessage).foregroundStyle(.red)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HStack {
+                    if isDeleting { ProgressView("Deleting…").controlSize(.small) }
+                    Spacer()
+                    Button("Cancel") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                        .disabled(isDeleting)
+                    Button("Delete Project", role: .destructive) {
+                        errorMessage = nil
+                        Task {
+                            do {
+                                try await model.deleteProject(project)
+                                dismiss()
+                            } catch {
+                                errorMessage = error.localizedDescription
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .disabled(isDeleting || confirmation != project.title || !project.viewerCanUpdate)
+                }
+            } else {
+                Text("This project is no longer available.")
+                Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 420, idealWidth: 480, maxWidth: 560)
+        .fixedSize(horizontal: false, vertical: true)
+        .onAppear { confirmationFocused = true }
+    }
+}

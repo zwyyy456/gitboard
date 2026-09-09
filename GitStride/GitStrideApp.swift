@@ -124,6 +124,15 @@ struct GitStrideApp: App {
         .windowResizability(.contentSize)
         .commandsRemoved()
 
+        WindowGroup("Delete Project", id: "delete-project", for: String.self) { $projectID in
+            if let projectID {
+                DeleteProjectView(model: model, projectID: projectID)
+            }
+        }
+        .defaultSize(width: 480, height: 300)
+        .windowResizability(.contentSize)
+        .commandsRemoved()
+
         Window("About GitStride", id: "about") {
             AboutView()
         }

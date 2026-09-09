@@ -137,6 +137,8 @@ final class ProjectStore {
     private var repositoryLists: [String: RepositoryListState] = [:]
     private var repositoryReadIDs: [String: UUID] = [:]
     private(set) var linkingRepositoryProjectIDs: Set<String> = []
+    private(set) var deletingProjectIDs: Set<String> = []
+    private var deletedProjectIDs: Set<String> = []
     private(set) var isCreatingProject = false
     var isLoading = false
     var error: Error?
@@ -248,8 +250,13 @@ final class ProjectStore {
         project(id: reference.projectID)?.items.first { $0.id == reference.itemID }
     }
 
+    func canManageProject(id: String) -> Bool {
+        guard let state = projectStates[id], state.source != .cache else { return false }
+        return state.snapshot?.viewerCanUpdate == true
+    }
+
     func canEditProject(id: String) -> Bool {
-        guard let project = project(id: id), project.viewerCanUpdate else { return false }
+        guard !deletingProjectIDs.contains(id), let project = project(id: id), project.viewerCanUpdate else { return false }
         return projectStates[id]?.source == .remote
     }
 
@@ -691,6 +698,7 @@ final class ProjectStore {
     }
 
     func setFollowedProjects(_ references: [FollowedProject]) {
+        let references = references.filter { !deletedProjectIDs.contains($0.id) }
         followedProjectsGeneration += 1
         let previousIDs = followedProjectIDs
         followedProjectIDs = Set(references.map(\.id))
@@ -746,9 +754,54 @@ final class ProjectStore {
         }
     }
 
+    func deleteProject(id: String) async throws {
+        guard let project = project(id: id), project.viewerCanUpdate,
+              projectStates[id]?.source != .cache else { throw ProjectStoreError.readOnlyProject }
+        guard !deletingProjectIDs.contains(id),
+              projectStates[id]?.mutations.isEmpty == true,
+              pendingContentMutations.isEmpty,
+              !linkingRepositoryProjectIDs.contains(id) else { throw ProjectStoreError.operationInProgress }
+        deletingProjectIDs.insert(id)
+        defer {
+            deletingProjectIDs.remove(id)
+            scheduleReconciliation()
+        }
+        try await gitHubService.deleteProject(id: id)
+
+        // Reject catalog and monitoring responses that were already in flight.
+        deletedProjectIDs.insert(id)
+        followedProjectIDs.remove(id)
+        followedProjectsGeneration += 1
+        isLoadingFollowedProjects = false
+        followedProjectsErrorMessage = nil
+        let contentIDs = project.items.compactMap(\.contentId)
+        invalidateContentDetails(contentIDs)
+        catalogProjectIDs.removeAll { $0 == id }
+        removeProject(id: id)
+        hiddenKanbanStatusIDsByProject[id] = nil
+        saveHiddenKanbanStatusIDs()
+        let wasSelected = selectedProjectId == id
+        if wasSelected {
+            cancelProjectLoad()
+            selectedProjectId = catalogProjectIDs.first
+            selectedStatusFilter = nil
+            operationErrorMessage = nil
+            error = nil
+        }
+        lastUpdated = Date()
+        if wasSelected, let next = selectedProject {
+            await selectProject(next)
+        }
+        do {
+            try await projectCache.removeProject(id: id)
+        } catch {
+            operationErrorMessage = "Project deleted, but its local cache could not be removed: \(error.localizedDescription)"
+        }
+    }
+
     func linkRepository(_ repository: ProjectRepository, to projectID: String) async throws {
         guard let project = project(id: projectID) else { throw ProjectStoreError.noProjectSelected }
-        guard project.viewerCanUpdate, projectStates[projectID]?.source != .cache else { throw ProjectStoreError.readOnlyProject }
+        guard !deletingProjectIDs.contains(projectID), project.viewerCanUpdate, projectStates[projectID]?.source != .cache else { throw ProjectStoreError.readOnlyProject }
         guard repository.ownerID == project.owner.id else { throw ProjectStoreError.repositoryOwnerMismatch }
         guard linkingRepositoryProjectIDs.insert(projectID).inserted else {
             throw ProjectStoreError.operationInProgress
@@ -814,7 +867,7 @@ final class ProjectStore {
 
     private func loadProjects(for owner: ProjectOwner, generation: Int) async {
         do {
-            let loadedProjects = try await gitHubService.fetchProjects(owner: owner)
+            let loadedProjects = try await gitHubService.fetchProjects(owner: owner).filter { !deletedProjectIDs.contains($0.id) }
             guard generation == catalogGeneration, selectedOwnerId == owner.id else { return }
             let mergedProjects = mergingCatalog(loadedProjects)
             replaceCatalog(with: mergedProjects)
@@ -900,7 +953,7 @@ final class ProjectStore {
     @discardableResult
     private func refreshProjectSnapshot(id: String, followedGeneration: Int? = nil) async throws -> Project? {
         guard let state = projectStates[id] else { return nil }
-        guard state.mutations.isEmpty, pendingContentMutations.isEmpty else {
+        guard !deletingProjectIDs.contains(id), state.mutations.isEmpty, pendingContentMutations.isEmpty else {
             projectStates[id]?.needsRefresh = true
             return nil
         }
@@ -933,7 +986,7 @@ final class ProjectStore {
 
     private func canCommit(_ ticket: ProjectReadTicket) -> Bool {
         guard let state = projectStates[ticket.projectID] else { return false }
-        return state.latestReadID == ticket.requestID
+        return !deletingProjectIDs.contains(ticket.projectID) && state.latestReadID == ticket.requestID
             && state.mutationRevision == ticket.mutationRevision
             && contentRevision == ticket.contentRevision
             && state.mutations.isEmpty && pendingContentMutations.isEmpty
@@ -1008,6 +1061,7 @@ final class ProjectStore {
     }
 
     private func replaceCatalog(with projects: [Project]) {
+        let projects = projects.filter { !deletedProjectIDs.contains($0.id) }
         let newIDs = Set(projects.map(\.id))
         for id in Set(catalogProjectIDs).subtracting(newIDs) where !followedProjectIDs.contains(id) {
             removeProject(id: id)
@@ -1332,7 +1386,7 @@ final class ProjectStore {
         operation: () async throws -> Result,
         apply: (Result) -> Void = { _ in }
     ) async throws -> Result {
-        guard projectStates[projectID] != nil else { throw ProjectStoreError.itemUnavailable }
+        guard !deletingProjectIDs.contains(projectID), projectStates[projectID] != nil else { throw ProjectStoreError.itemUnavailable }
         let key = itemID.map { ItemMutationKey(projectID: projectID, itemID: $0) }
         if let key, pendingItemMutations[key] != nil { throw ProjectStoreError.operationInProgress }
         let operationID = UUID()

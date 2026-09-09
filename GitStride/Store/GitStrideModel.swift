@@ -141,6 +141,15 @@ final class GitStrideModel {
         if monitoringEnabled { await restartMonitoring() }
     }
 
+    func deleteProject(_ project: Project) async throws {
+        try await projectStore.deleteProject(id: project.id)
+        myWorkStore.stopFollowing(FollowedProject(project: project))
+        projectStore.setFollowedProjects(myWorkStore.followedProjects)
+        mutedProjectIDs.remove(project.id)
+        UserDefaults.standard.set(Array(mutedProjectIDs), forKey: "mutedProjectIDs")
+        if monitoringEnabled { await restartMonitoring() }
+    }
+
     func toggleFollowing(_ project: Project) async {
         myWorkStore.toggleFollowing(project)
         if myWorkStore.isFollowing(project.id) {
