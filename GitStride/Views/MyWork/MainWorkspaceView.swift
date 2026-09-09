@@ -71,7 +71,7 @@ struct MainWorkspaceView: View {
                 List(selection: sidebarSelection) {
                     Section {
                         ForEach(model.projectStore.projects.filter { $0.owner.id == model.projectStore.selectedOwnerId }) { project in
-                            Label(project.title, systemImage: "rectangle.split.3x1")
+                            Label(project.title, systemImage: "rectangle.3.group")
                                 .lineLimit(1)
                                 .help(project.title)
                                 .tag(SidebarSelection.project(project.id))
