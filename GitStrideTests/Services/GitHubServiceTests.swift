@@ -654,6 +654,36 @@ struct ProjectStoreTests {
         ])
     }
 
+    @Test func projectLayoutsShareStatusFilteringBeforeSearchAndGrouping() throws {
+        let (store, cleanup) = makeStore(runner: FixtureGitHubCommandRunner(responses: []))
+        defer { cleanup() }
+        var project = Self.kanbanProject()
+        let todo = try #require(project.statusOptions.first { $0.id == "TODO" })
+        let done = try #require(project.statusOptions.first { $0.id == "DONE" })
+        project.items = [todo, done].map { status in
+            ProjectItem(id: status.id, contentId: nil, contentType: .draftIssue,
+                        title: "Task \(status.name)", number: nil, url: nil,
+                        issueState: nil, prState: nil, status: status.name,
+                        statusOptionId: status.id, assignees: [])
+        }
+        project.items.append(ProjectItem(
+            id: "unassigned", contentId: nil, contentType: .draftIssue, title: "No status",
+            number: nil, url: nil, issueState: nil, prState: nil,
+            status: nil, statusOptionId: nil, assignees: []
+        ))
+
+        #expect(store.visibleProjectItems(in: project).map(\.id) == ["TODO", "unassigned"])
+        store.showAllKanbanStatuses(in: project)
+        #expect(store.visibleProjectItems(in: project).map(\.id) == ["TODO", "DONE", "unassigned"])
+        store.setKanbanStatus(todo, visible: false, in: project)
+        let visible = store.visibleProjectItems(in: project)
+        #expect(visible.map(\.id) == ["DONE", "unassigned"])
+        #expect(visible.matching("Task", currentUserLogin: nil).map(\.id) == ["DONE"])
+        let groups = ProjectTableGroup.make(items: visible, statuses: project.statusOptions, sortOrder: [])
+        #expect(groups.map(\.id) == [.status("DONE"), .status(nil)])
+        #expect(groups.flatMap { $0.rows.compactMap { $0.item?.id } } == visible.map(\.id))
+    }
+
     @Test func kanbanVisibilityCanShowAllButCannotHideTheFinalColumn() throws {
         let runner = FixtureGitHubCommandRunner(responses: [])
         let (store, cleanup) = makeStore(runner: runner)

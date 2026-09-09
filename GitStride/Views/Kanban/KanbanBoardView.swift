@@ -7,6 +7,7 @@ struct KanbanBoardView: View {
     let showItemDetail: (ItemInspectorReference) -> Void
     @Binding var searchText: String
     @Binding var isSelecting: Bool
+    @AppStorage("projectTableLayouts") private var tableLayoutsData = Data()
     @State private var showsAddItem = false
     @State private var showsStatusFilter = false
     @State private var selectedItemIDs: Set<String> = []
@@ -17,6 +18,24 @@ struct KanbanBoardView: View {
     private static let idealOverflowColumnWidth: CGFloat = 280
     private static let maximumColumnWidth: CGFloat = 420
     private static let columnSpacing: CGFloat = 8
+
+    private var tableProjectIDs: Set<String> {
+        (try? JSONDecoder().decode(Set<String>.self, from: tableLayoutsData)) ?? []
+    }
+
+    private var usesTable: Bool {
+        store.selectedProjectId.map { tableProjectIDs.contains($0) } ?? false
+    }
+
+    private var layoutSelection: Binding<Bool> {
+        Binding(get: { usesTable }, set: { useTable in
+            guard let id = store.selectedProjectId else { return }
+            var ids = tableProjectIDs
+            if useTable { ids.insert(id) } else { ids.remove(id) }
+            if let data = try? JSONEncoder().encode(ids) { tableLayoutsData = data }
+            showsStatusFilter = false
+        })
+    }
 
     private var canEditSelectedProject: Bool {
         store.canEditSelectedProject
@@ -195,6 +214,17 @@ struct KanbanBoardView: View {
             }
         }
 
+        if store.selectedProject != nil {
+            ToolbarItem(placement: .automatic) {
+                Picker("Project Layout", selection: layoutSelection) {
+                    Text("Board").tag(false)
+                    Text("Table").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .help("Change project layout")
+            }
+        }
         if let project = store.selectedProject,
            project.statusOptions.isEmpty == false {
             if #available(macOS 26.0, *) {
@@ -365,7 +395,7 @@ struct KanbanBoardView: View {
                 .font(.system(size: 40))
                 .foregroundStyle(.tertiary)
 
-            Text("Select a project to view its board")
+            Text("Select a project to view its items")
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
 
@@ -382,7 +412,20 @@ struct KanbanBoardView: View {
         case .loading:
             loadingView
         case .content(let project, _, _):
-            boardContent(project)
+            if usesTable {
+                ProjectTableView(
+                    project: project,
+                    items: filteredItems(for: store.visibleProjectItems(in: project)),
+                    store: store,
+                    isSelecting: isSelecting,
+                    selectedItemIDs: $selectedItemIDs,
+                    showItemDetail: showItemDetail,
+                    reportError: report
+                )
+                .id(project.id)
+            } else {
+                boardContent(project)
+            }
         case .empty(let project, _, _):
             emptyProjectView(project)
         case .failed(let project, let message):
@@ -431,7 +474,12 @@ struct KanbanBoardView: View {
     private func boardContent(_ project: Project) -> some View {
         GeometryReader { geometry in
             let visibleStatuses = store.visibleKanbanStatuses(in: project)
-            let includesNoStatus = project.noStatusItems.isEmpty == false
+            let visibleItems = store.visibleProjectItems(in: project)
+            let knownStatusIDs = Set(project.statusOptions.map(\.id))
+            let noStatusItems = visibleItems.filter { item in
+                item.statusOptionId.map { !knownStatusIDs.contains($0) } ?? true
+            }
+            let includesNoStatus = !noStatusItems.isEmpty
             let columnCount = max(visibleStatuses.count + (includesNoStatus ? 1 : 0), 1)
             let totalSpacing = CGFloat(columnCount - 1) * Self.columnSpacing
             let availableWidth = geometry.size.width - 32 - totalSpacing
@@ -443,7 +491,7 @@ struct KanbanBoardView: View {
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: Self.columnSpacing) {
                     ForEach(visibleStatuses) { status in
-                        let statusItems = filteredItems(for: project.items(forStatus: status.name))
+                        let statusItems = filteredItems(for: visibleItems.filter { $0.statusOptionId == status.id })
                         KanbanColumn(
                             projectID: project.id,
                             status: status,
@@ -459,8 +507,8 @@ struct KanbanBoardView: View {
                         .frame(width: columnWidth, height: geometry.size.height - 32)
                     }
 
-                    let noStatusFiltered = filteredItems(for: project.noStatusItems)
-                    if !project.noStatusItems.isEmpty || !noStatusFiltered.isEmpty {
+                    let noStatusFiltered = filteredItems(for: noStatusItems)
+                    if !noStatusItems.isEmpty {
                         KanbanColumn(
                             projectID: project.id,
                             status: nil,
