@@ -41,8 +41,14 @@ Type in the search bar to filter issues by title or number. Use `@username` to f
 ### Quick Create
 Type `>` followed by your issue title to quickly create a new issue. Press Enter to create.
 
-### Kanban View
-Click "Open Board" or use the keyboard shortcut to open the full kanban window. Drag and drop issues between columns to change their status.
+### Project Layouts
+Click "Open Board" or use the keyboard shortcut to open the project window. Switch between **Board** and **Table** in the toolbar; GitStride remembers the layout for each project locally.
+
+In Board, drag issues between status columns. Table uses aligned issue IDs, spacious rows, and collapsible status groups. Click a title to open details, or use native row selection and the item context menu. Click a column header to sort; when grouped, sorting applies within each status group.
+
+Use **Display Options** to switch between status grouping and an ungrouped table, choose visible fields, or restore **Project Order**. On macOS 14.4 and later, multiple project fields can be shown as independent resizable, sortable columns. macOS 14.0–14.3 supports one selected project field column. Layout, grouping, column settings, and sorting are remembered per project locally.
+
+Search carries across layouts. Hidden board status columns do not filter the table. Both layouts support the existing item context menu and bulk selection actions; layout preferences do not change saved views on GitHub.
 
 ### Pull Request Automation
 

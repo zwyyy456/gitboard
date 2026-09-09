@@ -7,6 +7,7 @@ struct KanbanBoardView: View {
     let showItemDetail: (ItemInspectorReference) -> Void
     @Binding var searchText: String
     @Binding var isSelecting: Bool
+    @AppStorage("projectTableLayouts") private var tableLayoutsData = Data()
     @State private var showsAddItem = false
     @State private var showsStatusFilter = false
     @State private var selectedItemIDs: Set<String> = []
@@ -17,6 +18,24 @@ struct KanbanBoardView: View {
     private static let idealOverflowColumnWidth: CGFloat = 280
     private static let maximumColumnWidth: CGFloat = 420
     private static let columnSpacing: CGFloat = 8
+
+    private var tableProjectIDs: Set<String> {
+        (try? JSONDecoder().decode(Set<String>.self, from: tableLayoutsData)) ?? []
+    }
+
+    private var usesTable: Bool {
+        store.selectedProjectId.map { tableProjectIDs.contains($0) } ?? false
+    }
+
+    private var layoutSelection: Binding<Bool> {
+        Binding(get: { usesTable }, set: { useTable in
+            guard let id = store.selectedProjectId else { return }
+            var ids = tableProjectIDs
+            if useTable { ids.insert(id) } else { ids.remove(id) }
+            if let data = try? JSONEncoder().encode(ids) { tableLayoutsData = data }
+            showsStatusFilter = false
+        })
+    }
 
     private var canEditSelectedProject: Bool {
         store.canEditSelectedProject
@@ -196,7 +215,7 @@ struct KanbanBoardView: View {
         }
 
         if let project = store.selectedProject,
-           project.statusOptions.isEmpty == false {
+           !usesTable, project.statusOptions.isEmpty == false {
             if #available(macOS 26.0, *) {
                 ToolbarSpacer(.fixed)
             }
@@ -212,6 +231,17 @@ struct KanbanBoardView: View {
                 .popover(isPresented: $showsStatusFilter, arrowEdge: .top) {
                     StatusColumnFilterView(store: store, project: project)
                 }
+            }
+        }
+        if store.selectedProject != nil {
+            ToolbarItem(placement: .automatic) {
+                Picker("Project Layout", selection: layoutSelection) {
+                    Text("Board").tag(false)
+                    Text("Table").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .help("Change project layout")
             }
         }
         if #available(macOS 26.0, *), !isSelecting {
@@ -365,7 +395,7 @@ struct KanbanBoardView: View {
                 .font(.system(size: 40))
                 .foregroundStyle(.tertiary)
 
-            Text("Select a project to view its board")
+            Text("Select a project to view its items")
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
 
@@ -382,7 +412,20 @@ struct KanbanBoardView: View {
         case .loading:
             loadingView
         case .content(let project, _, _):
-            boardContent(project)
+            if usesTable {
+                ProjectTableView(
+                    project: project,
+                    items: filteredItems(for: project.items),
+                    store: store,
+                    isSelecting: isSelecting,
+                    selectedItemIDs: $selectedItemIDs,
+                    showItemDetail: showItemDetail,
+                    reportError: report
+                )
+                .id(project.id)
+            } else {
+                boardContent(project)
+            }
         case .empty(let project, _, _):
             emptyProjectView(project)
         case .failed(let project, let message):

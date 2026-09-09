@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B9000003 /* Views/ProjectTableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000004 /* Views/ProjectTableTests.swift */; };
+		B9000001 /* ProjectTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000002 /* ProjectTableView.swift */; };
 		CA461A15C72B4DBDAAB413CC /* ProjectManagementViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D749BF94B5164F1385503B20 /* ProjectManagementViews.swift */; };
 		A0000001 /* GitStrideApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001 /* GitStrideApp.swift */; };
 		A0000002 /* Project.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002 /* Project.swift */; };
@@ -73,6 +75,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		B9000004 /* Views/ProjectTableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ProjectTableTests.swift; sourceTree = "<group>"; };
+		B9000002 /* ProjectTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTableView.swift; sourceTree = "<group>"; };
 		D749BF94B5164F1385503B20 /* ProjectManagementViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectManagementViews.swift; sourceTree = "<group>"; };
 		A1000000 /* GitStride.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GitStride.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000001 /* GitStrideApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitStrideApp.swift; sourceTree = "<group>"; };
@@ -243,6 +247,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000012 /* KanbanBoardView.swift */,
+				B9000002 /* ProjectTableView.swift */,
 				A1000050 /* KanbanItemViews.swift */,
 				A1000045 /* KanbanCardContextMenu.swift */,
 				A1000046 /* KanbanCardContent.swift */,
@@ -303,6 +308,7 @@
 			children = (
 				A1000023 /* Services/GitHubServiceTests.swift */,
 				A1000059 /* Store/AutomationSetupModelTests.swift */,
+				B9000004 /* Views/ProjectTableTests.swift */,
 			);
 			path = GitStrideTests;
 			sourceTree = "<group>";
@@ -450,6 +456,7 @@
 				A0000009 /* MenuBarPopoverView.swift in Sources */,
 				A0000010 /* ProjectSelectorView.swift in Sources */,
 				A0000012 /* KanbanBoardView.swift in Sources */,
+				B9000001 /* ProjectTableView.swift in Sources */,
 				A0000045 /* KanbanCardContextMenu.swift in Sources */,
 				A0000046 /* KanbanCardContent.swift in Sources */,
 				A0000048 /* StatusColumnFilterView.swift in Sources */,
@@ -479,6 +486,7 @@
 			files = (
 				A0000023 /* Services/GitHubServiceTests.swift in Sources */,
 				A0000059 /* Store/AutomationSetupModelTests.swift in Sources */,
+				B9000003 /* Views/ProjectTableTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
