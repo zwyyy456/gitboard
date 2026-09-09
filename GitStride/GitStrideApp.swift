@@ -52,7 +52,7 @@ struct GitStrideApp: App {
                 .background(MenuBarWindowFinder(window: $menuBarWindow))
         } label: {
             ZStack(alignment: .topTrailing) {
-                Image(systemName: "rectangle.split.3x1")
+                Image(systemName: "rectangle.3.group")
                 if model.attentionCount > 0 {
                     Text(model.attentionCount > 9 ? "9+" : "\(model.attentionCount)")
                         .font(.system(size: 7, weight: .bold))
