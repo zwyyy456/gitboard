@@ -80,6 +80,18 @@ actor ProjectCache {
         try encoder.encode(snapshot).write(to: fileURL, options: .atomic)
     }
 
+    func removeProject(id: String) throws {
+        guard let snapshot = try load(), snapshot.projects.contains(where: { $0.id == id }) else { return }
+        let remaining = snapshot.projects.filter { $0.id != id }
+        try save(ProjectCacheSnapshot(
+            accountLogin: snapshot.accountLogin, owner: snapshot.owner,
+            projects: remaining, detailedProjectIDs: snapshot.detailedProjectIDs.subtracting([id]),
+            selectedProjectId: snapshot.selectedProjectId == id ? remaining.first?.id : snapshot.selectedProjectId,
+            selectedStatusFilter: snapshot.selectedProjectId == id ? nil : snapshot.selectedStatusFilter,
+            savedAt: snapshot.savedAt
+        ))
+    }
+
     private static var defaultFileURL: URL? {
         FileManager.default.urls(
             for: .applicationSupportDirectory,

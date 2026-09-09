@@ -1,6 +1,12 @@
 import Foundation
 
 enum GraphQLQueries {
+    static let deleteProject = """
+        mutation($projectId: ID!) {
+            deleteProjectV2(input: { projectId: $projectId }) { clientMutationId }
+        }
+        """
+
     static let createProject = """
         mutation($ownerId: ID!, $title: String!, $repositoryId: ID) {
             createProjectV2(input: { ownerId: $ownerId, title: $title, repositoryId: $repositoryId }) {
