@@ -96,7 +96,12 @@ struct Project: Identifiable, Codable, Hashable {
     }
 
     var statusOptions: [StatusOption] {
-        statusField?.options ?? []
+        let preferredOrder = ["in progress", "in review", "todo", "backlog", "done", "canceled"]
+        return (statusField?.options ?? []).sorted { lhs, rhs in
+            let left = preferredOrder.firstIndex(of: lhs.name.lowercased()) ?? preferredOrder.count
+            let right = preferredOrder.firstIndex(of: rhs.name.lowercased()) ?? preferredOrder.count
+            return left < right
+        }
     }
 
     func items(forStatus status: String?) -> [ProjectItem] {
