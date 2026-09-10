@@ -62,7 +62,7 @@ Choose Delivery by Milestone or Delivery by Parent Issue to see completed and bl
 
 Board cards emphasize a two-line title, repository and issue number, assignees, and selected project fields. Unresolved blockers remain visible. Display Options → Show Fields can add milestone, labels, engineering signals, and project fields using their GitHub names and identities. Both layouts keep Filter and Display Options together after the layout switcher.
 
-In a wide workspace, selecting an item opens a right-hand detail pane with Description and Properties. Narrow windows use the existing detail page and Back navigation. You can also open the item in its own window.
+Selecting an item in Board, Table, or My Work opens the detail page with Back navigation at every window width. You can also open the item in its own window.
 
 ### Pull Request Automation
 
