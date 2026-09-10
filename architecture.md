@@ -71,6 +71,7 @@
 - setup 中选择的个人 Project、Status 字段和选项只定义语义映射模板。运行时按 Issue 身份在该账号的个人 Projects 中定位实际 Project item，并按字段名和选项名解析每个 Project 自己的 node ID；目标 Project 集合不持久化为配置。
 - setup 提交时，模板 Project 的所选 Status 字段必须包含 `In Progress` 和 `Done`，并记录用户选择的 Ready PR 策略；只是浏览、选择或 Enable 不得修改远程字段。
 - 运行时目标 Project 的 Status 选项先按模板名称精确匹配，再做仅忽略大小写的匹配；空格及其它字符仍须一致。用户选择 `Move to In review` 时，Worker 仅在 Ready PR 的 closing Issue 已精确定位于该 Project 后，才复用对应选项，或在缺失时保留全部现有 option identity 并添加橙色 `In review`；用户选择 `Keep in In progress` 时不得添加选项。任何策略都不得自动添加 `Backlog`。
+- PR 事件通过 Queue 延迟 3 秒后重新读取当前事实；恢复未入队事件保留该延迟，installation 生命周期事件不增加此延迟。关联 closing PR 非空且全部合并才写 Done；任一打开的 Draft 优先写 In Progress，否则存在打开的 Ready 时使用配置的 Ready 策略。这两类打开 PR 即使 Issue 已关闭也参与计算；没有打开 PR 且未全部合并时，仅对仍打开且全部 PR 未合并关闭的 Issue 写 In Progress，其余不修改。
 - Worker 确认至少一次 Project Status 写入或 automation 连接健康发生变化后，通过按 automation 隔离的 Durable Object WebSocket 只发送带单调 revision 的分类失效事件，不发送 Project 或 Issue 内容。App 收到任一事件后重新加载 automation 连接状态；Project 数据变化或初次连接事件还会刷新当前和 followed Project 快照，以补偿 App 未运行期间错过的事件。
 - 已存在的账户级 automation 通过完成 OAuth 与 installation 归属验证的 setup session 恢复本机管理权限；恢复保留原映射和启停状态，不创建重复 automation。管理 token 在本机 Keychain 保存后才提交，服务端只保存其哈希，重复提交不得重复授予凭据。
 - 桌面 App 原有 `gh` 认证继续只服务交互式浏览与编辑；后台 automation 不读取或复制本机 `gh` token。
