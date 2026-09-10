@@ -15,19 +15,21 @@ struct ProjectTableView: View {
     @AppStorage private var sortAscending: Bool
     @AppStorage private var fieldID: String
     @AppStorage private var groupsByStatus: Bool
-    @State private var collapsedGroups: Set<ProjectTableRow.ID> = []
+    @Binding var collapsedGroups: Set<ProjectTableRow.ID>
     @State private var itemToRemove: ProjectItem?
 
     init(
         project: Project, items: [ProjectItem], store: ProjectStore,
         preferenceID: String? = nil,
         workControls: ProjectWorkControls,
+        collapsedGroups: Binding<Set<ProjectTableRow.ID>>,
         isSelecting: Bool, selectedItemIDs: Binding<Set<String>>,
         showItemDetail: @escaping (ItemInspectorReference) -> Void,
         reportError: @escaping (Error) -> Void
     ) {
         self.project = project
         self.workControls = workControls
+        _collapsedGroups = collapsedGroups
         self.items = items
         self.store = store
         self.isSelecting = isSelecting
@@ -106,9 +108,6 @@ struct ProjectTableView: View {
                 if sortColumn.hasPrefix("field:"), !ids.contains(String(sortColumn.dropFirst(6))) {
                     sortColumn = ""
                 }
-            }
-            .toolbar {
-                ToolbarItem(placement: .automatic) { displayOptions }
             }
             .confirmationDialog(
                 "Remove \"\(itemToRemove?.title ?? "")\" from the project?",
@@ -339,82 +338,8 @@ struct ProjectTableView: View {
         project.statusOptions.first { $0.id == item.statusOptionId }
     }
 
-    private var displayOptions: some View {
-        Menu("Filter and Display Options", systemImage: "slider.horizontal.3") {
-            workControls.menuContents
-            Picker("Group By", selection: $groupsByStatus) {
-                Text("None").tag(false)
-                Text("Status").tag(true)
-            }
-            if groupsByStatus {
-                Button("Expand All Groups") { collapsedGroups.removeAll() }
-            }
-            Divider()
-            Menu("Show Fields") {
-                columnToggle("Status", id: "status", defaultVisible: !groupsByStatus)
-                columnToggle("Assignees", id: "assignees")
-                columnToggle("Updated", id: "updated")
-                columnToggle("Repository", id: "repository", defaultVisible: false)
-                columnToggle("Labels", id: "labels", defaultVisible: false)
-                if !availableFields.isEmpty {
-                    Divider()
-                    if #available(macOS 14.4, *) {
-                        ForEach(availableFields) { field in
-                            columnToggle(field.name, id: "field:\(field.id)", defaultVisible: false)
-                        }
-                    } else {
-                        Menu("Project Field") {
-                            Button("None") { columns[visibility: "field"] = .hidden }
-                            ForEach(availableFields) { field in legacyFieldToggle(field) }
-                        }
-                    }
-                }
-            }
-            Menu("Sort By") {
-                sortOption("Project Order", id: "")
-                sortOption("ID", id: "number")
-                sortOption("Title", id: "title")
-                sortOption("Status", id: "status")
-                sortOption("Assignees", id: "assignees")
-                sortOption("Updated", id: "updated")
-                Divider()
-                Toggle("Ascending", isOn: $sortAscending).disabled(sortColumn.isEmpty)
-            }
-            Divider()
-            Button("Reset Columns") {
-                columns = TableColumnCustomization()
-                fieldID = ""
-                sortColumn = ""
-            }
-        }
-        .help("Filter items, group, sort, and choose visible fields")
-    }
-
-    private func sortOption(_ title: String, id: String) -> some View {
-        Toggle(title, isOn: Binding(get: { sortColumn == id }, set: { _ in sortColumn = id }))
-    }
-
-    private func legacyFieldToggle(_ field: ProjectField) -> some View {
-        Toggle(field.name, isOn: Binding(
-            get: { fieldID == field.id && columns[visibility: "field"] == .visible },
-            set: { visible in
-                fieldID = field.id
-                columns[visibility: "field"] = visible ? .visible : .hidden
-            }
-        ))
-    }
-
     private func secondaryCell(_ text: String) -> some View {
         Text(text.isEmpty ? "—" : text).foregroundStyle(.secondary).lineLimit(1).help(text)
-    }
-
-    private func columnToggle(_ title: String, id: String, defaultVisible: Bool = true) -> some View {
-        Toggle(title, isOn: Binding(
-            get: {
-                let visibility = columns[visibility: id]
-                return visibility == .visible || (visibility == .automatic && defaultVisible)
-            }, set: { columns[visibility: id] = $0 ? .visible : .hidden }
-        ))
     }
 
     private func open(_ item: ProjectItem) {
@@ -539,4 +464,103 @@ struct ProjectTableSort: SortComparator {
         case nil: ""
         }
     }
+}
+
+struct TableDisplayOptions: View {
+    let project: Project
+    @Binding var collapsedGroups: Set<ProjectTableRow.ID>
+    @AppStorage private var columns: TableColumnCustomization<ProjectTableRow>
+    @AppStorage private var sortColumn: String
+    @AppStorage private var sortAscending: Bool
+    @AppStorage private var fieldID: String
+    @AppStorage private var groupsByStatus: Bool
+
+    init(project: Project, preferenceID: String, collapsedGroups: Binding<Set<ProjectTableRow.ID>>) {
+        self.project = project
+        _collapsedGroups = collapsedGroups
+        let prefix = "projectTable.\(preferenceID)."
+        _columns = AppStorage(wrappedValue: TableColumnCustomization(), prefix + "columns")
+        _sortColumn = AppStorage(wrappedValue: "", prefix + "sortColumn")
+        _sortAscending = AppStorage(wrappedValue: true, prefix + "sortAscending")
+        _fieldID = AppStorage(wrappedValue: "", prefix + "fieldID")
+        _groupsByStatus = AppStorage(wrappedValue: true, prefix + "groupsByStatus")
+    }
+
+    private var availableFields: [ProjectField] {
+        project.fields.filter { $0.isEditable && $0.id != project.statusField?.id }
+    }
+
+    var body: some View {
+        Menu("Display Options", systemImage: "slider.horizontal.3") {
+            Menu("Show Fields") {
+                columnToggle("Status", id: "status", defaultVisible: !groupsByStatus)
+                columnToggle("Assignees", id: "assignees")
+                columnToggle("Updated", id: "updated")
+                columnToggle("Repository", id: "repository", defaultVisible: false)
+                columnToggle("Labels", id: "labels", defaultVisible: false)
+                if !availableFields.isEmpty {
+                    Divider()
+                    if #available(macOS 14.4, *) {
+                        ForEach(availableFields) { field in
+                            columnToggle(field.name, id: "field:\(field.id)", defaultVisible: false)
+                        }
+                    } else {
+                        Menu("Project Field") {
+                            Button("None") { columns[visibility: "field"] = .hidden }
+                            ForEach(availableFields) { field in legacyFieldToggle(field) }
+                        }
+                    }
+                }
+            }
+            Picker("Group By", selection: $groupsByStatus) {
+                Text("None").tag(false)
+                Text("Status").tag(true)
+            }
+            if groupsByStatus {
+                Button("Expand All Groups") { collapsedGroups.removeAll() }
+            }
+            Divider()
+            Menu("Sort By") {
+                sortOption("Project Order", id: "")
+                sortOption("ID", id: "number")
+                sortOption("Title", id: "title")
+                sortOption("Status", id: "status")
+                sortOption("Assignees", id: "assignees")
+                sortOption("Updated", id: "updated")
+                Divider()
+                Toggle("Ascending", isOn: $sortAscending).disabled(sortColumn.isEmpty)
+            }
+            Divider()
+            Button("Reset Columns") {
+                columns = TableColumnCustomization()
+                fieldID = ""
+                sortColumn = ""
+            }
+        }
+        .help("Group, sort, and choose visible fields")
+    }
+
+    private func sortOption(_ title: String, id: String) -> some View {
+        Toggle(title, isOn: Binding(get: { sortColumn == id }, set: { _ in sortColumn = id }))
+    }
+
+    private func legacyFieldToggle(_ field: ProjectField) -> some View {
+        Toggle(field.name, isOn: Binding(
+            get: { fieldID == field.id && columns[visibility: "field"] == .visible },
+            set: { visible in
+                fieldID = field.id
+                columns[visibility: "field"] = visible ? .visible : .hidden
+            }
+        ))
+    }
+
+    private func columnToggle(_ title: String, id: String, defaultVisible: Bool = true) -> some View {
+        Toggle(title, isOn: Binding(
+            get: {
+                let visibility = columns[visibility: id]
+                return visibility == .visible || (visibility == .automatic && defaultVisible)
+            }, set: { columns[visibility: id] = $0 ? .visible : .hidden }
+        ))
+    }
+
 }

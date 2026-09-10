@@ -80,7 +80,7 @@ struct ProjectWorkControls: View {
     }
 
     @ViewBuilder
-    var menuContents: some View {
+    var filterMenuContents: some View {
         Text("\(displayedCount) of \(items.count) items")
         Section("Filter") {
             Toggle("Assigned to Me", isOn: $filter.assignedToMe).disabled(currentUserLogin == nil)
@@ -105,31 +105,36 @@ struct ProjectWorkControls: View {
                 }
             }.disabled(labels.isEmpty)
             Divider()
-            Menu("Delivery by Milestone") {
-                Button("Any Milestone") { filter.milestoneID = nil }
-                ForEach(milestones) { milestone in
-                    Button(milestone.displayName) {
-                        filter.milestoneID = milestone.id
-                        filter.parentIssueID = nil
+            Menu("More Conditions") {
+                Menu("Delivery by Milestone") {
+                    Button("Any Milestone") { filter.milestoneID = nil }
+                    ForEach(milestones) { milestone in
+                        Button(milestone.displayName) {
+                            filter.milestoneID = milestone.id
+                            filter.parentIssueID = nil
+                        }
                     }
-                }
-            }.disabled(milestones.isEmpty)
-            Menu("Delivery by Parent Issue") {
-                Button("Any Parent") { filter.parentIssueID = nil }
-                ForEach(parents) { parent in
-                    Button(parent.displayName) {
-                        filter.parentIssueID = parent.id
-                        filter.milestoneID = nil
+                }.disabled(milestones.isEmpty)
+                Menu("Delivery by Parent Issue") {
+                    Button("Any Parent") { filter.parentIssueID = nil }
+                    ForEach(parents) { parent in
+                        Button(parent.displayName) {
+                            filter.parentIssueID = parent.id
+                            filter.milestoneID = nil
+                        }
                     }
+                }.disabled(parents.isEmpty)
+                Picker("Completion", selection: $filter.completion) {
+                    ForEach(ProjectWorkCompletion.allCases) { value in Text(value.rawValue).tag(value) }
                 }
-            }.disabled(parents.isEmpty)
-            Picker("Completion", selection: $filter.completion) {
-                ForEach(ProjectWorkCompletion.allCases) { value in Text(value.rawValue).tag(value) }
             }
         }
         Button("Clear Filters", action: clearAll)
             .disabled(!filter.isActive && searchText.isEmpty && hiddenStatusCount == 0)
-        Menu("Saved Views") {
+    }
+
+    @ViewBuilder
+    var savedViewMenuContents: some View {
             Button("None") { selectView(nil) }
             ForEach(savedViews) { view in
                 Toggle(view.name, isOn: Binding(get: { selectedViewID == view.id }, set: { _ in selectView(view) }))
@@ -141,8 +146,6 @@ struct ProjectWorkControls: View {
                 Button("Update Saved Filters", action: updateView)
                 Button("Delete Saved View", role: .destructive, action: deleteView)
             }
-        }
-        Divider()
     }
 
     func clearAll() {
@@ -203,20 +206,26 @@ struct ProjectWorkControls: View {
 
 struct BoardDisplayOptions: View {
     let project: Project
-    let workControls: ProjectWorkControls
     @Binding var visibleStatusIDs: Set<String>
     @AppStorage private var fields: String
 
-    init(project: Project, preferenceID: String, workControls: ProjectWorkControls, visibleStatusIDs: Binding<Set<String>>) {
+    init(project: Project, preferenceID: String, visibleStatusIDs: Binding<Set<String>>) {
         self.project = project
-        self.workControls = workControls
         _visibleStatusIDs = visibleStatusIDs
-        _fields = AppStorage(wrappedValue: "assignees,priority", "projectTable.\(preferenceID).cardFields")
+        _fields = AppStorage(wrappedValue: "assignees", "projectTable.\(preferenceID).cardFields")
     }
 
     var body: some View {
-        Menu("Filter and Display Options", systemImage: "slider.horizontal.3") {
-            workControls.menuContents
+        Menu("Display Options", systemImage: "slider.horizontal.3") {
+            Menu("Show Fields") {
+                fieldToggle("Assignees", id: "assignees")
+                fieldToggle("Milestone", id: "milestone")
+                fieldToggle("Labels", id: "labels")
+                fieldToggle("Engineering Signals", id: "signals")
+                ForEach(project.fields.filter { $0.isEditable && $0.id != project.statusField?.id }) { field in
+                    fieldToggle(field.name, id: "field:" + field.id)
+                }
+            }
             Menu("Board Columns") {
                 Button("Show All") { visibleStatusIDs = Set(project.statusOptions.map(\.id)) }
                 ForEach(project.statusOptions) { status in
@@ -226,19 +235,9 @@ struct BoardDisplayOptions: View {
                     .disabled(visibleStatusIDs.count == 1 && visibleStatusIDs.contains(status.id))
                 }
             }
-            Section("Card Fields") {
-                fieldToggle("Assignees", id: "assignees")
-                fieldToggle("Priority", id: "priority")
-                fieldToggle("Milestone", id: "milestone")
-                fieldToggle("Labels", id: "labels")
-                fieldToggle("Engineering Signals", id: "signals")
-                ForEach(project.fields.filter { $0.isEditable && $0.id != project.statusField?.id && $0.name.caseInsensitiveCompare("Priority") != .orderedSame }) { field in
-                    fieldToggle(field.name, id: "field:" + field.id)
-                }
-            }
             Divider()
-            Button("Reset Card Fields") { fields = "assignees,priority" }
-        }.help("Filter items and customize the board")
+            Button("Reset Card Fields") { fields = "assignees" }
+        }.help("Choose board columns and card fields")
     }
 
     private func fieldToggle(_ title: String, id: String) -> some View {

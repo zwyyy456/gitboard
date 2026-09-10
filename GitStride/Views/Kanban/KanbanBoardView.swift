@@ -14,6 +14,7 @@ struct KanbanBoardView: View {
     @State private var showsSaveView = false
     @State private var viewName = ""
     @State private var showsAddItem = false
+    @State private var collapsedTableGroups: Set<ProjectTableRow.ID> = []
     @State private var selectedItemIDs: Set<String> = []
     @State private var isBulkWorking = false
     @State private var operationErrorMessage: String?
@@ -104,6 +105,7 @@ struct KanbanBoardView: View {
                     }
                 }.padding(24).frame(width: 420)
             }
+            .onChange(of: tablePreferenceID) { _, _ in collapsedTableGroups.removeAll() }
             .onChange(of: workFilter) { _, _ in selectedItemIDs.removeAll() }
             .onChange(of: searchText) { _, _ in selectedItemIDs.removeAll() }
             .onChange(of: usesTable) { _, _ in selectedItemIDs.removeAll() }
@@ -174,15 +176,19 @@ struct KanbanBoardView: View {
             .accessibilityValue(isRefreshing ? "Refreshing" : "")
 
             if let project = store.selectedProject {
-                Menu("Project Actions", systemImage: "ellipsis") {
-                    if projectURL != nil {
-                        Button("Open Project in GitHub", systemImage: "arrow.up.right.square", action: openProjectInGitHub)
-                    }
-                    Button(myWorkStore.isFollowing(project.id) ? "Remove from My Work" : "Add to My Work",
-                           systemImage: "briefcase", action: toggleFollowingProject)
-                    Button("Select Multiple Items", systemImage: "checkmark.circle", action: toggleSelectionMode)
-                        .disabled(!canEditSelectedProject)
-                }.help("Project Actions")
+                if projectURL != nil {
+                    Button("Open Project in GitHub", systemImage: "arrow.up.right.square", action: openProjectInGitHub)
+                        .labelStyle(.iconOnly)
+                        .help("Open Project in GitHub")
+                }
+                Button(myWorkStore.isFollowing(project.id) ? "Remove from My Work" : "Add to My Work",
+                       systemImage: myWorkStore.isFollowing(project.id) ? "briefcase.fill" : "briefcase",
+                       action: toggleFollowingProject)
+                    .labelStyle(.iconOnly)
+                    .help(myWorkStore.isFollowing(project.id) ? "Remove from My Work" : "Add to My Work")
+                Menu("Saved Views", systemImage: "ellipsis") {
+                    workControls(project).savedViewMenuContents
+                }.help("Saved Views")
             }
         }
 
@@ -220,6 +226,10 @@ struct KanbanBoardView: View {
                     .labelStyle(.iconOnly)
                     .disabled(canEditSelectedProject == false)
                     .help("Add Item")
+                Button("Select Multiple Items", systemImage: "checkmark.circle", action: toggleSelectionMode)
+                    .labelStyle(.iconOnly)
+                    .disabled(!canEditSelectedProject)
+                    .help("Select Multiple Items")
             }
         }
 
@@ -234,11 +244,31 @@ struct KanbanBoardView: View {
                 .help("Change project layout")
             }
         }
-        if !usesTable, let project = store.selectedProject {
+        if let project = store.selectedProject {
             ToolbarItem(placement: .automatic) {
-                BoardDisplayOptions(project: project, preferenceID: tablePreferenceID,
-                                    workControls: workControls(project), visibleStatusIDs: visibleStatusBinding(project))
-                    .id(tablePreferenceID)
+                Menu {
+                    workControls(project).filterMenuContents
+                } label: {
+                    Label("Filter", systemImage: workFilter.isActive
+                          ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                        .foregroundStyle(workFilter.isActive ? Color.accentColor : Color.primary)
+                }
+                .help("Filter items")
+                .accessibilityValue(workFilter.isActive ? "Filters active" : "No filters")
+            }
+        }
+        if let project = store.selectedProject {
+            ToolbarItem(placement: .automatic) {
+                Group {
+                    if usesTable {
+                        TableDisplayOptions(project: project, preferenceID: tablePreferenceID,
+                                            collapsedGroups: $collapsedTableGroups)
+                    } else {
+                        BoardDisplayOptions(project: project, preferenceID: tablePreferenceID,
+                                            visibleStatusIDs: visibleStatusBinding(project))
+                    }
+                }
+                .id(tablePreferenceID)
             }
         }
         if #available(macOS 26.0, *), !isSelecting {
@@ -530,6 +560,7 @@ struct KanbanBoardView: View {
                     store: store,
                     preferenceID: tablePreferenceID,
                     workControls: workControls(project),
+                    collapsedGroups: $collapsedTableGroups,
                     isSelecting: isSelecting,
                     selectedItemIDs: $selectedItemIDs,
                     showItemDetail: openItemDetail,

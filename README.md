@@ -52,7 +52,7 @@ Search carries across layouts. Hidden board status columns do not filter the tab
 
 ### Work Views and Delivery
 
-Use the toolbar’s Filter and Display Options menu to filter the project or select a view saved on this Mac. Filter by status, issue type, label, milestone, parent issue, or completion. The content area has no permanent view/filter bar. Active conditions appear only while filtering and can be removed individually; Clear All also clears search and reveals hidden board columns. The item count shows the displayed subset of the project's total items.
+Use the toolbar’s Filter button for status, assignee, type, and label conditions; More Conditions contains milestone, parent issue, and completion. Display Options separately controls grouping, sorting, and visible fields. The ellipsis menu manages views saved on this Mac. Open in GitHub, My Work, and multiple selection remain direct toolbar actions. Filter by status, issue type, label, milestone, parent issue, or completion. The content area has no permanent view/filter bar. Active conditions appear only while filtering and can be removed individually; Clear All also clears search and reveals hidden board columns. The item count shows the displayed subset of the project's total items.
 
 Saved Views → Save Current View keeps the current filters, Board/Table layout, table sorting and columns, card fields, and hidden board columns. Each saved view has independent display preferences. Filter edits are marked Modified until you choose Update Saved Filters; display preferences are remembered automatically. Search text is temporary. These preferences do not create or modify GitHub saved views.
 
@@ -60,7 +60,7 @@ For a defect view, choose the actual issue type or label your project uses, then
 
 Choose Delivery by Milestone or Delivery by Parent Issue to see completed and blocked counts, with All, Unfinished, and Blocked shortcuts. Counts cover only issues present in the current project, including hidden board columns, and ignore other active filters. A milestone remains repository-scoped; a parent can collect children from different repositories. Completion follows GitHub issue state, and blocked counts include only unfinished issues with unresolved dependencies.
 
-Board cards emphasize a two-line title, repository and issue number, assignees, and priority. Unresolved blockers remain visible. Display Options can add milestone, labels, engineering signals, and project fields.
+Board cards emphasize a two-line title, repository and issue number, assignees, and selected project fields. Unresolved blockers remain visible. Display Options → Show Fields can add milestone, labels, engineering signals, and project fields using their GitHub names and identities. Both layouts keep Filter and Display Options together after the layout switcher.
 
 In a wide workspace, selecting an item opens a right-hand detail pane with Description and Properties. Narrow windows use the existing detail page and Back navigation. You can also open the item in its own window.
 

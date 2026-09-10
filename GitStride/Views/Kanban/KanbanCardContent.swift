@@ -8,7 +8,7 @@ struct KanbanCardContent: View {
     init(item: ProjectItem, project: Project? = nil, preferenceID: String? = nil) {
         self.item = item
         self.project = project
-        _fields = AppStorage(wrappedValue: "assignees,priority", "projectTable.\(preferenceID ?? project?.id ?? "").cardFields")
+        _fields = AppStorage(wrappedValue: "assignees", "projectTable.\(preferenceID ?? project?.id ?? "").cardFields")
     }
 
     private var visibleFields: Set<String> { Set(fields.split(separator: ",").map(String.init)) }
@@ -97,8 +97,7 @@ struct KanbanCardContent: View {
                 .font(.caption).foregroundStyle(.secondary).lineLimit(2)
         }
         ForEach(project?.fields.filter { field in
-            field.id != project?.statusField?.id && (visibleFields.contains("field:" + field.id)
-                || (visibleFields.contains("priority") && field.name.caseInsensitiveCompare("Priority") == .orderedSame))
+            field.isEditable && field.id != project?.statusField?.id && visibleFields.contains("field:" + field.id)
         } ?? []) { field in
             if let value = item.fieldValues[field.id] {
                 Text("\(field.name): \(fieldText(value))")
