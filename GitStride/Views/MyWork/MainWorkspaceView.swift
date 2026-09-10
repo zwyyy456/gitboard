@@ -22,6 +22,15 @@ struct MainWorkspaceView: View {
         case myWork(MyWorkFilter)
     }
 
+    private func projectColor(for id: String) -> Color {
+        let palette: [Color] = [.blue, .teal, .green, .orange, .pink, .purple, .indigo]
+        // Use a deterministic hash so colors survive relaunches and project renames.
+        let hash = id.utf8.reduce(UInt64(14_695_981_039_346_656_037)) {
+            ($0 ^ UInt64($1)) &* 1_099_511_628_211
+        }
+        return palette[Int(hash % UInt64(palette.count))]
+    }
+
     private var sidebarSelection: Binding<SidebarSelection?> {
         Binding(
             get: {
@@ -74,7 +83,15 @@ struct MainWorkspaceView: View {
                 List(selection: sidebarSelection) {
                     Section {
                         ForEach(model.projectStore.projects.filter { $0.owner.id == model.projectStore.selectedOwnerId }) { project in
-                            Label(project.title, systemImage: "rectangle.3.group")
+                            HStack(spacing: 8) {
+                                Image(systemName: "square.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(projectColor(for: project.id))
+                                    .frame(width: 14, height: 14)
+                                    .accessibilityHidden(true)
+                                Text(project.title)
+                            }
+                                .accessibilityElement(children: .combine)
                                 .lineLimit(1)
                                 .help(project.title)
                                 .tag(SidebarSelection.project(project.id))
