@@ -644,17 +644,20 @@ struct ProjectStoreTests {
     }
 
 
-    @Test func kanbanDefaultsToTheActiveWorkflowStatusesInProjectOrder() {
+    @Test func kanbanDefaultsToTheActiveWorkflowStatusesInPreferredOrder() {
         let runner = FixtureGitHubCommandRunner(responses: [])
         let (store, cleanup) = makeStore(runner: runner)
         defer { cleanup() }
         let project = Self.kanbanProject()
 
         #expect(store.visibleKanbanStatuses(in: project).map(\.name) == [
-            "Backlog",
-            "Todo",
             "In Progress",
-            "In Review"
+            "In Review",
+            "Todo",
+            "Backlog"
+        ])
+        #expect(project.statusOptions.map(\.name) == [
+            "In Progress", "In Review", "Todo", "Backlog", "Done", "Canceled"
         ])
     }
 
