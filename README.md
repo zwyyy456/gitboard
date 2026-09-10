@@ -68,6 +68,9 @@ Selecting an item in Board, Table, or My Work opens the detail page with Back na
 
 Connect automation once from Settings. Every repository currently available to the GitHub App is included automatically, and closing Issues are updated in every matching personal Project. The selected Project supplies the Status mapping names used across Projects; In Progress and Done are required. For Ready pull requests, choose either `Move to In review` or `Keep in In progress`. The first choice reuses a case-insensitive `In review` match or adds an Orange `In review` only when a matching Project first needs it. The second never changes Project options. Automation never adds Backlog. The hosted Worker runs even when GitStride is closed, and a running app refreshes displayed Project data and Automation connection health when the Worker reports a change.
 
+Automation waits 3 seconds before reading current PR states and updating linked Issue items. All linked closing PRs must be merged for Done; any open Draft keeps the Issue In Progress; otherwise an open Ready uses your review policy. We recommend disabling overlapping built-in Project Status workflows, but this is optional. The delay currently requires a Worker code change and deployment to adjust; it is not editable in GitStride.
+
+
 The Worker temporarily processes GitHub Project Item responses to locate exact item identities. It does not persist or log private Issue content, and the desktop app stores its management token only in Keychain.
 
 ### Planning Model

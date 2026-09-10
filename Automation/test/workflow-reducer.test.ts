@@ -14,16 +14,34 @@ describe("WorkflowReducer", () => {
         expected: DesiredStatus | null;
     }>([
         {
-            name: "merged wins over an open ready PR",
+            name: "all merged PRs are done",
             issueState: "CLOSED",
-            pullRequests: [pr("OPEN", false), pr("MERGED", false)],
+            pullRequests: [pr("MERGED", false), pr("MERGED", false)],
             expected: "DONE",
         },
         {
-            name: "an open ready PR wins over a draft PR",
+            name: "a draft keeps a partially merged closed Issue in progress",
+            issueState: "CLOSED",
+            pullRequests: [pr("MERGED", false), pr("OPEN", true)],
+            expected: "IN_PROGRESS",
+        },
+        {
+            name: "merged and closed unmerged PRs are not all done",
+            issueState: "CLOSED",
+            pullRequests: [pr("MERGED", false), pr("CLOSED", false)],
+            expected: null,
+        },
+        {
+            name: "merged and ready remain in review even if the Issue was closed",
+            issueState: "CLOSED",
+            pullRequests: [pr("OPEN", false), pr("MERGED", false)],
+            expected: "IN_REVIEW",
+        },
+        {
+            name: "an open draft PR wins over a ready PR",
             issueState: "OPEN",
             pullRequests: [pr("OPEN", true), pr("OPEN", false)],
-            expected: "IN_REVIEW",
+            expected: "IN_PROGRESS",
         },
         {
             name: "an open draft PR is in progress",

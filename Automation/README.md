@@ -52,9 +52,25 @@ for those Issues, including closed pull requests. Both connections are fully
 paginated. Repositories are queried and authorized by opaque GitHub node ID;
 names are retained only for display.
 
-`WorkflowReducer` is a pure function. Its priority is merged → open ready → open
-draft → all closed-unmerged; a closed Issue without a merged closing pull request
-and an Issue without closing pull requests are left unchanged.
+PR deliveries use a 3-second Queue delay before reloading current GitHub truth.
+`pullRequestDelaySeconds` in `src/delivery-outbox.ts` controls this delay; changing
+it requires a Worker deployment, and GitStride has no live delay setting. Outbox
+recovery preserves the delay; installation events have no added delay. The main
+consumer does not wait to fill a batch. Queue backlog and API calls can add time.
+This delay does not guarantee ordering relative to GitHub's built-in workflows.
+
+`WorkflowReducer` marks Done only when the nonempty set of closing PRs is all
+merged. Any open Draft takes priority as In Progress; otherwise any open Ready
+uses the configured review policy, including when a partial merge closed the
+Issue. With no open PRs and not all merged, an open Issue with all PRs closed
+unmerged returns to In Progress; other cases remain unchanged.
+
+We recommend disabling built-in Status workflows that overlap these rules, but
+this is optional and is not checked or enforced. Automation updates closing Issue
+items; it does not replace PR-item workflows, auto-add, or auto-archive. Successful
+status mutations trigger desktop refresh even when writing the same status. HTTP
+and GraphQL errors and the returned item identity are checked; no status readback
+is required.
 
 `OAuthCredentialProvider` is the only runtime boundary that decrypts personal
 Project OAuth tokens. It refreshes near-expiry tokens, checks the refreshed

@@ -1,4 +1,4 @@
-import { queueDelivery } from "./delivery-outbox";
+import { pullRequestDelaySeconds, queueDelivery } from "./delivery-outbox";
 import type { Env } from "./index";
 import { receiveInstallationWebhook } from "./installation-lifecycle";
 
@@ -97,7 +97,9 @@ export async function receiveGitHubWebhook(request: Request, env: Env): Promise<
         }
     }
 
-    const queued = await queueDelivery(env.DB, env.AUTOMATION_QUEUE, deliveryID);
+    const queued = await queueDelivery(
+        env.DB, env.AUTOMATION_QUEUE, deliveryID, pullRequestDelaySeconds
+    );
     console.info("automation_delivery_persisted", {
         deliveryID,
         automationID: automation.id,
