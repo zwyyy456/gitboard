@@ -6,9 +6,6 @@ struct MainWorkspaceView: View {
     @Binding var requestsProjectBoard: Bool
     @State private var destination: Destination = .project
     @State private var detailPath = NavigationPath()
-    @State private var selectedItemReference: ItemInspectorReference?
-    @State private var contentWidth: CGFloat = 0
-    private var showsInlineDetail: Bool { contentWidth >= 1050 }
     @State private var projectSearchText = ""
     @State private var isSelectingProjectItems = false
 
@@ -170,55 +167,37 @@ struct MainWorkspaceView: View {
             }
             .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
         } detail: {
-            HStack(spacing: 0) {
-                NavigationStack(path: $detailPath) {
-                    Group {
-                        switch destination {
-                        case .project:
-                            KanbanBoardView(
-                                store: model.projectStore,
-                                myWorkStore: model.myWorkStore,
-                                toggleFollowing: { await model.toggleFollowing($0) },
-                                showItemDetail: showItemDetail,
-                                searchText: $projectSearchText,
-                                isSelecting: $isSelectingProjectItems
-                            )
-                        case .myWork(let filter):
-                            MyWorkView(
-                                model: model,
-                                filter: filter,
-                                showItemDetail: showItemDetail
-                            ) {
-                                destination = .project
-                            }
+            NavigationStack(path: $detailPath) {
+                Group {
+                    switch destination {
+                    case .project:
+                        KanbanBoardView(
+                            store: model.projectStore,
+                            myWorkStore: model.myWorkStore,
+                            toggleFollowing: { await model.toggleFollowing($0) },
+                            showItemDetail: showItemDetail,
+                            searchText: $projectSearchText,
+                            isSelecting: $isSelectingProjectItems
+                        )
+                    case .myWork(let filter):
+                        MyWorkView(
+                            model: model,
+                            filter: filter,
+                            showItemDetail: showItemDetail
+                        ) {
+                            destination = .project
                         }
                     }
-                    .navigationDestination(for: ItemInspectorReference.self) { reference in
-                        ItemDetailView(
-                            store: model.projectStore,
-                            reference: reference,
-                            allowsOpeningNewWindow: true
-                        )
-                    }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if showsInlineDetail, let reference = selectedItemReference {
-                    Divider()
-                    WorkspaceItemPane(store: model.projectStore, reference: reference) {
-                        selectedItemReference = nil
-                    }
-                    .id(reference)
-                    .frame(width: min(480, contentWidth * 0.42))
+                .navigationDestination(for: ItemInspectorReference.self) { reference in
+                    ItemDetailView(
+                        store: model.projectStore,
+                        reference: reference,
+                        allowsOpeningNewWindow: true
+                    )
                 }
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
-        }
-        .onChange(of: showsInlineDetail) { _, wide in
-            detailPath = NavigationPath()
-            if !wide, let reference = selectedItemReference { detailPath.append(reference) }
-        }
-        .onChange(of: detailPath.count) { _, count in
-            if !showsInlineDetail && count == 0 { selectedItemReference = nil }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 860, minHeight: 600)
         .task {
@@ -233,7 +212,6 @@ struct MainWorkspaceView: View {
         .onChange(of: model.projectStore.selectedProjectId) { _, _ in
             if destination == .project {
                 detailPath = NavigationPath()
-                selectedItemReference = nil
             }
         }
         .onChange(of: model.projectStore.currentUserLogin) { _, login in
@@ -241,7 +219,6 @@ struct MainWorkspaceView: View {
         }
         .onChange(of: destination) { _, destination in
             detailPath = NavigationPath()
-            selectedItemReference = nil
             guard destination != .project else { return }
             projectSearchText = ""
             isSelectingProjectItems = false
@@ -250,7 +227,6 @@ struct MainWorkspaceView: View {
             guard requested else { return }
             destination = .project
             detailPath = NavigationPath()
-            selectedItemReference = nil
             requestsProjectBoard = false
         }
         .onChange(of: requestedItemReference, initial: true) { _, reference in
@@ -290,9 +266,8 @@ struct MainWorkspaceView: View {
     }
 
     private func showItemDetail(_ reference: ItemInspectorReference) {
-        selectedItemReference = reference
         detailPath = NavigationPath()
-        if !showsInlineDetail { detailPath.append(reference) }
+        detailPath.append(reference)
     }
 
     private func setFilterVisible(_ filter: MyWorkFilter, visible: Bool) {
@@ -301,44 +276,6 @@ struct MainWorkspaceView: View {
            model.myWorkStore.filters.contains(filter) == false,
            destination == .myWork(filter) {
             destination = .project
-        }
-    }
-}
-
-private struct WorkspaceItemPane: View {
-    @Bindable var store: ProjectStore
-    let reference: ItemInspectorReference
-    let close: () -> Void
-    @Environment(\.openWindow) private var openWindow
-    @State private var showsProperties = false
-    @State private var operationErrorMessage: String?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Picker("Detail Section", selection: $showsProperties) {
-                    Text("Description").tag(false)
-                    Text("Properties").tag(true)
-                }.pickerStyle(.segmented)
-                Spacer(minLength: 8)
-                Button("Open in New Window", systemImage: "macwindow") {
-                    openWindow(id: "item-detail", value: reference)
-                }.labelStyle(.iconOnly).help("Open in New Window")
-                Button("Close Details", systemImage: "xmark", action: close)
-                    .labelStyle(.iconOnly).help("Close Details")
-            }.padding(12)
-            Divider()
-            OperationErrorBanner(message: operationErrorMessage) { operationErrorMessage = nil }
-            if showsProperties {
-                ItemPropertiesView(store: store, reference: reference, operationErrorMessage: $operationErrorMessage)
-            } else {
-                ItemDescriptionView(store: store, reference: reference)
-            }
-        }
-        .frame(maxHeight: .infinity)
-        .background(.background)
-        .task(id: store.item(for: reference)?.contentId) {
-            if let item = store.item(for: reference) { await store.loadItemDetail(for: item) }
         }
     }
 }
