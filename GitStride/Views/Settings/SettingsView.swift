@@ -234,24 +234,8 @@ struct AboutView: View {
                 .multilineTextAlignment(.center)
 
             HStack(spacing: 16) {
-                Link(destination: URL(string: "https://yogesh.co?utm_source=gitstride")!) {
-                    Text("yogesh.co")
-                        .font(.system(size: 12))
-                }
-                .onHover { hovering in
-                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-                }
-
-                Link(destination: URL(string: "https://www.supalytics.co?utm_source=gitstride")!) {
-                    Text("supalytics.co")
-                        .font(.system(size: 12))
-                }
-                .onHover { hovering in
-                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-                }
-
-                Link(destination: URL(string: "https://x.com/yogesharc")!) {
-                    Text("@yogesharc")
+                Link(destination: URL(string: "https://github.com/zwyyy456")!) {
+                    Text("github.com/zwyyy456")
                         .font(.system(size: 12))
                 }
                 .onHover { hovering in
@@ -261,7 +245,7 @@ struct AboutView: View {
             .foregroundStyle(.blue)
             .padding(.top, 8)
 
-            Text("© 2025 Yogesh · MIT License")
+            Text("© 2025 zwyyy456 · MIT License")
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .padding(.top, 8)
