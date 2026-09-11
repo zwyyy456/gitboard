@@ -38,7 +38,7 @@ struct GitStrideApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
-            GitStrideCommands()
+            GitStrideCommands(store: model.projectStore)
         }
 
         MenuBarExtra {
@@ -148,6 +148,7 @@ struct GitStrideApp: App {
 }
 
 private struct GitStrideCommands: Commands {
+    @Bindable var store: ProjectStore
     @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.workspaceCommandContext) private var workspaceCommandContext
 
@@ -180,6 +181,11 @@ private struct GitStrideCommands: Commands {
                 openWindow(id: "quick-add")
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
+
+            Divider()
+
+            RefreshProjectsButton(store: store)
+                .keyboardShortcut("r", modifiers: [.command, .shift])
         }
 
         CommandMenu("Workspace") {

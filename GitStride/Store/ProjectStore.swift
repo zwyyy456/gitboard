@@ -584,14 +584,17 @@ final class ProjectStore {
         let generation = catalogGeneration
         isLoading = true
         error = nil
+        operationErrorMessage = nil
         sessionState = .checking
+        defer {
+            if generation == catalogGeneration { isLoading = false }
+        }
 
         let session = await gitHubService.inspectSession()
-        guard generation == catalogGeneration else { return }
+        guard generation == catalogGeneration, !Task.isCancelled else { return }
         sessionState = session
 
         guard case .ready(let account) = session else {
-            isLoading = false
             if isShowingCachedData {
                 error = nil
                 operationErrorMessage = cachedDataMessage(for: session)
@@ -624,6 +627,7 @@ final class ProjectStore {
 
         do {
             let loadedOwners = try await gitHubService.fetchOwners()
+            try Task.checkCancellation()
             guard generation == catalogGeneration else { return }
             owners = loadedOwners
 
@@ -632,7 +636,6 @@ final class ProjectStore {
                 replaceCatalog(with: [])
                 selectedOwnerId = nil
                 selectedProjectId = nil
-                isLoading = false
                 return
             }
             selectedOwnerId = owner.id
@@ -647,7 +650,6 @@ final class ProjectStore {
             } else {
                 self.error = error
             }
-            isLoading = false
         }
     }
 
@@ -893,22 +895,26 @@ final class ProjectStore {
     }
 
     private func loadProjects(for owner: ProjectOwner, generation: Int) async {
+        defer {
+            if generation == catalogGeneration { isLoading = false }
+        }
         do {
             let loadedProjects = try await gitHubService.fetchProjects(owner: owner).filter { !deletedProjectIDs.contains($0.id) }
+            try Task.checkCancellation()
             guard generation == catalogGeneration, selectedOwnerId == owner.id else { return }
             let mergedProjects = mergingCatalog(loadedProjects)
             replaceCatalog(with: mergedProjects)
 
             let selectedProject = loadedProjects.first { $0.id == selectedProjectId }
                 ?? loadedProjects.first
+            if selectedProjectId != selectedProject?.id {
+                selectedStatusFilter = nil
+            }
             selectedProjectId = selectedProject?.id
 
             if let selectedProject {
                 await loadProjectDetails(id: selectedProject.id)
             }
-
-            guard generation == catalogGeneration else { return }
-            isLoading = false
         } catch is CancellationError {
             return
         } catch {
@@ -916,12 +922,13 @@ final class ProjectStore {
             if isShowingCachedData {
                 self.error = nil
                 operationErrorMessage = "Showing cached data because the project list could not refresh: \(error.localizedDescription)"
+            } else if projects.contains(where: { $0.owner.id == owner.id }) {
+                operationErrorMessage = "The project list could not refresh: \(error.localizedDescription)"
             } else {
                 replaceCatalog(with: [])
                 selectedProjectId = nil
                 self.error = error
             }
-            isLoading = false
         }
     }
 
