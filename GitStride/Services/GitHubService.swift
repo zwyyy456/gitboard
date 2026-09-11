@@ -9,7 +9,7 @@ enum GitHubError: Error, LocalizedError, Equatable {
     case invalidRepository
     case invalidItemURL
     case itemUnavailable
-    case issueCreatedButNotAdded(String?)
+    case issueCreationUnconfirmed
     case graphQLError(String)
     case decodingError(String)
     case processError(String)
@@ -35,11 +35,8 @@ enum GitHubError: Error, LocalizedError, Equatable {
             return "Enter a GitHub issue or pull request URL."
         case .itemUnavailable:
             return "This item is unavailable or no longer accessible."
-        case .issueCreatedButNotAdded(let url):
-            if let url {
-                return "The issue was created at \(url), but GitHub could not add it to this project. You can paste the URL into Add Existing to retry."
-            }
-            return "The issue was created, but GitHub did not return its URL, so GitStride could not add it to this project."
+        case .issueCreationUnconfirmed:
+            return "GitHub did not confirm the issue’s identity. Check the repository before creating another issue."
         case .graphQLError(let message):
             return "GitHub API error: \(message)"
         case .decodingError(let message):
@@ -562,8 +559,7 @@ actor GitHubService {
         return payload.addProjectV2DraftIssue.projectItem.id
     }
 
-    func createIssueAndAdd(
-        projectId: String,
+    func createIssue(
         repository: String,
         title: String,
         body: String,
@@ -594,13 +590,7 @@ actor GitHubService {
             .first(where: { GitHubItemAddress($0) != nil })
 
         guard let issueURL else {
-            throw GitHubError.issueCreatedButNotAdded(nil)
-        }
-
-        do {
-            try await addExistingItem(projectId: projectId, url: issueURL)
-        } catch {
-            throw GitHubError.issueCreatedButNotAdded(issueURL)
+            throw GitHubError.issueCreationUnconfirmed
         }
         return issueURL
     }

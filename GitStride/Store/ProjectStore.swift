@@ -47,19 +47,57 @@ enum ProjectStoreError: LocalizedError {
     }
 }
 
-struct PendingCreatedIssue: LocalizedError {
-    let projectID: String
-    let issueURL: String
-    let fields: [(ProjectField, ProjectFieldOption)]
+@MainActor
+@Observable
+final class IssueCreation {
+    enum Phase: Equatable {
+        case ready
+        case addingToProject(issueURL: String)
+        case applyingFields(issueURL: String)
+        case refreshingProject(issueURL: String)
+        case completed(issueURL: String)
+        case unconfirmed
+    }
 
-    var errorDescription: String? {
-        "The issue was created at \(issueURL), but its Project fields could not be completed. Retry to finish this issue."
+    let projectID: String
+    fileprivate let repository: String
+    fileprivate let title: String
+    fileprivate let body: String
+    fileprivate let labels: [String]
+    fileprivate let assignees: [String]
+    fileprivate var remainingFields: [(ProjectField, ProjectFieldOption)]
+    fileprivate(set) var phase: Phase = .ready
+    fileprivate(set) var isRunning = false
+    fileprivate(set) var errorMessage: String?
+
+    var canResume: Bool {
+        guard !isRunning else { return false }
+        switch phase {
+        case .unconfirmed, .completed: return false
+        default: return true
+        }
+    }
+
+    fileprivate init(projectID: String, repository: String, title: String, body: String,
+                     labels: [String], assignees: [String], fields: [(ProjectField, ProjectFieldOption)]) {
+        self.projectID = projectID
+        self.repository = repository
+        self.title = title
+        self.body = body
+        self.labels = labels
+        self.assignees = assignees
+        remainingFields = fields
     }
 }
 
 private struct ItemDetailEntry {
     let sourceUpdatedAt: String?
     let state: ItemDetailState
+}
+
+private enum ContentSynchronization {
+    case patch((inout ProjectItem) -> Void)
+    case reloadProjects
 }
 
 private struct ItemMutationKey: Hashable {
@@ -373,10 +411,9 @@ final class ProjectStore {
               case .loaded(let detail) = itemDetailState(for: item),
               detail.issueMetadata?.viewerCanSetMilestone == true else { return }
 
-        try await performContentMutation([contentID]) {
+        try await performContentMutation([contentID], synchronization: .reloadProjects, reloadingDetailFor: item) {
             try await self.gitHubService.updateIssueMilestone(issueID: contentID, milestoneID: milestone?.id)
         }
-        await loadItemDetail(for: item, forceRefresh: true)
     }
 
     func addRelation(
@@ -394,7 +431,7 @@ final class ProjectStore {
         if kind == .parent, let previousParent = detail.issueMetadata?.parent {
             affectedContentIDs.insert(previousParent.id)
         }
-        try await performContentMutation(affectedContentIDs) {
+        try await performContentMutation(affectedContentIDs, synchronization: .reloadProjects, reloadingDetailFor: item) {
             switch kind {
             case .parent, .subIssue:
                 try await self.gitHubService.addSubIssue(
@@ -409,8 +446,6 @@ final class ProjectStore {
                 )
             }
         }
-        try await refreshContentProjects(affectedContentIDs)
-        await loadItemDetail(for: item, forceRefresh: true)
     }
 
     func removeRelation(
@@ -423,7 +458,7 @@ final class ProjectStore {
               detail.issueMetadata?.viewerCanUpdate == true else { return }
         let endpoints = kind.endpoints(issueID: issueID, relatedIssueID: relatedIssue.id)
 
-        try await performContentMutation([issueID, relatedIssue.id]) {
+        try await performContentMutation([issueID, relatedIssue.id], synchronization: .reloadProjects, reloadingDetailFor: item) {
             switch kind {
             case .parent, .subIssue:
                 try await self.gitHubService.removeSubIssue(
@@ -437,14 +472,6 @@ final class ProjectStore {
                 )
             }
         }
-        try await refreshContentProjects([issueID, relatedIssue.id])
-        await loadItemDetail(for: item, forceRefresh: true)
-    }
-
-    var filteredItems: [ProjectItem] {
-        guard let project = selectedProject else { return [] }
-        guard let filter = selectedStatusFilter else { return project.items }
-        return project.items.filter { $0.status == filter }
     }
 
     func visibleKanbanStatuses(in project: Project) -> [StatusOption] {
@@ -1232,19 +1259,16 @@ final class ProjectStore {
     ) async throws {
         guard let contentID = item.contentId, let url = item.url,
               canEditProject(id: projectID) else { return }
-        try await performContentMutation([contentID]) {
+        try await performContentMutation([contentID], synchronization: .patch { item in
+            item.assignees.removeAll { $0.login.caseInsensitiveCompare(user.login) == .orderedSame }
+            if assigned { item.assignees.append(user) }
+        }) {
             if assigned {
                 try await self.gitHubService.addAssignee(issueUrl: url, userLogin: user.login)
             } else {
                 try await self.gitHubService.removeAssignee(issueUrl: url, userLogin: user.login)
             }
-        } apply: {
-            self.updateContent(contentID: contentID) { item in
-                item.assignees.removeAll { $0.login.caseInsensitiveCompare(user.login) == .orderedSame }
-                if assigned { item.assignees.append(user) }
-            }
         }
-        await persistCache()
     }
 
     func addLabel(to item: ProjectItem, in projectID: String, name: String) async throws {
@@ -1260,17 +1284,16 @@ final class ProjectStore {
     ) async throws {
         guard let contentID = item.contentId, let url = item.url,
               canEditProject(id: projectID) else { return }
-        try await performContentMutation([contentID]) {
+        try await performContentMutation([contentID], synchronization: .reloadProjects) {
             if assigned {
                 try await self.gitHubService.addLabel(issueUrl: url, label: name)
             } else {
                 try await self.gitHubService.removeLabel(issueUrl: url, label: name)
             }
         }
-        try await refreshContentProjects([contentID])
     }
 
-    func createIssueAndAdd(
+    func prepareIssueCreation(
         repository: String,
         title: String,
         body: String,
@@ -1278,7 +1301,7 @@ final class ProjectStore {
         assignees: [String],
         status: String? = nil,
         priority: String? = nil
-    ) async throws {
+    ) throws -> IssueCreation {
         let project = try editableSelectedProject()
 
         let requestedFields = [("Status", status), ("Priority", priority)].compactMap { name, value in
@@ -1296,42 +1319,84 @@ final class ProjectStore {
             resolvedFields.append((field, option))
         }
 
-        let issueURL = try await performProjectMutation(projectID: project.id) {
-            try await self.gitHubService.createIssueAndAdd(
-                projectId: project.id,
-                repository: repository,
-                title: title,
-                body: body,
-                labels: labels,
-                assignees: assignees
-            )
-        }
-        try await finishCreatedIssue(PendingCreatedIssue(
-            projectID: project.id, issueURL: issueURL, fields: resolvedFields
-        ))
+        return IssueCreation(projectID: project.id, repository: repository, title: title, body: body,
+                             labels: labels, assignees: assignees, fields: resolvedFields)
     }
 
-    func finishCreatedIssue(_ pending: PendingCreatedIssue) async throws {
+    func resumeIssueCreation(_ creation: IssueCreation) async throws {
+        guard !creation.isRunning else { throw ProjectStoreError.operationInProgress }
+        if case .completed = creation.phase { return }
+        guard creation.phase != .unconfirmed else { throw GitHubError.issueCreationUnconfirmed }
+        creation.isRunning = true
+        creation.errorMessage = nil
+        defer { creation.isRunning = false }
         do {
-            try await refreshProjectSnapshot(id: pending.projectID)
-            guard let item = project(id: pending.projectID)?.items.first(where: {
-                $0.url == pending.issueURL
-            }) else { throw ProjectStoreError.createdIssueUnavailable }
-            try await performProjectMutation(projectID: pending.projectID, itemID: item.id) {
-                for (field, option) in pending.fields {
-                    try await self.gitHubService.updateItemField(
-                        projectId: pending.projectID, itemId: item.id, fieldId: field.id,
-                        value: .singleSelect(optionId: option.id, name: option.name)
-                    )
+            if creation.phase == .ready {
+                try await performProjectMutation(projectID: creation.projectID) {
+                    do {
+                        let issueURL = try await self.gitHubService.createIssue(
+                            repository: creation.repository, title: creation.title, body: creation.body,
+                            labels: creation.labels, assignees: creation.assignees
+                        )
+                        creation.phase = .addingToProject(issueURL: issueURL)
+                    } catch {
+                        if self.requiresReconciliation(error)
+                            || (error as? GitHubError) == .issueCreationUnconfirmed {
+                            creation.phase = .unconfirmed
+                        }
+                        throw error
+                    }
                 }
             }
-            if !pending.fields.isEmpty {
-                try await refreshProjectSnapshot(id: pending.projectID)
+            if case .addingToProject(let issueURL) = creation.phase {
+                try await performProjectMutation(projectID: creation.projectID) {
+                    try await self.gitHubService.addExistingItem(projectId: creation.projectID, url: issueURL)
+                    creation.phase = .applyingFields(issueURL: issueURL)
+                }
+            }
+            if case .applyingFields(let issueURL) = creation.phase {
+                guard let project = try await refreshProjectSnapshot(id: creation.projectID),
+                      let item = project.items.first(where: { $0.url == issueURL }) else {
+                    throw ProjectStoreError.createdIssueUnavailable
+                }
+                if creation.remainingFields.isEmpty {
+                    creation.phase = .completed(issueURL: issueURL)
+                    return
+                }
+                try await performProjectMutation(projectID: creation.projectID, itemID: item.id) {
+                    while let (field, option) = creation.remainingFields.first {
+                        try await self.gitHubService.updateItemField(
+                            projectId: creation.projectID, itemId: item.id, fieldId: field.id,
+                            value: .singleSelect(optionId: option.id, name: option.name)
+                        )
+                        creation.remainingFields.removeFirst()
+                    }
+                    creation.phase = .refreshingProject(issueURL: issueURL)
+                }
+            }
+            if case .refreshingProject(let issueURL) = creation.phase {
+                guard try await refreshProjectSnapshot(id: creation.projectID) != nil else {
+                    throw ProjectStoreError.createdIssueUnavailable
+                }
+                creation.phase = .completed(issueURL: issueURL)
             }
         } catch {
-            // Retain the created identity even after cancellation: submitting
-            // the form again must never create a second issue.
-            throw pending
+            let context: String
+            switch creation.phase {
+            case .addingToProject(let url):
+                context = "The issue was created at \(url). Retry to add it to the original project. "
+            case .applyingFields(let url):
+                context = "The issue at \(url) was added. Retry to finish its Project fields. "
+            case .refreshingProject:
+                context = "The issue and its Project fields were saved. Retry to refresh the project. "
+            case .unconfirmed:
+                context = GitHubError.issueCreationUnconfirmed.localizedDescription + " "
+            case .ready, .completed:
+                context = ""
+            }
+            creation.errorMessage = context + (creation.phase == .unconfirmed
+                && (error as? GitHubError) == .issueCreationUnconfirmed ? "" : error.localizedDescription)
+            throw error
         }
     }
 
@@ -1349,14 +1414,6 @@ final class ProjectStore {
 
     func resolveItem(url: String) async throws -> GitHubItemCandidate {
         try await gitHubService.resolveItem(url: url)
-    }
-
-    func addExistingItem(url: String) async throws {
-        let project = try editableSelectedProject()
-        try await performProjectMutation(projectID: project.id) {
-            try await self.gitHubService.addExistingItem(projectId: project.id, url: url)
-        }
-        try await refreshProjectSnapshot(id: project.id)
     }
 
     func addExistingItem(_ candidate: GitHubItemCandidate) async throws {
@@ -1427,8 +1484,33 @@ final class ProjectStore {
 
     private func performContentMutation(
         _ contentIDs: Set<String>,
+        synchronization: ContentSynchronization,
+        reloadingDetailFor item: ProjectItem? = nil,
+        operation: () async throws -> Void
+    ) async throws {
+        try await withContentMutation(contentIDs, operation: operation) {
+            if case .patch(let transform) = synchronization {
+                for contentID in contentIDs { updateContent(contentID: contentID, transform: transform) }
+            }
+        }
+        // Reads must start after the mutation releases its conflict markers.
+        switch synchronization {
+        case .patch:
+            await persistCache()
+        case .reloadProjects:
+            try await refreshContentProjects(contentIDs)
+        }
+        if let item {
+            let currentItem = projectStates.values.compactMap(\.snapshot)
+                .flatMap(\.items).first { $0.contentId == item.contentId } ?? item
+            await loadItemDetail(for: currentItem, forceRefresh: true)
+        }
+    }
+
+    private func withContentMutation(
+        _ contentIDs: Set<String>,
         operation: () async throws -> Void,
-        apply: () -> Void = {}
+        apply: () -> Void
     ) async throws {
         guard contentIDs.allSatisfy({ pendingContentMutations[$0] == nil }) else {
             throw ProjectStoreError.operationInProgress
