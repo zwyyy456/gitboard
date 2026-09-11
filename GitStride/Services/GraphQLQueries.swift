@@ -589,6 +589,28 @@ enum GraphQLQueries {
         }
         """
 
+    static let itemAtURL = """
+        query($url: URI!) {
+            resource(url: $url) {
+                __typename
+                ... on Issue {
+                    id
+                    title
+                    number
+                    url
+                    repository { nameWithOwner }
+                }
+                ... on PullRequest {
+                    id
+                    title
+                    number
+                    url
+                    repository { nameWithOwner }
+                }
+            }
+        }
+        """
+
     static let addItemToProject = """
         mutation($projectId: ID!, $contentId: ID!) {
             addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {

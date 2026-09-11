@@ -201,3 +201,35 @@ struct GitHubItemCandidate: Identifiable, Hashable {
     let url: String
     let repository: String
 }
+
+struct GitHubItemResourcePayload: Decodable {
+    let resource: GitHubItemCandidate?
+}
+
+extension GitHubItemCandidate: Decodable {
+    private enum CodingKeys: String, CodingKey {
+        case typename = "__typename"
+        case id, title, number, url, repository
+    }
+
+    private struct Repository: Decodable {
+        let nameWithOwner: String
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        switch try values.decode(String.self, forKey: .typename) {
+        case "Issue": contentType = .issue
+        case "PullRequest": contentType = .pullRequest
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .typename, in: values, debugDescription: "Expected an issue or pull request."
+            )
+        }
+        id = try values.decode(String.self, forKey: .id)
+        title = try values.decode(String.self, forKey: .title)
+        number = try values.decode(Int.self, forKey: .number)
+        url = try values.decode(String.self, forKey: .url)
+        repository = try values.decode(Repository.self, forKey: .repository).nameWithOwner
+    }
+}
