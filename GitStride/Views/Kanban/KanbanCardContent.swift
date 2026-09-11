@@ -2,19 +2,18 @@ import SwiftUI
 
 struct KanbanCardContent: View {
     let item: ProjectItem
-    let project: Project?
+    let showsRepository: Bool
+    let availableFields: [ProjectField]
     @AppStorage private var fields: String
 
-    init(item: ProjectItem, project: Project? = nil, preferenceID: String? = nil) {
+    init(item: ProjectItem, showsRepository: Bool, availableFields: [ProjectField], preferenceID: String) {
         self.item = item
-        self.project = project
-        _fields = AppStorage(wrappedValue: "assignees", "projectTable.\(preferenceID ?? project?.id ?? "").cardFields")
+        self.showsRepository = showsRepository
+        self.availableFields = availableFields
+        _fields = AppStorage(wrappedValue: "assignees", ProjectDisplayPreferences(id: preferenceID).key(for: .cardFields))
     }
 
     private var visibleFields: Set<String> { Set(fields.split(separator: ",").map(String.init)) }
-    private var showsRepository: Bool {
-        Set(project?.items.compactMap(\.repositoryName) ?? []).count > 1
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -96,9 +95,7 @@ struct KanbanCardContent: View {
             Text(item.labels.map(\.name).joined(separator: ", "))
                 .font(.caption).foregroundStyle(.secondary).lineLimit(2)
         }
-        ForEach(project?.fields.filter { field in
-            field.isEditable && field.id != project?.statusField?.id && visibleFields.contains("field:" + field.id)
-        } ?? []) { field in
+        ForEach(availableFields.filter { visibleFields.contains("field:" + $0.id) }) { field in
             if let value = item.fieldValues[field.id] {
                 Text("\(field.name): \(fieldText(value))")
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)

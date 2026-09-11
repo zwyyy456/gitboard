@@ -7,8 +7,7 @@ struct KanbanBoardView: View {
     let showItemDetail: (ItemInspectorReference) -> Void
     @Binding var searchText: String
     @Binding var isSelecting: Bool
-    @AppStorage("projectTableLayouts") private var tableLayoutsData = Data()
-    @AppStorage("savedProjectWorkViews") private var savedViewsData = Data()
+    private var workPreferences = ProjectWorkPreferences()
     @State private var workFilter = ProjectWorkFilter()
     @State private var selectedViewID: String?
     @State private var showsSaveView = false
@@ -19,33 +18,28 @@ struct KanbanBoardView: View {
     @State private var isBulkWorking = false
     @State private var operationErrorMessage: String?
 
-    private static let minimumColumnWidth: CGFloat = 260
-    private static let idealOverflowColumnWidth: CGFloat = 280
-    private static let maximumColumnWidth: CGFloat = 420
-    private static let columnSpacing: CGFloat = 8
-
-    private var tableProjectIDs: Set<String> {
-        (try? JSONDecoder().decode(Set<String>.self, from: tableLayoutsData)) ?? []
+    init(store: ProjectStore, myWorkStore: MyWorkStore,
+         toggleFollowing: @escaping (Project) async -> Void,
+         showItemDetail: @escaping (ItemInspectorReference) -> Void,
+         searchText: Binding<String>, isSelecting: Binding<Bool>) {
+        self.store = store
+        self.myWorkStore = myWorkStore
+        self.toggleFollowing = toggleFollowing
+        self.showItemDetail = showItemDetail
+        _searchText = searchText
+        _isSelecting = isSelecting
     }
 
     private var usesTable: Bool {
-        selectedSavedView?.usesTable ?? (store.selectedProjectId.map { tableProjectIDs.contains($0) } ?? false)
+        selectedSavedView?.usesTable ?? (store.selectedProjectId.map { workPreferences.usesTable(projectID: $0) } ?? false)
     }
 
     private var layoutSelection: Binding<Bool> {
         Binding(get: { usesTable }, set: { useTable in
             guard let id = store.selectedProjectId else { return }
-            if let selectedViewID {
-                var views = savedViews
-                if let index = views.firstIndex(where: { $0.id == selectedViewID }) {
-                    views[index].usesTable = useTable
-                    persistViews(views)
-                }
-                return
-            }
-            var ids = tableProjectIDs
-            if useTable { ids.insert(id) } else { ids.remove(id) }
-            if let data = try? JSONEncoder().encode(ids) { tableLayoutsData = data }
+            do {
+                try workPreferences.setLayout(usesTable: useTable, projectID: id, viewID: selectedViewID)
+            } catch { report(error) }
         })
     }
 
@@ -277,18 +271,13 @@ struct KanbanBoardView: View {
         }
     }
 
-    private var savedViews: [SavedProjectWorkView] {
-        guard !savedViewsData.isEmpty else { return [] }
-        return (try? JSONDecoder().decode([SavedProjectWorkView].self, from: savedViewsData)) ?? []
-    }
-
     private var selectedSavedView: SavedProjectWorkView? {
-        savedViews.first { $0.id == selectedViewID && $0.projectID == store.selectedProjectId }
+        workPreferences.views.first { $0.id == selectedViewID && $0.projectID == store.selectedProjectId }
     }
 
     private var tablePreferenceID: String {
         let projectID = store.selectedProjectId ?? ""
-        return selectedViewID.map { "\(projectID).view.\($0)" } ?? projectID
+        return ProjectDisplayPreferences(projectID: projectID, viewID: selectedViewID).id
     }
 
     private func workControls(_ project: Project) -> ProjectWorkControls {
@@ -296,7 +285,7 @@ struct KanbanBoardView: View {
             project: project, items: project.items,
             displayedCount: displayedItems(in: project).count,
             currentUserLogin: store.currentUserLogin,
-            savedViews: savedViews.filter { $0.projectID == project.id }, selectedViewID: selectedViewID,
+            savedViews: workPreferences.views.filter { $0.projectID == project.id }, selectedViewID: selectedViewID,
             filter: $workFilter, searchText: $searchText,
             selectView: selectWorkView,
             saveView: { viewName = selectedSavedView?.name ?? ""; showsSaveView = true },
@@ -314,10 +303,11 @@ struct KanbanBoardView: View {
     private func visibleStatusBinding(_ project: Project) -> Binding<Set<String>> {
         Binding(get: { Set(visibleStatuses(in: project).map(\.id)) }, set: { ids in
             if let selectedViewID {
-                var views = savedViews
-                guard let index = views.firstIndex(where: { $0.id == selectedViewID }) else { return }
-                views[index].hiddenStatusIDs = Set(project.statusOptions.map(\.id)).subtracting(ids)
-                persistViews(views)
+                do {
+                    try workPreferences.setHiddenStatuses(
+                        Set(project.statusOptions.map(\.id)).subtracting(ids), viewID: selectedViewID
+                    )
+                } catch { report(error) }
             } else {
                 store.showAllKanbanStatuses(in: project)
                 for status in project.statusOptions where !ids.contains(status.id) {
@@ -351,11 +341,6 @@ struct KanbanBoardView: View {
         selectedItemIDs.removeAll()
     }
 
-    private func persistViews(_ views: [SavedProjectWorkView]) {
-        do { savedViewsData = try JSONEncoder().encode(views) }
-        catch { report(error) }
-    }
-
     private func saveCurrentView() {
         guard let projectID = store.selectedProjectId else { return }
         let view = SavedProjectWorkView(projectID: projectID,
@@ -363,33 +348,25 @@ struct KanbanBoardView: View {
             filter: workFilter, usesTable: usesTable,
             hiddenStatusIDs: Set(store.selectedProject?.statusOptions.map(\.id) ?? []).subtracting(
                 store.selectedProject.map { Set(visibleStatuses(in: $0).map(\.id)) } ?? []))
-        let oldPrefix = "projectTable.\(tablePreferenceID)."
-        let newPrefix = "projectTable.\(projectID).view.\(view.id)."
-        for key in ["columns", "sortColumn", "sortAscending", "fieldID", "groupsByStatus", "cardFields"] {
-            if let value = UserDefaults.standard.object(forKey: oldPrefix + key) {
-                UserDefaults.standard.set(value, forKey: newPrefix + key)
-            }
-        }
-        persistViews(savedViews + [view])
-        selectedViewID = view.id
-        showsSaveView = false
+        do {
+            try workPreferences.save(view, copyingDisplayFrom: tablePreferenceID)
+            selectedViewID = view.id
+            showsSaveView = false
+        } catch { report(error) }
     }
 
     private func updateCurrentView() {
-        var views = savedViews
-        guard let index = views.firstIndex(where: { $0.id == selectedViewID }) else { return }
-        views[index].filter = workFilter
-        persistViews(views)
+        guard let selectedViewID else { return }
+        do { try workPreferences.setFilter(workFilter, viewID: selectedViewID) }
+        catch { report(error) }
     }
 
     private func deleteCurrentView() {
         guard let selectedViewID else { return }
-        let prefix = "projectTable.\(tablePreferenceID)."
-        for key in ["columns", "sortColumn", "sortAscending", "fieldID", "groupsByStatus", "cardFields"] {
-            UserDefaults.standard.removeObject(forKey: prefix + key)
-        }
-        persistViews(savedViews.filter { $0.id != selectedViewID })
-        selectWorkView(nil)
+        do {
+            try workPreferences.delete(viewID: selectedViewID)
+            selectWorkView(nil)
+        } catch { report(error) }
     }
 
     private var projectURL: URL? {
@@ -626,77 +603,13 @@ struct KanbanBoardView: View {
     }
 
     private func boardContent(_ project: Project) -> some View {
-        GeometryReader { geometry in
-            let visibleStatuses = visibleStatuses(in: project)
-            let visibleItems = project.items
-            let knownStatusIDs = Set(project.statusOptions.map(\.id))
-            let noStatusItems = visibleItems.filter { item in
-                item.statusOptionId.map { !knownStatusIDs.contains($0) } ?? true
-            }
-            let includesNoStatus = !noStatusItems.isEmpty
-            let columnCount = max(visibleStatuses.count + (includesNoStatus ? 1 : 0), 1)
-            let totalSpacing = CGFloat(columnCount - 1) * Self.columnSpacing
-            let availableWidth = geometry.size.width - 32 - totalSpacing
-            let fittingColumnWidth = availableWidth / CGFloat(columnCount)
-            let columnWidth = fittingColumnWidth >= Self.minimumColumnWidth
-                ? min(Self.maximumColumnWidth, fittingColumnWidth)
-                : Self.idealOverflowColumnWidth
-
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: Self.columnSpacing) {
-                    ForEach(visibleStatuses) { status in
-                        let statusItems = filteredItems(for: visibleItems.filter { $0.statusOptionId == status.id })
-                        KanbanColumn(
-                            projectID: project.id,
-                            preferenceID: tablePreferenceID,
-                            status: status,
-                            items: statusItems,
-                            emptyMessage: searchText.isEmpty ? "No items" : "No matching items",
-                            allStatuses: project.statusOptions,
-                            store: store,
-                            isSelecting: isSelecting,
-                            selectedItemIDs: $selectedItemIDs,
-                            showInspector: openItemDetail,
-                            reportError: report
-                        )
-                        .frame(width: columnWidth, height: geometry.size.height - 32)
-                    }
-
-                    let noStatusFiltered = filteredItems(for: noStatusItems)
-                    if !noStatusItems.isEmpty {
-                        KanbanColumn(
-                            projectID: project.id,
-                            preferenceID: tablePreferenceID,
-                            status: nil,
-                            items: noStatusFiltered,
-                            emptyMessage: searchText.isEmpty ? "No items" : "No matching items",
-                            allStatuses: project.statusOptions,
-                            store: store,
-                            isSelecting: isSelecting,
-                            selectedItemIDs: $selectedItemIDs,
-                            showInspector: openItemDetail,
-                            reportError: report
-                        )
-                        .frame(width: columnWidth, height: geometry.size.height - 32)
-                    }
-                }
-                .padding(16)
-            }
-            .id(boardScrollIdentity(
-                project: project,
-                visibleStatuses: visibleStatuses,
-                includesNoStatus: includesNoStatus
-            ))
-        }
-    }
-
-    private func boardScrollIdentity(
-        project: Project,
-        visibleStatuses: [StatusOption],
-        includesNoStatus: Bool
-    ) -> [String] {
-        [tablePreferenceID, includesNoStatus ? "includes-no-status" : "statuses-only"]
-            + visibleStatuses.map(\.id)
+        KanbanColumnsView(
+            store: store, project: project, items: filteredItems(for: project.items),
+            statuses: visibleStatuses(in: project), preferenceID: tablePreferenceID,
+            emptyMessage: searchText.isEmpty ? "No items" : "No matching items",
+            isSelecting: isSelecting, selectedItemIDs: $selectedItemIDs,
+            showInspector: openItemDetail, reportError: report
+        )
     }
 
     private func openItemDetail(_ reference: ItemInspectorReference) {

@@ -9,7 +9,7 @@ enum GitHubError: Error, LocalizedError, Equatable {
     case invalidRepository
     case invalidItemURL
     case itemUnavailable
-    case issueCreatedButNotAdded(String?)
+    case issueCreationUnconfirmed
     case graphQLError(String)
     case decodingError(String)
     case processError(String)
@@ -35,11 +35,8 @@ enum GitHubError: Error, LocalizedError, Equatable {
             return "Enter a GitHub issue or pull request URL."
         case .itemUnavailable:
             return "This item is unavailable or no longer accessible."
-        case .issueCreatedButNotAdded(let url):
-            if let url {
-                return "The issue was created at \(url), but GitHub could not add it to this project. You can paste the URL into Add Existing to retry."
-            }
-            return "The issue was created, but GitHub did not return its URL, so GitStride could not add it to this project."
+        case .issueCreationUnconfirmed:
+            return "GitHub did not confirm the issue’s identity. Check the repository before creating another issue."
         case .graphQLError(let message):
             return "GitHub API error: \(message)"
         case .decodingError(let message):
@@ -76,9 +73,9 @@ actor GitHubService {
 
     func inspectSession() async -> GitHubSessionState {
         do {
-            let payload: SessionPayload = try await request(
+            let payload: GitHubResponse.SessionPayload = try await request(
                 GraphQLQueries.sessionProbe,
-                as: SessionPayload.self
+                as: GitHubResponse.SessionPayload.self
             )
             return .ready(GitHubAccount(id: payload.viewer.id, login: payload.viewer.login))
         } catch GitHubError.ghCLINotFound {
@@ -99,10 +96,10 @@ actor GitHubService {
 
         repeat {
             try Task.checkCancellation()
-            let payload: OwnersPayload = try await request(
+            let payload: GitHubResponse.OwnersPayload = try await request(
                 GraphQLQueries.owners,
                 variables: cursorVariables(after),
-                as: OwnersPayload.self
+                as: GitHubResponse.OwnersPayload.self
             )
 
             if userOwner == nil {
@@ -132,20 +129,20 @@ actor GitHubService {
     }
 
     func deleteProject(id: String) async throws {
-        let _: DeleteProjectPayload = try await request(
+        let _: GitHubResponse.DeleteProjectPayload = try await request(
             GraphQLQueries.deleteProject,
             variables: ["projectId": id],
-            as: DeleteProjectPayload.self
+            as: GitHubResponse.DeleteProjectPayload.self
         )
     }
 
     func createProject(owner: ProjectOwner, title: String, repositoryID: String? = nil) async throws -> Project {
         var variables = ["ownerId": owner.id, "title": title]
         variables["repositoryId"] = repositoryID
-        let payload: CreateProjectPayload = try await request(
+        let payload: GitHubResponse.CreateProjectPayload = try await request(
             GraphQLQueries.createProject,
             variables: variables,
-            as: CreateProjectPayload.self
+            as: GitHubResponse.CreateProjectPayload.self
         )
         let project = payload.createProjectV2.projectV2
         return Project(
@@ -162,9 +159,9 @@ actor GitHubService {
             try Task.checkCancellation()
             var variables = cursorVariables(after)
             variables["login"] = owner.login
-            let payload: OwnerRepositoriesPayload = try await request(
+            let payload: GitHubResponse.OwnerRepositoriesPayload = try await request(
                 GraphQLQueries.ownerRepositories, variables: variables,
-                as: OwnerRepositoriesPayload.self
+                as: GitHubResponse.OwnerRepositoriesPayload.self
             )
             guard let connection = payload.repositoryOwner?.repositories else {
                 throw GitHubError.graphQLError("Repositories are not accessible for this owner.")
@@ -178,10 +175,10 @@ actor GitHubService {
     }
 
     func linkProjectRepository(projectID: String, repositoryID: String) async throws {
-        let _: LinkProjectRepositoryPayload = try await request(
+        let _: GitHubResponse.LinkProjectRepositoryPayload = try await request(
             GraphQLQueries.linkProjectRepository,
             variables: ["projectId": projectID, "repositoryId": repositoryID],
-            as: LinkProjectRepositoryPayload.self
+            as: GitHubResponse.LinkProjectRepositoryPayload.self
         )
     }
 
@@ -199,10 +196,10 @@ actor GitHubService {
                 variables["login"] = owner.login
             }
 
-            let payload: ProjectsPayload = try await request(
+            let payload: GitHubResponse.ProjectsPayload = try await request(
                 query,
                 variables: variables,
-                as: ProjectsPayload.self
+                as: GitHubResponse.ProjectsPayload.self
             )
             guard let remoteOwner = payload.owner else {
                 throw GitHubError.organizationAccess(
@@ -257,10 +254,10 @@ actor GitHubService {
     }
 
     func fetchItemDetail(contentID: String) async throws -> ProjectItemDetail {
-        let payload: ItemDetailPayload = try await request(
+        let payload: GitHubResponse.ItemDetailPayload = try await request(
             GraphQLQueries.itemDetail,
             variables: ["id": contentID],
-            as: ItemDetailPayload.self
+            as: GitHubResponse.ItemDetailPayload.self
         )
         guard let node = payload.node,
               node.typename == "Issue"
@@ -305,7 +302,7 @@ actor GitHubService {
         )
     }
 
-    private func makeIssueReference(_ node: ItemDetailPayload.IssueNode) -> IssueReference? {
+    private func makeIssueReference(_ node: GitHubResponse.ItemDetailPayload.IssueNode) -> IssueReference? {
         guard let state = IssueState(rawValue: node.state),
               let url = URL(string: node.url) else { return nil }
         return IssueReference(
@@ -318,7 +315,7 @@ actor GitHubService {
         )
     }
 
-    private func makeMilestone(_ node: ItemDetailPayload.MilestoneNode) -> RepositoryMilestone? {
+    private func makeMilestone(_ node: GitHubResponse.ItemDetailPayload.MilestoneNode) -> RepositoryMilestone? {
         guard let state = MilestoneState(rawValue: node.state) else { return nil }
         return RepositoryMilestone(
             id: node.id,
@@ -343,10 +340,10 @@ actor GitHubService {
             var variables = cursorVariables(after)
             variables["owner"] = components[0]
             variables["name"] = components[1]
-            let payload: RepositoryMilestonesPayload = try await request(
+            let payload: GitHubResponse.RepositoryMilestonesPayload = try await request(
                 GraphQLQueries.repositoryMilestones,
                 variables: variables,
-                as: RepositoryMilestonesPayload.self
+                as: GitHubResponse.RepositoryMilestonesPayload.self
             )
             guard let connection = payload.repository?.milestones else {
                 throw GitHubError.graphQLError("Repository not found or no longer accessible.")
@@ -367,10 +364,10 @@ actor GitHubService {
         } else {
             query = GraphQLQueries.clearIssueMilestone
         }
-        let _: EmptyPayload = try await request(
+        let _: GitHubResponse.EmptyPayload = try await request(
             query,
             variables: variables,
-            as: EmptyPayload.self
+            as: GitHubResponse.EmptyPayload.self
         )
     }
 
@@ -379,34 +376,34 @@ actor GitHubService {
         subIssueID: String,
         replacingParent: Bool
     ) async throws {
-        let _: EmptyPayload = try await request(
+        let _: GitHubResponse.EmptyPayload = try await request(
             replacingParent ? GraphQLQueries.replaceSubIssueParent : GraphQLQueries.addSubIssue,
             variables: ["issueId": parentIssueID, "subIssueId": subIssueID],
-            as: EmptyPayload.self
+            as: GitHubResponse.EmptyPayload.self
         )
     }
 
     func removeSubIssue(parentIssueID: String, subIssueID: String) async throws {
-        let _: EmptyPayload = try await request(
+        let _: GitHubResponse.EmptyPayload = try await request(
             GraphQLQueries.removeSubIssue,
             variables: ["issueId": parentIssueID, "subIssueId": subIssueID],
-            as: EmptyPayload.self
+            as: GitHubResponse.EmptyPayload.self
         )
     }
 
     func addBlockedBy(issueID: String, blockingIssueID: String) async throws {
-        let _: EmptyPayload = try await request(
+        let _: GitHubResponse.EmptyPayload = try await request(
             GraphQLQueries.addBlockedBy,
             variables: ["issueId": issueID, "blockingIssueId": blockingIssueID],
-            as: EmptyPayload.self
+            as: GitHubResponse.EmptyPayload.self
         )
     }
 
     func removeBlockedBy(issueID: String, blockingIssueID: String) async throws {
-        let _: EmptyPayload = try await request(
+        let _: GitHubResponse.EmptyPayload = try await request(
             GraphQLQueries.removeBlockedBy,
             variables: ["issueId": issueID, "blockingIssueId": blockingIssueID],
-            as: EmptyPayload.self
+            as: GitHubResponse.EmptyPayload.self
         )
     }
 
@@ -416,7 +413,7 @@ actor GitHubService {
         fieldId: String,
         optionId: String
     ) async throws {
-        let _: EmptyPayload = try await request(
+        let _: GitHubResponse.EmptyPayload = try await request(
             GraphQLQueries.updateItemStatus,
             variables: [
                 "projectId": projectId,
@@ -424,7 +421,7 @@ actor GitHubService {
                 "fieldId": fieldId,
                 "optionId": optionId
             ],
-            as: EmptyPayload.self
+            as: GitHubResponse.EmptyPayload.self
         )
     }
 
@@ -435,10 +432,10 @@ actor GitHubService {
         value: ProjectFieldValue?
     ) async throws {
         guard let value else {
-            let _: EmptyPayload = try await request(
+            let _: GitHubResponse.EmptyPayload = try await request(
                 GraphQLQueries.clearItemField,
                 variables: ["projectId": projectId, "itemId": itemId, "fieldId": fieldId],
-                as: EmptyPayload.self
+                as: GitHubResponse.EmptyPayload.self
             )
             return
         }
@@ -446,60 +443,60 @@ actor GitHubService {
         let variables = ["projectId": projectId, "itemId": itemId, "fieldId": fieldId]
         switch value {
         case .singleSelect(let optionId, _):
-            let _: EmptyPayload = try await request(
+            let _: GitHubResponse.EmptyPayload = try await request(
                 GraphQLQueries.updateItemStatus,
                 variables: variables.merging(["optionId": optionId]) { _, new in new },
-                as: EmptyPayload.self
+                as: GitHubResponse.EmptyPayload.self
             )
         case .iteration(let id, _):
-            let _: EmptyPayload = try await request(
+            let _: GitHubResponse.EmptyPayload = try await request(
                 GraphQLQueries.updateIterationField,
                 variables: variables.merging(["iterationId": id]) { _, new in new },
-                as: EmptyPayload.self
+                as: GitHubResponse.EmptyPayload.self
             )
         case .date(let date):
-            let _: EmptyPayload = try await request(
+            let _: GitHubResponse.EmptyPayload = try await request(
                 GraphQLQueries.updateDateField,
                 variables: variables.merging(["date": date]) { _, new in new },
-                as: EmptyPayload.self
+                as: GitHubResponse.EmptyPayload.self
             )
         case .number(let number):
-            let _: EmptyPayload = try await request(
+            let _: GitHubResponse.EmptyPayload = try await request(
                 GraphQLQueries.updateNumberField,
                 variables: variables,
                 numberVariables: ["number": number],
-                as: EmptyPayload.self
+                as: GitHubResponse.EmptyPayload.self
             )
         case .text(let text):
-            let _: EmptyPayload = try await request(
+            let _: GitHubResponse.EmptyPayload = try await request(
                 GraphQLQueries.updateTextField,
                 variables: variables.merging(["text": text]) { _, new in new },
-                as: EmptyPayload.self
+                as: GitHubResponse.EmptyPayload.self
             )
         }
     }
 
     func archiveItem(projectId: String, itemId: String) async throws {
-        let _: EmptyPayload = try await request(
+        let _: GitHubResponse.EmptyPayload = try await request(
             GraphQLQueries.archiveItem,
             variables: ["projectId": projectId, "itemId": itemId],
-            as: EmptyPayload.self
+            as: GitHubResponse.EmptyPayload.self
         )
     }
 
     func deleteItem(projectId: String, itemId: String) async throws {
-        let _: EmptyPayload = try await request(
+        let _: GitHubResponse.EmptyPayload = try await request(
             GraphQLQueries.deleteItem,
             variables: ["projectId": projectId, "itemId": itemId],
-            as: EmptyPayload.self
+            as: GitHubResponse.EmptyPayload.self
         )
     }
 
     func searchUsers(query: String) async throws -> [Assignee] {
-        let payload: UserSearchPayload = try await request(
+        let payload: GitHubResponse.UserSearchPayload = try await request(
             GraphQLQueries.searchUsers,
             variables: ["query": query],
-            as: UserSearchPayload.self
+            as: GitHubResponse.UserSearchPayload.self
         )
         return payload.search.nodes.compactMap { node in
             guard let login = node.login, let avatarURL = node.avatarUrl else {
@@ -510,7 +507,7 @@ actor GitHubService {
     }
 
     func addAssignee(issueUrl: String, userLogin: String) async throws {
-        guard let components = parseIssueURL(issueUrl) else {
+        guard let components = GitHubItemAddress(issueUrl) else {
             throw GitHubError.graphQLError("Invalid issue URL")
         }
         _ = try await run([
@@ -521,7 +518,7 @@ actor GitHubService {
     }
 
     func removeAssignee(issueUrl: String, userLogin: String) async throws {
-        guard let components = parseIssueURL(issueUrl) else {
+        guard let components = GitHubItemAddress(issueUrl) else {
             throw GitHubError.graphQLError("Invalid issue URL")
         }
         _ = try await run([
@@ -532,7 +529,7 @@ actor GitHubService {
     }
 
     func addLabel(issueUrl: String, label: String) async throws {
-        guard let components = parseIssueURL(issueUrl) else {
+        guard let components = GitHubItemAddress(issueUrl) else {
             throw GitHubError.invalidItemURL
         }
         _ = try await run([
@@ -543,7 +540,7 @@ actor GitHubService {
     }
 
     func removeLabel(issueUrl: String, label: String) async throws {
-        guard let components = parseIssueURL(issueUrl) else {
+        guard let components = GitHubItemAddress(issueUrl) else {
             throw GitHubError.invalidItemURL
         }
         _ = try await run([
@@ -554,16 +551,15 @@ actor GitHubService {
     }
 
     func createDraftIssue(projectId: String, title: String, body: String) async throws -> String {
-        let payload: DraftIssuePayload = try await request(
+        let payload: GitHubResponse.DraftIssuePayload = try await request(
             GraphQLQueries.addDraftIssue,
             variables: ["projectId": projectId, "title": title, "body": body],
-            as: DraftIssuePayload.self
+            as: GitHubResponse.DraftIssuePayload.self
         )
         return payload.addProjectV2DraftIssue.projectItem.id
     }
 
-    func createIssueAndAdd(
-        projectId: String,
+    func createIssue(
         repository: String,
         title: String,
         body: String,
@@ -591,16 +587,10 @@ actor GitHubService {
         let issueURL = output
             .split(whereSeparator: \Character.isWhitespace)
             .map(String.init)
-            .first(where: { parseIssueURL($0) != nil })
+            .first(where: { GitHubItemAddress($0) != nil })
 
         guard let issueURL else {
-            throw GitHubError.issueCreatedButNotAdded(nil)
-        }
-
-        do {
-            try await addExistingItem(projectId: projectId, url: issueURL)
-        } catch {
-            throw GitHubError.issueCreatedButNotAdded(issueURL)
+            throw GitHubError.issueCreationUnconfirmed
         }
         return issueURL
     }
@@ -609,10 +599,10 @@ actor GitHubService {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query.isEmpty == false else { return [] }
 
-        let payload: ItemSearchPayload = try await request(
+        let payload: GitHubResponse.ItemSearchPayload = try await request(
             GraphQLQueries.searchItems,
             variables: ["searchQuery": query],
-            as: ItemSearchPayload.self
+            as: GitHubResponse.ItemSearchPayload.self
         )
         return payload.search.nodes.compactMap { node in
             let contentType: ItemContentType
@@ -633,7 +623,7 @@ actor GitHubService {
     }
 
     func resolveItem(url: String) async throws -> GitHubItemCandidate {
-        guard parseIssueURL(url) != nil else { throw GitHubError.invalidItemURL }
+        guard GitHubItemAddress(url) != nil else { throw GitHubError.invalidItemURL }
         let payload: GitHubItemResourcePayload = try await request(
             GraphQLQueries.itemAtURL,
             variables: ["url": url],
@@ -646,7 +636,7 @@ actor GitHubService {
     }
 
     func addExistingItem(projectId: String, url: String) async throws {
-        guard let item = parseIssueURL(url) else {
+        guard let item = GitHubItemAddress(url) else {
             throw GitHubError.invalidItemURL
         }
         let result = try await run([
@@ -667,26 +657,26 @@ actor GitHubService {
     }
 
     private func addExistingItem(projectId: String, contentId: String) async throws {
-        let _: EmptyPayload = try await request(
+        let _: GitHubResponse.EmptyPayload = try await request(
             GraphQLQueries.addItemToProject,
             variables: ["projectId": projectId, "contentId": contentId],
-            as: EmptyPayload.self
+            as: GitHubResponse.EmptyPayload.self
         )
     }
 
     private func fetchProjectFields(projectID: String) async throws -> ProjectFieldsResult {
         var after: String?
-        var metadata: ProjectFieldsPayload.ProjectNode?
-        var fields: [FieldNode] = []
+        var metadata: GitHubResponse.ProjectFieldsPayload.ProjectNode?
+        var fields: [GitHubResponse.FieldNode] = []
 
         repeat {
             try Task.checkCancellation()
             var variables = cursorVariables(after)
             variables["id"] = projectID
-            let payload: ProjectFieldsPayload = try await request(
+            let payload: GitHubResponse.ProjectFieldsPayload = try await request(
                 GraphQLQueries.projectFields,
                 variables: variables,
-                as: ProjectFieldsPayload.self
+                as: GitHubResponse.ProjectFieldsPayload.self
             )
             guard let node = payload.node else {
                 throw GitHubError.graphQLError("Project not found or no longer accessible.")
@@ -708,18 +698,18 @@ actor GitHubService {
         )
     }
 
-    private func fetchProjectItemNodes(projectID: String) async throws -> [ItemNode] {
+    private func fetchProjectItemNodes(projectID: String) async throws -> [GitHubResponse.ItemNode] {
         var after: String?
-        var items: [ItemNode] = []
+        var items: [GitHubResponse.ItemNode] = []
 
         repeat {
             try Task.checkCancellation()
             var variables = cursorVariables(after)
             variables["id"] = projectID
-            let payload: ProjectItemsPayload = try await request(
+            let payload: GitHubResponse.ProjectItemsPayload = try await request(
                 GraphQLQueries.projectItems,
                 variables: variables,
-                as: ProjectItemsPayload.self
+                as: GitHubResponse.ProjectItemsPayload.self
             )
             guard let node = payload.node else {
                 throw GitHubError.graphQLError("Project not found or no longer accessible.")
@@ -731,7 +721,7 @@ actor GitHubService {
         return items
     }
 
-    private func makeProjectItem(from node: ItemNode) -> ProjectItem {
+    private func makeProjectItem(from node: GitHubResponse.ItemNode) -> ProjectItem {
         guard let content = node.content else {
             return ProjectItem(
                 id: node.id,
@@ -816,7 +806,7 @@ actor GitHubService {
         return item
     }
 
-    private func makeProjectField(from node: FieldNode) -> ProjectField? {
+    private func makeProjectField(from node: GitHubResponse.FieldNode) -> ProjectField? {
         guard let id = node.id, let name = node.name else { return nil }
         let kind: ProjectFieldKind
         switch node.isIssueField == true ? nil : node.dataType {
@@ -847,7 +837,7 @@ actor GitHubService {
         )
     }
 
-    private func makeFieldValues(_ nodes: [ItemFieldValueNode]) -> [String: ProjectFieldValue] {
+    private func makeFieldValues(_ nodes: [GitHubResponse.ItemFieldValueNode]) -> [String: ProjectFieldValue] {
         var values: [String: ProjectFieldValue] = [:]
         for node in nodes {
             guard let fieldId = node.field?.id else { continue }
@@ -894,9 +884,9 @@ actor GitHubService {
 
         let result = try await run(arguments, standardInput: input)
         do {
-            let issues = try decoder.decode(GraphQLErrorResponse.self, from: result.standardOutput)
+            let issues = try decoder.decode(GitHubResponse.GraphQLErrorResponse.self, from: result.standardOutput)
             if let errors = issues.errors, !errors.isEmpty { throw classifyGraphQLErrors(errors) }
-            let envelope = try decoder.decode(GraphQLEnvelope<Payload>.self, from: result.standardOutput)
+            let envelope = try decoder.decode(GitHubResponse.GraphQLEnvelope<Payload>.self, from: result.standardOutput)
             guard let payload = envelope.data else {
                 throw GitHubError.decodingError("GitHub returned no data.")
             }
@@ -918,7 +908,7 @@ actor GitHubService {
         } catch let error as GitHubCommandError {
             if arguments.starts(with: ["api", "graphql"]),
                case .failed(_, _, let output) = error,
-               let response = try? decoder.decode(GraphQLErrorResponse.self, from: output),
+               let response = try? decoder.decode(GitHubResponse.GraphQLErrorResponse.self, from: output),
                let errors = response.errors, !errors.isEmpty {
                 throw classifyGraphQLErrors(errors)
             }
@@ -931,7 +921,7 @@ actor GitHubService {
         }
     }
 
-    private func classifyGraphQLErrors(_ errors: [GraphQLIssue]) -> GitHubError {
+    private func classifyGraphQLErrors(_ errors: [GitHubResponse.GraphQLIssue]) -> GitHubError {
         let message = errors.map(\.message).joined(separator: "\n")
         let lowercased = message.lowercased()
 
@@ -949,7 +939,7 @@ actor GitHubService {
         return .graphQLError(String(message.prefix(500)))
     }
 
-    private func nextCursor(from pageInfo: PageInfo) throws -> String? {
+    private func nextCursor(from pageInfo: GitHubResponse.PageInfo) throws -> String? {
         guard pageInfo.hasNextPage else { return nil }
         guard let endCursor = pageInfo.endCursor else {
             throw GitHubError.decodingError("GitHub pagination cursor is missing.")
@@ -968,481 +958,12 @@ actor GitHubService {
         return parts.joined(separator: "/")
     }
 
-    private func parseIssueURL(_ value: String) -> (owner: String, repository: String, number: Int, command: String)? {
-        guard let url = URLComponents(string: value),
-              url.scheme?.lowercased() == "https",
-              url.host?.lowercased() == "github.com" else { return nil }
-        let path = url.path.split(separator: "/")
-        guard path.count == 4,
-              path[2] == "issues" || path[2] == "pull",
-              let number = Int(path[3]) else { return nil }
-        return (
-            String(path[0]),
-            String(path[1]),
-            number,
-            path[2] == "pull" ? "pr" : "issue"
-        )
-    }
-}
 
-private struct GraphQLEnvelope<Payload: Decodable>: Decodable {
-    let data: Payload?
-}
-
-private struct GraphQLIssue: Decodable {
-    let message: String
-}
-
-private struct EmptyPayload: Decodable {}
-
-private struct PageInfo: Decodable {
-    let hasNextPage: Bool
-    let endCursor: String?
-}
-
-private struct SessionPayload: Decodable {
-    let viewer: Viewer
-
-    struct Viewer: Decodable {
-        let id: String
-        let login: String
-    }
-}
-
-private struct OwnersPayload: Decodable {
-    let viewer: Viewer
-
-    struct Viewer: Decodable {
-        let id: String
-        let login: String
-        let name: String?
-        let organizations: Organizations
-    }
-
-    struct Organizations: Decodable {
-        let nodes: [OwnerNode]
-        let pageInfo: PageInfo
-    }
-
-    struct OwnerNode: Decodable {
-        let id: String
-        let login: String
-        let name: String?
-    }
-}
-
-private struct ProjectsPayload: Decodable {
-    let owner: Owner?
-
-    struct Owner: Decodable {
-        let projectsV2: ProjectsConnection
-    }
-
-    struct ProjectsConnection: Decodable {
-        let nodes: [ProjectNode]
-        let pageInfo: PageInfo
-    }
-
-    struct ProjectNode: Decodable {
-        let id: String
+    private struct ProjectFieldsResult {
         let title: String
         let number: Int
         let url: String
         let viewerCanUpdate: Bool
-    }
-}
-
-private struct ProjectFieldsPayload: Decodable {
-    let node: ProjectNode?
-
-    struct ProjectNode: Decodable {
-        let title: String
-        let number: Int
-        let url: String
-        let viewerCanUpdate: Bool
-        let fields: FieldsConnection
-    }
-
-    struct FieldsConnection: Decodable {
-        let nodes: [FieldNode]
-        let pageInfo: PageInfo
-    }
-}
-
-private struct ProjectFieldsResult {
-    let title: String
-    let number: Int
-    let url: String
-    let viewerCanUpdate: Bool
-    let fields: [FieldNode]
-}
-
-private struct FieldNode: Decodable {
-    let id: String?
-    let name: String?
-    let dataType: String?
-    let isIssueField: Bool?
-    let options: [OptionNode]?
-    let configuration: IterationConfiguration?
-
-    struct OptionNode: Decodable {
-        let id: String
-        let name: String
-        let color: String
-    }
-
-    struct IterationConfiguration: Decodable {
-        let iterations: [IterationNode]
-        let completedIterations: [IterationNode]
-    }
-
-    struct IterationNode: Decodable {
-        let id: String
-        let title: String
-        let startDate: String
-        let duration: Int
-    }
-}
-
-private struct ProjectItemsPayload: Decodable {
-    let node: ProjectNode?
-
-    struct ProjectNode: Decodable {
-        let items: ItemsConnection
-    }
-
-    struct ItemsConnection: Decodable {
-        let nodes: [ItemNode]
-        let pageInfo: PageInfo
-    }
-}
-
-private struct ItemDetailPayload: Decodable {
-    let node: Node?
-
-    struct Node: Decodable {
-        let typename: String
-        let id: String?
-        let bodyHTML: String?
-        let createdAt: String?
-        let updatedAt: String?
-        let author: Actor?
-        let creator: Actor?
-        let viewerCanUpdate: Bool?
-        let viewerCanSetMilestone: Bool?
-        let repository: RepositoryNode?
-        let milestone: MilestoneNode?
-        let parent: IssueNode?
-        let subIssues: IssueConnection?
-        let subIssuesSummary: SubIssuesSummary?
-        let blockedBy: IssueConnection?
-        let blocking: IssueConnection?
-
-        enum CodingKeys: String, CodingKey {
-            case typename = "__typename"
-            case id
-            case bodyHTML
-            case createdAt
-            case updatedAt
-            case author
-            case creator
-            case viewerCanUpdate
-            case viewerCanSetMilestone
-            case repository
-            case milestone
-            case parent
-            case subIssues
-            case subIssuesSummary
-            case blockedBy
-            case blocking
-        }
-    }
-
-    struct Actor: Decodable {
-        let login: String
-        let avatarUrl: String?
-    }
-
-    struct RepositoryNode: Decodable {
-        let nameWithOwner: String
-    }
-
-    struct MilestoneNode: Decodable {
-        let id: String
-        let number: Int
-        let title: String
-        let dueOn: String?
-        let state: String
-        let progressPercentage: Double
-    }
-
-    struct IssueNode: Decodable {
-        let id: String
-        let number: Int
-        let title: String
-        let url: String
-        let state: String
-        let repository: RepositoryNode
-    }
-
-    struct IssueConnection: Decodable {
-        let nodes: [IssueNode]
-    }
-
-    struct SubIssuesSummary: Decodable {
-        let completed: Int
-        let total: Int
-    }
-}
-
-private struct RepositoryMilestonesPayload: Decodable {
-    let repository: Repository?
-
-    struct Repository: Decodable {
-        let milestones: MilestonesConnection
-    }
-
-    struct MilestonesConnection: Decodable {
-        let nodes: [ItemDetailPayload.MilestoneNode]
-        let pageInfo: PageInfo
-    }
-}
-
-private struct ItemNode: Decodable {
-    let id: String
-    let content: ItemContent?
-    let fieldValueByName: FieldValue?
-    let fieldValues: FieldValuesConnection?
-
-    struct ItemContent: Decodable {
-        let typename: String
-        let id: String
-        let title: String
-        let number: Int?
-        let url: String?
-        let state: String?
-        let updatedAt: String?
-        let assignees: AssigneesConnection?
-        let labels: LabelsConnection?
-        let closedByPullRequestsReferences: PullRequestsConnection?
-        let isDraft: Bool?
-        let mergeable: String?
-        let reviewDecision: String?
-        let reviewRequests: ReviewRequestsConnection?
-        let statusCheckRollup: StatusCheckRollup?
-        let subIssuesSummary: SubIssuesSummary?
-        let milestone: PlanningNode?
-        let parent: PlanningNode?
-        let issueType: ProjectIssueType?
-        let issueDependenciesSummary: DependenciesSummary?
-
-        enum CodingKeys: String, CodingKey {
-            case typename = "__typename"
-            case id
-            case title
-            case number
-            case url
-            case state
-            case updatedAt
-            case assignees
-            case labels
-            case closedByPullRequestsReferences
-            case isDraft, mergeable, reviewDecision, reviewRequests, statusCheckRollup
-            case subIssuesSummary, milestone, parent, issueType, issueDependenciesSummary
-        }
-    }
-
-    struct PlanningNode: Decodable {
-        let id: String
-        let title: String
-        let number: Int?
-        let repository: RepositoryName?
-    }
-
-    struct RepositoryName: Decodable { let nameWithOwner: String }
-    struct DependenciesSummary: Decodable {
-        let blockedBy: Int
-        let blocking: Int
-    }
-
-    struct ReviewRequestsConnection: Decodable {
-        let nodes: [ReviewRequestNode]
-    }
-
-    struct ReviewRequestNode: Decodable {
-        let requestedReviewer: RequestedReviewer?
-    }
-
-    struct RequestedReviewer: Decodable {
-        let login: String?
-    }
-
-    struct StatusCheckRollup: Decodable {
-        let state: String?
-    }
-
-    struct SubIssuesSummary: Decodable {
-        let completed: Int
-        let total: Int
-    }
-
-    struct AssigneesConnection: Decodable {
-        let nodes: [AssigneeNode]
-    }
-
-    struct AssigneeNode: Decodable {
-        let login: String
-        let avatarUrl: String
-        let name: String?
-    }
-
-    struct LabelsConnection: Decodable {
-        let nodes: [LabelNode]
-    }
-
-    struct LabelNode: Decodable {
-        let id: String
-        let name: String
-        let color: String
-    }
-
-    struct PullRequestsConnection: Decodable {
-        let nodes: [PullRequestNode]
-    }
-
-    struct PullRequestNode: Decodable {
-        let number: Int
-        let title: String
-        let url: String
-        let merged: Bool
-        let closed: Bool
-    }
-
-    struct FieldValue: Decodable {
-        let name: String?
-        let optionId: String?
-    }
-
-    struct FieldValuesConnection: Decodable {
-        let nodes: [ItemFieldValueNode]
-    }
-}
-
-private struct ItemFieldValueNode: Decodable {
-    let typename: String
-    let name: String?
-    let optionId: String?
-    let title: String?
-    let iterationId: String?
-    let date: String?
-    let number: Double?
-    let text: String?
-    let field: FieldReference?
-
-    enum CodingKeys: String, CodingKey {
-        case typename = "__typename"
-        case name, optionId, title, iterationId, date, number, text, field
-    }
-
-    struct FieldReference: Decodable {
-        let id: String?
-    }
-}
-
-private struct UserSearchPayload: Decodable {
-    let search: SearchConnection
-
-    struct SearchConnection: Decodable {
-        let nodes: [UserNode]
-    }
-
-    struct UserNode: Decodable {
-        let login: String?
-        let avatarUrl: String?
-        let name: String?
-    }
-}
-
-private struct ItemSearchPayload: Decodable {
-    let search: SearchConnection
-
-    struct SearchConnection: Decodable {
-        let nodes: [ItemNode]
-    }
-
-    struct ItemNode: Decodable {
-        let typename: String
-        let id: String
-        let title: String
-        let number: Int
-        let url: String
-        let repository: Repository
-
-        enum CodingKeys: String, CodingKey {
-            case typename = "__typename"
-            case id, title, number, url, repository
-        }
-    }
-
-    struct Repository: Decodable {
-        let nameWithOwner: String
-    }
-}
-
-private struct DraftIssuePayload: Decodable {
-    let addProjectV2DraftIssue: DraftIssueResult
-
-    struct DraftIssueResult: Decodable {
-        let projectItem: ProjectItemResult
-    }
-
-    struct ProjectItemResult: Decodable {
-        let id: String
-    }
-}
-
-private struct GraphQLErrorResponse: Decodable {
-    let errors: [GraphQLIssue]?
-}
-
-private struct CreateProjectPayload: Decodable {
-    let createProjectV2: Result
-
-    struct Result: Decodable {
-        let projectV2: ProjectsPayload.ProjectNode
-    }
-}
-
-private struct OwnerRepositoriesPayload: Decodable {
-    let repositoryOwner: Owner?
-
-    struct Owner: Decodable {
-        let repositories: Connection
-    }
-    struct Connection: Decodable {
-        let nodes: [Repository]
-        let pageInfo: PageInfo
-    }
-    struct Repository: Decodable {
-        let id: String
-        let nameWithOwner: String
-    }
-}
-
-private struct LinkProjectRepositoryPayload: Decodable {
-    let linkProjectV2ToRepository: Result
-    struct Result: Decodable {
-        let repository: Repository
-    }
-    struct Repository: Decodable {
-        let id: String
-    }
-}
-
-
-private struct DeleteProjectPayload: Decodable {
-    let deleteProjectV2: Result
-    struct Result: Decodable {
-        let clientMutationId: String?
+        let fields: [GitHubResponse.FieldNode]
     }
 }

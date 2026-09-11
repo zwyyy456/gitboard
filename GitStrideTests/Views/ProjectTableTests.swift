@@ -3,6 +3,37 @@ import Testing
 @testable import GitStride
 
 struct ProjectTableTests {
+    @Test func displayPreferencesCopyStoredValuesAndRemoveOnlyTheSelectedView() throws {
+        let suite = "GitStrideTests.DisplayPreferences.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let project = ProjectDisplayPreferences(projectID: "P1", viewID: nil)
+        let saved = ProjectDisplayPreferences(projectID: "P1", viewID: "saved")
+        let other = ProjectDisplayPreferences(projectID: "P1", viewID: "other")
+        let values: [String: NSObject] = [
+            "columns": NSData(data: Data([1, 2, 3])), "sortColumn": "title" as NSString,
+            "sortAscending": false as NSNumber, "fieldID": "priority" as NSString,
+            "groupsByStatus": true as NSNumber, "cardFields": "labels,milestone" as NSString
+        ]
+        for (key, value) in values {
+            defaults.set(value, forKey: "projectTable.P1.\(key)")
+        }
+        project.copy(to: saved, defaults: defaults)
+        project.copy(to: other, defaults: defaults)
+        for (key, value) in values {
+            #expect((defaults.object(forKey: "projectTable.P1.view.saved.\(key)") as? NSObject) == value)
+        }
+        saved.remove(defaults: defaults)
+        for (key, value) in values {
+            #expect(defaults.object(forKey: "projectTable.P1.view.saved.\(key)") == nil)
+            #expect((defaults.object(forKey: "projectTable.P1.\(key)") as? NSObject) == value)
+            #expect((defaults.object(forKey: "projectTable.P1.view.other.\(key)") as? NSObject) == value)
+        }
+        defaults.removeObject(forKey: project.key(for: .sortAscending))
+        project.copy(to: other, defaults: defaults)
+        #expect(defaults.object(forKey: other.key(for: .sortAscending)) == nil)
+    }
+
     @Test func groupingPreservesWorkflowOrderMembershipAndWithinGroupSorting() {
         let todo = StatusOption(id: "todo", name: "Todo", color: "GREEN")
         let progress = StatusOption(id: "progress", name: "In Progress", color: "YELLOW")
