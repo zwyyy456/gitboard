@@ -25,7 +25,7 @@ enum ProjectStoreError: LocalizedError {
     case itemUnavailable
     case operationInProgress
     case missingFieldOption(field: String, option: String)
-    case createdIssueUnavailable
+    case projectRefreshIncomplete
 
     var errorDescription: String? {
         switch self {
@@ -41,8 +41,8 @@ enum ProjectStoreError: LocalizedError {
             "This item is no longer available."
         case .missingFieldOption(let field, let option):
             "\(field) has no option named \(option)."
-        case .createdIssueUnavailable:
-            "The issue was added, but GitStride could not apply its Project fields."
+        case .projectRefreshIncomplete:
+            "GitStride could not finish refreshing the project."
         }
     }
 }
@@ -53,7 +53,7 @@ final class IssueCreation {
     enum Phase: Equatable {
         case ready
         case addingToProject(issueURL: String)
-        case applyingFields(issueURL: String)
+        case applyingFields(issueURL: String, itemID: String)
         case refreshingProject(issueURL: String)
         case completed(issueURL: String)
         case unconfirmed
@@ -584,14 +584,17 @@ final class ProjectStore {
         let generation = catalogGeneration
         isLoading = true
         error = nil
+        operationErrorMessage = nil
         sessionState = .checking
+        defer {
+            if generation == catalogGeneration { isLoading = false }
+        }
 
         let session = await gitHubService.inspectSession()
-        guard generation == catalogGeneration else { return }
+        guard generation == catalogGeneration, !Task.isCancelled else { return }
         sessionState = session
 
         guard case .ready(let account) = session else {
-            isLoading = false
             if isShowingCachedData {
                 error = nil
                 operationErrorMessage = cachedDataMessage(for: session)
@@ -624,6 +627,7 @@ final class ProjectStore {
 
         do {
             let loadedOwners = try await gitHubService.fetchOwners()
+            try Task.checkCancellation()
             guard generation == catalogGeneration else { return }
             owners = loadedOwners
 
@@ -632,7 +636,6 @@ final class ProjectStore {
                 replaceCatalog(with: [])
                 selectedOwnerId = nil
                 selectedProjectId = nil
-                isLoading = false
                 return
             }
             selectedOwnerId = owner.id
@@ -647,7 +650,6 @@ final class ProjectStore {
             } else {
                 self.error = error
             }
-            isLoading = false
         }
     }
 
@@ -893,22 +895,26 @@ final class ProjectStore {
     }
 
     private func loadProjects(for owner: ProjectOwner, generation: Int) async {
+        defer {
+            if generation == catalogGeneration { isLoading = false }
+        }
         do {
             let loadedProjects = try await gitHubService.fetchProjects(owner: owner).filter { !deletedProjectIDs.contains($0.id) }
+            try Task.checkCancellation()
             guard generation == catalogGeneration, selectedOwnerId == owner.id else { return }
             let mergedProjects = mergingCatalog(loadedProjects)
             replaceCatalog(with: mergedProjects)
 
             let selectedProject = loadedProjects.first { $0.id == selectedProjectId }
                 ?? loadedProjects.first
+            if selectedProjectId != selectedProject?.id {
+                selectedStatusFilter = nil
+            }
             selectedProjectId = selectedProject?.id
 
             if let selectedProject {
                 await loadProjectDetails(id: selectedProject.id)
             }
-
-            guard generation == catalogGeneration else { return }
-            isLoading = false
         } catch is CancellationError {
             return
         } catch {
@@ -916,12 +922,13 @@ final class ProjectStore {
             if isShowingCachedData {
                 self.error = nil
                 operationErrorMessage = "Showing cached data because the project list could not refresh: \(error.localizedDescription)"
+            } else if projects.contains(where: { $0.owner.id == owner.id }) {
+                operationErrorMessage = "The project list could not refresh: \(error.localizedDescription)"
             } else {
                 replaceCatalog(with: [])
                 selectedProjectId = nil
                 self.error = error
             }
-            isLoading = false
         }
     }
 
@@ -1350,23 +1357,19 @@ final class ProjectStore {
             }
             if case .addingToProject(let issueURL) = creation.phase {
                 try await performProjectMutation(projectID: creation.projectID) {
-                    try await self.gitHubService.addExistingItem(projectId: creation.projectID, url: issueURL)
-                    creation.phase = .applyingFields(issueURL: issueURL)
+                    let itemID = try await self.gitHubService.addExistingItem(
+                        projectId: creation.projectID, url: issueURL
+                    )
+                    creation.phase = creation.remainingFields.isEmpty
+                        ? .refreshingProject(issueURL: issueURL)
+                        : .applyingFields(issueURL: issueURL, itemID: itemID)
                 }
             }
-            if case .applyingFields(let issueURL) = creation.phase {
-                guard let project = try await refreshProjectSnapshot(id: creation.projectID),
-                      let item = project.items.first(where: { $0.url == issueURL }) else {
-                    throw ProjectStoreError.createdIssueUnavailable
-                }
-                if creation.remainingFields.isEmpty {
-                    creation.phase = .completed(issueURL: issueURL)
-                    return
-                }
-                try await performProjectMutation(projectID: creation.projectID, itemID: item.id) {
+            if case .applyingFields(let issueURL, let itemID) = creation.phase {
+                try await performProjectMutation(projectID: creation.projectID, itemID: itemID) {
                     while let (field, option) = creation.remainingFields.first {
                         try await self.gitHubService.updateItemField(
-                            projectId: creation.projectID, itemId: item.id, fieldId: field.id,
+                            projectId: creation.projectID, itemId: itemID, fieldId: field.id,
                             value: .singleSelect(optionId: option.id, name: option.name)
                         )
                         creation.remainingFields.removeFirst()
@@ -1376,7 +1379,7 @@ final class ProjectStore {
             }
             if case .refreshingProject(let issueURL) = creation.phase {
                 guard try await refreshProjectSnapshot(id: creation.projectID) != nil else {
-                    throw ProjectStoreError.createdIssueUnavailable
+                    throw ProjectStoreError.projectRefreshIncomplete
                 }
                 creation.phase = .completed(issueURL: issueURL)
             }
@@ -1385,7 +1388,7 @@ final class ProjectStore {
             switch creation.phase {
             case .addingToProject(let url):
                 context = "The issue was created at \(url). Retry to add it to the original project. "
-            case .applyingFields(let url):
+            case .applyingFields(let url, _):
                 context = "The issue at \(url) was added. Retry to finish its Project fields. "
             case .refreshingProject:
                 context = "The issue and its Project fields were saved. Retry to refresh the project. "

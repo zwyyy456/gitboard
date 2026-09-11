@@ -96,18 +96,31 @@ struct MainWorkspaceView: View {
                                     ProjectManagementMenu(model: model, projectID: project.id)
                                 }
                         }
-                        if model.projectStore.isLoading {
-                            ProgressView("Loading projects…").controlSize(.small)
-                        } else if let error = model.projectStore.error {
-                            Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary)
-                            Button("Retry") { Task { await model.projectStore.loadProjects() } }
-                        } else if model.projectStore.projects.isEmpty {
-                            Text("No projects").foregroundStyle(.secondary)
+                        if model.projectStore.isLoading == false {
+                            if let error = model.projectStore.error {
+                                Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary)
+                                Button("Retry") { Task { await model.projectStore.loadProjects() } }
+                            } else if model.projectStore.projects.isEmpty {
+                                Text("No projects").foregroundStyle(.secondary)
+                            }
                         }
                     } header: {
                         HStack {
                             Text("Projects")
                             Spacer()
+                            Group {
+                                if model.projectStore.isLoading {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                        .help("Loading projects…")
+                                        .accessibilityLabel("Loading projects")
+                                } else {
+                                    RefreshProjectsButton(store: model.projectStore)
+                                        .labelStyle(.iconOnly)
+                                        .buttonStyle(.borderless)
+                                }
+                            }
+                            .frame(width: 16, height: 16)
                             NewProjectButton()
                                 .labelStyle(.iconOnly)
                                 .buttonStyle(.borderless)

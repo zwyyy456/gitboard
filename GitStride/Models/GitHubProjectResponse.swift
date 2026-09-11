@@ -78,6 +78,18 @@ extension GitHubResponse {
         }
     }
 
+    struct AddProjectItemPayload: Decodable {
+        let addProjectV2ItemById: Result
+
+        struct Result: Decodable {
+            let item: Item
+        }
+
+        struct Item: Decodable {
+            let id: String
+        }
+    }
+
     struct CreateProjectPayload: Decodable {
         let createProjectV2: Result
 

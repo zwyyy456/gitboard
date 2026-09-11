@@ -247,10 +247,11 @@ struct GitHubServiceTests {
             labels: ["bug"],
             assignees: ["octocat"]
         )
-        try await service.addExistingItem(projectId: "PROJECT_1", url: issueURL)
+        let itemID = try await service.addExistingItem(projectId: "PROJECT_1", url: issueURL)
         let calls = await runner.recordedArguments()
 
         #expect(issueURL == "https://github.com/acme/widgets/issues/42")
+        #expect(itemID == "PROJECT_ITEM_42")
         #expect(calls.count == 3)
         #expect(calls[0].contains("acme/widgets"))
         #expect(calls[0].contains("Repair login"))
@@ -260,6 +261,23 @@ struct GitHubServiceTests {
         #expect(calls[1].contains("repos/acme/widgets/issues/42"))
         #expect(calls[2].contains("contentId=ISSUE_NODE_42"))
         #expect(calls[2].contains("projectId=PROJECT_1"))
+    }
+
+    @Test func projectMembershipRequiresReturnedItemIdentity() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [
+            "ISSUE_NODE_42",
+            #"{"data":{"addProjectV2ItemById":{"item":{}}}}"#
+        ])
+        let service = GitHubService(runner: runner)
+
+        do {
+            _ = try await service.addExistingItem(
+                projectId: "PROJECT_1", url: "https://github.com/acme/widgets/issues/42"
+            )
+            Issue.record("Expected missing project item identity to be rejected")
+        } catch {
+            guard case GitHubError.decodingError = error else { throw error }
+        }
     }
 
     @Test func createdDraftIncludesItsDescription() async throws {

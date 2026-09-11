@@ -635,7 +635,7 @@ actor GitHubService {
         return candidate
     }
 
-    func addExistingItem(projectId: String, url: String) async throws {
+    func addExistingItem(projectId: String, url: String) async throws -> String {
         guard let item = GitHubItemAddress(url) else {
             throw GitHubError.invalidItemURL
         }
@@ -649,19 +649,20 @@ actor GitHubService {
         guard contentId.isEmpty == false else {
             throw GitHubError.decodingError("GitHub returned no item identifier.")
         }
-        try await addExistingItem(projectId: projectId, contentId: contentId)
+        return try await addExistingItem(projectId: projectId, contentId: contentId)
     }
 
     func addExistingItem(projectId: String, candidate: GitHubItemCandidate) async throws {
-        try await addExistingItem(projectId: projectId, contentId: candidate.id)
+        _ = try await addExistingItem(projectId: projectId, contentId: candidate.id)
     }
 
-    private func addExistingItem(projectId: String, contentId: String) async throws {
-        let _: GitHubResponse.EmptyPayload = try await request(
+    private func addExistingItem(projectId: String, contentId: String) async throws -> String {
+        let payload: GitHubResponse.AddProjectItemPayload = try await request(
             GraphQLQueries.addItemToProject,
             variables: ["projectId": projectId, "contentId": contentId],
-            as: GitHubResponse.EmptyPayload.self
+            as: GitHubResponse.AddProjectItemPayload.self
         )
+        return payload.addProjectV2ItemById.item.id
     }
 
     private func fetchProjectFields(projectID: String) async throws -> ProjectFieldsResult {

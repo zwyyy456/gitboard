@@ -3,6 +3,9 @@ import Testing
 @testable import GitStride
 
 extension ProjectStoreTests {
+    private static let addedIssueResponse =
+        #"{"data":{"addProjectV2ItemById":{"item":{"id":"NEW_ITEM"}}}}"#
+
     @Test func creationRejectsRepositoryFromAnotherOwner() async throws {
         let runner = FixtureGitHubCommandRunner(responses: [])
         let store = ProjectStore(gitHubService: GitHubService(runner: runner))
@@ -39,14 +42,48 @@ extension ProjectStoreTests {
         #expect(await runner.recordedArguments().count == 3)
     }
 
+    @Test(arguments: [true, false])
+    func createdIssueAppliesFieldsBeforeRefreshingItsProject(setsStatus: Bool) async throws {
+        var initial = Self.mutationProjectResponses
+        initial[4] = Self.emptyItemsResponse
+        let runner = FixtureGitHubCommandRunner(responses: initial + [
+            "https://github.com/acme/app/issues/1", "CONTENT1",
+            Self.addedIssueResponse
+        ] + (setsStatus ? [Self.graphQLSuccessResponse] : []) + [
+            Self.mutationFieldsResponse, Self.emptyItemsResponse
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let operation = try store.prepareIssueCreation(repository: "acme/app", title: "New", body: "",
+                                                       labels: [], assignees: [], status: setsStatus ? "Todo" : nil)
+
+        try await store.resumeIssueCreation(operation)
+
+        #expect(operation.phase == .completed(issueURL: "https://github.com/acme/app/issues/1"))
+        #expect(operation.errorMessage == nil)
+        let calls = Array(await runner.recordedArguments().dropFirst(initial.count))
+        #expect(calls.count == (setsStatus ? 6 : 5))
+        let fieldWrites = calls.filter { $0.contains("optionId=TODO") }
+        if setsStatus {
+            let fieldWrite = try #require(fieldWrites.first)
+            #expect(fieldWrite.contains("itemId=NEW_ITEM"))
+            #expect(fieldWrite.contains("projectId=P1"))
+            #expect(calls[3] == fieldWrite)
+        } else {
+            #expect(fieldWrites.isEmpty)
+        }
+        #expect(store.selectedProject?.items.isEmpty == true)
+    }
+
     @Test func createdIssueFinishesInOriginalProjectAndRetryDoesNotRecreateIt() async throws {
         let fields = Self.mutationFieldsResponse
         let items = Self.mutationItemsResponse
         let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
             .suspended("create", "https://github.com/acme/app/issues/1"),
-            .response("CONTENT1"), .response(Self.graphQLSuccessResponse),
-            .response(fields), .response(items), .response(Self.graphQLFailureResponse),
-            .response(fields), .response(items), .response(Self.graphQLSuccessResponse),
+            .response("CONTENT1"), .response(Self.addedIssueResponse),
+            .response(Self.graphQLFailureResponse),
+            .response(Self.graphQLSuccessResponse),
             .response(fields), .response(items)
         ])
         let (store, cleanup) = makeStore(runner: runner)
@@ -69,14 +106,14 @@ extension ProjectStoreTests {
             Issue.record("Expected field failure with a resumable issue")
         } catch {
             #expect(operation.projectID == "P1")
-            #expect(operation.phase == .applyingFields(issueURL: "https://github.com/acme/app/issues/1"))
+            #expect(operation.phase == .applyingFields(issueURL: "https://github.com/acme/app/issues/1", itemID: "NEW_ITEM"))
             try await store.resumeIssueCreation(operation)
         }
         #expect(operation.phase == .completed(issueURL: "https://github.com/acme/app/issues/1"))
         let calls = await runner.recordedArguments()
         #expect(calls.filter { $0.starts(with: ["issue", "create"]) }.count == 1)
         #expect(calls.filter { $0.contains("optionId=REVIEW") }.count == 2)
-        #expect(calls.filter { $0.contains("optionId=REVIEW") }.allSatisfy { $0.contains("projectId=P1") && $0.contains("itemId=ITEM1") })
+        #expect(calls.filter { $0.contains("optionId=REVIEW") }.allSatisfy { $0.contains("projectId=P1") && $0.contains("itemId=NEW_ITEM") })
         #expect(store.selectedProjectId == "P2")
     }
 
@@ -85,7 +122,7 @@ extension ProjectStoreTests {
         let items = Self.mutationItemsResponse
         let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [
             "https://github.com/acme/app/issues/1", "CONTENT1", Self.graphQLFailureResponse,
-            "CONTENT1", Self.graphQLSuccessResponse, fields, items,
+            "CONTENT1", Self.addedIssueResponse,
             Self.graphQLSuccessResponse, fields, items
         ])
         let (store, cleanup) = makeStore(runner: runner)
@@ -122,9 +159,9 @@ extension ProjectStoreTests {
         var initial = Self.mutationProjectResponses
         initial[3] = fields
         let runner = FixtureGitHubCommandRunner(responses: initial + [
-            "https://github.com/acme/app/issues/1", "CONTENT1", Self.graphQLSuccessResponse,
-            fields, items, Self.graphQLSuccessResponse, Self.graphQLFailureResponse,
-            fields, items, Self.graphQLSuccessResponse, Self.graphQLFailureResponse,
+            "https://github.com/acme/app/issues/1", "CONTENT1", Self.addedIssueResponse,
+            Self.graphQLSuccessResponse, Self.graphQLFailureResponse,
+            Self.graphQLSuccessResponse, Self.graphQLFailureResponse,
             fields, items
         ])
         let (store, cleanup) = makeStore(runner: runner)
@@ -136,7 +173,7 @@ extension ProjectStoreTests {
             try await store.resumeIssueCreation(operation)
             Issue.record("Expected the second field to fail")
         } catch {
-            #expect(operation.phase == .applyingFields(issueURL: "https://github.com/acme/app/issues/1"))
+            #expect(operation.phase == .applyingFields(issueURL: "https://github.com/acme/app/issues/1", itemID: "NEW_ITEM"))
         }
         do {
             try await store.resumeIssueCreation(operation)

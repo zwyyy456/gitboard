@@ -1,5 +1,17 @@
 import SwiftUI
 
+struct RefreshProjectsButton: View {
+    @Bindable var store: ProjectStore
+
+    var body: some View {
+        Button("Refresh Project List", systemImage: "arrow.clockwise") {
+            Task { await store.loadProjects() }
+        }
+        .disabled(store.isLoading || store.isCreatingProject)
+        .help("Reload projects and their names for the current owner")
+    }
+}
+
 struct NewProjectButton: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissMenuBar) private var dismissMenuBar

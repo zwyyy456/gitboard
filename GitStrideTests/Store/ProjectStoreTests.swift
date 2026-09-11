@@ -4,6 +4,102 @@ import Testing
 
 @MainActor
 struct ProjectStoreTests {
+    @Test func catalogReloadDiscoversProjectsAndRenamesWhilePreservingSelectionAndContents() async throws {
+        var initialResponses = Self.mutationProjectResponses
+        initialResponses[2] = Self.projectsResponse
+        let updatedCatalog = Self.projectsResponse
+            .replacingOccurrences(of: "\"One\"", with: "\"Renamed One\"")
+            .replacingOccurrences(of: "\"Two\"", with: "\"Renamed Two\"")
+            .replacingOccurrences(
+                of: "],\"pageInfo\"",
+                with: #",{"id":"P3","title":"New Project","number":3,"url":"https://github.com/users/me/projects/3","viewerCanUpdate":true}],"pageInfo""#
+            )
+        let runner = SuspendingGitHubCommandRunner(steps: initialResponses.map { .response($0) } + [
+            .response(Self.secondProjectFieldsResponse), .response(Self.emptyItemsResponse),
+            .response(Self.sessionResponse), .response(Self.ownersResponse),
+            .suspended("catalog", updatedCatalog),
+            .response(Self.mutationFieldsResponse.replacingOccurrences(of: "\"One\"", with: "\"Renamed One\"")),
+            .response(Self.mutationItemsResponse)
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let first = try #require(store.selectedProject)
+        await store.loadProjectDetails(id: "P2")
+        store.selectedStatusFilter = "Todo"
+
+        let reload = Task { await store.loadProjects() }
+        await runner.waitUntilSuspended("catalog")
+        #expect(store.isLoading)
+        #expect(store.selectedProject?.items == first.items)
+        await runner.release("catalog")
+        await reload.value
+
+        #expect(store.projects.map(\.id) == ["P1", "P2", "P3"])
+        #expect(store.projects.map(\.title) == ["Renamed One", "Renamed Two", "New Project"])
+        #expect(store.selectedOwnerId == "U1")
+        #expect(store.selectedProjectId == "P1")
+        #expect(store.selectedStatusFilter == "Todo")
+        #expect(store.selectedProject?.items == first.items)
+        #expect(store.selectedProject?.fields == first.fields)
+        #expect(store.canEditProject(id: "P2"))
+        #expect(!store.canEditProject(id: "P3"))
+        #expect(!store.isLoading)
+        #expect(store.error == nil)
+        #expect(store.operationErrorMessage == nil)
+    }
+
+    @Test(arguments: [true, false])
+    func interruptedCatalogReloadPreservesProjectsAndAllowsRetry(cancelled: Bool) async throws {
+        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+            .response(Self.sessionResponse), .response(Self.ownersResponse),
+            cancelled ? .cancelled : .response(Self.graphQLFailureResponse)
+        ] + Self.mutationProjectResponses.map { .response($0) })
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let project = try #require(store.selectedProject)
+        let lastUpdated = store.lastUpdated
+        store.selectedStatusFilter = "Todo"
+
+        await store.loadProjects()
+
+        #expect(store.selectedProject == project)
+        #expect(store.projects == [project])
+        #expect(store.selectedStatusFilter == "Todo")
+        #expect(store.lastUpdated == lastUpdated)
+        #expect(!store.isLoading)
+        #expect(store.error == nil)
+        #expect((store.operationErrorMessage == nil) == cancelled)
+
+        await store.loadProjects()
+
+        #expect(store.selectedProject == project)
+        #expect(store.error == nil)
+        #expect(store.operationErrorMessage == nil)
+        #expect(!store.isLoading)
+    }
+
+    @Test func catalogReloadSelectsAnAvailableProjectWhenTheSelectionDisappears() async {
+        let remainingCatalog = Self.projectsResponse
+            .replacingOccurrences(of: "\"P1\"", with: "\"P3\"")
+        let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [
+            Self.sessionResponse, Self.ownersResponse, remainingCatalog,
+            Self.firstProjectFieldsResponse, Self.emptyItemsResponse
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        store.selectedStatusFilter = "Todo"
+
+        await store.loadProjects()
+
+        #expect(store.selectedProjectId == "P3")
+        #expect(store.project(id: "P1") == nil)
+        #expect(store.selectedStatusFilter == nil)
+        #expect(store.canEditSelectedProject)
+    }
+
     @Test func managementPermissionsFollowTheLatestTargetSnapshot() async throws {
         let fields = Self.mutationFieldsResponse
         let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [
