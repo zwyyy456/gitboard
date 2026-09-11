@@ -2,7 +2,9 @@ import SwiftUI
 
 struct KanbanColumn: View {
     let projectID: String
-    var preferenceID: String? = nil
+    let preferenceID: String
+    let showsRepository: Bool
+    let availableFields: [ProjectField]
     let status: StatusOption?
     let items: [ProjectItem]
     let emptyMessage: String
@@ -59,6 +61,8 @@ struct KanbanColumn: View {
                                 KanbanCard(
                                     projectID: projectID,
                                     preferenceID: preferenceID,
+                                    showsRepository: showsRepository,
+                                    availableFields: availableFields,
                                     item: item,
                                     allStatuses: allStatuses,
                                     store: store,
@@ -75,6 +79,8 @@ struct KanbanColumn: View {
                                 KanbanCard(
                                     projectID: projectID,
                                     preferenceID: preferenceID,
+                                    showsRepository: showsRepository,
+                                    availableFields: availableFields,
                                     item: item,
                                     allStatuses: allStatuses,
                                     store: store,
@@ -142,7 +148,9 @@ struct KanbanColumn: View {
 
 struct KanbanCard: View {
     let projectID: String
-    var preferenceID: String? = nil
+    let preferenceID: String
+    let showsRepository: Bool
+    let availableFields: [ProjectField]
     let item: ProjectItem
     let allStatuses: [StatusOption]
     @Bindable var store: ProjectStore
@@ -158,7 +166,8 @@ struct KanbanCard: View {
 
     var body: some View {
         Button(action: activateCard) {
-            KanbanCardContent(item: item, project: store.project(id: projectID), preferenceID: preferenceID)
+            KanbanCardContent(item: item, showsRepository: showsRepository,
+                              availableFields: availableFields, preferenceID: preferenceID)
                 .padding(.trailing, isSelecting ? 20 : 0)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)

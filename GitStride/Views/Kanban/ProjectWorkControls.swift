@@ -212,7 +212,7 @@ struct BoardDisplayOptions: View {
     init(project: Project, preferenceID: String, visibleStatusIDs: Binding<Set<String>>) {
         self.project = project
         _visibleStatusIDs = visibleStatusIDs
-        _fields = AppStorage(wrappedValue: "assignees", "projectTable.\(preferenceID).cardFields")
+        _fields = AppStorage(wrappedValue: "assignees", ProjectDisplayPreferences(id: preferenceID).key(for: .cardFields))
     }
 
     var body: some View {

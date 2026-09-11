@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BC0000000000000000000001 /* ProjectDisplayPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000000000000000000002 /* ProjectDisplayPreferences.swift */; };
 		BA0000000000000000000002 /* ProjectWorkControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000002 /* ProjectWorkControls.swift */; };
 		BA0000000000000000000001 /* ProjectWorkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000001 /* ProjectWorkView.swift */; };
 		B9000003 /* Views/ProjectTableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000004 /* Views/ProjectTableTests.swift */; };
@@ -68,6 +69,18 @@
 		1C80C18DA5C64410A2039F07 /* GitHubProjectResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = C889CA74D9304C369C5760E8 /* GitHubProjectResponse.swift */; };
 		F4C4EC6897F848BE861A88A0 /* GitHubResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DBCD291C4B440DEA92DDCC1 /* GitHubResponse.swift */; };
 		2AA6068167E44C96992DFA85 /* GitHubItemAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2FBBF38805B473FB1ACAEF5 /* GitHubItemAddress.swift */; };
+		481568AA2C0A41AEA9696AAF /* ItemAssigneesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200CCB2760E44DB596C60314 /* ItemAssigneesSection.swift */; };
+		95F40CC60C9D4E16A2EE8C4D /* ItemLabelsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 067616FE0D8F4BB582025D8E /* ItemLabelsSection.swift */; };
+		96213ACF191740819FF81303 /* ItemMilestoneSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6D407A095F41C7BAB85F69 /* ItemMilestoneSection.swift */; };
+		3C2B7D323DB347409FD29995 /* ItemPropertySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85B1AD773FC7441F91849A52 /* ItemPropertySection.swift */; };
+		88980FE0BAF047A1A87221B1 /* ItemRelationshipsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 393A98A954EB4E10A1B5C5B7 /* ItemRelationshipsSection.swift */; };
+		3069EB3E513B4854B1AC21D9 /* KanbanColumnsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C5D182101734B84B6F77F9A /* KanbanColumnsView.swift */; };
+		FB4726B9B6864204851AC806 /* ProjectTableRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE21A0911D247109916D351 /* ProjectTableRows.swift */; };
+		B25D980EFC4840B0A60615D9 /* ProjectWorkPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 409B744D9F7140539E4E1D1F /* ProjectWorkPreferences.swift */; };
+		F64E84B907504E47A758E117 /* TableDisplayOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 541867E96D4543D0A75FD19C /* TableDisplayOptions.swift */; };
+		F42F07F625C74252B54C3FE2 /* MenuBarConnectionErrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC96BAC013BA436CA00244F9 /* MenuBarConnectionErrorView.swift */; };
+		DF3F8A19CD864E769BBE7AC2 /* MenuBarControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E357115AA2E4E1C824AFD31 /* MenuBarControls.swift */; };
+		7E11B23897274E1A8C79FFD8 /* Views/ProjectWorkPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE86DAE172A4F919768058D /* Views/ProjectWorkPreferencesTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -81,6 +94,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		BC0000000000000000000002 /* ProjectDisplayPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDisplayPreferences.swift; sourceTree = "<group>"; };
 		BB0000000000000000000002 /* ProjectWorkControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectWorkControls.swift; sourceTree = "<group>"; };
 		BB0000000000000000000001 /* ProjectWorkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectWorkView.swift; sourceTree = "<group>"; };
 		B9000004 /* Views/ProjectTableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ProjectTableTests.swift; sourceTree = "<group>"; };
@@ -145,6 +159,18 @@
 		C889CA74D9304C369C5760E8 /* GitHubProjectResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubProjectResponse.swift; sourceTree = "<group>"; };
 		2DBCD291C4B440DEA92DDCC1 /* GitHubResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubResponse.swift; sourceTree = "<group>"; };
 		D2FBBF38805B473FB1ACAEF5 /* GitHubItemAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubItemAddress.swift; sourceTree = "<group>"; };
+		200CCB2760E44DB596C60314 /* ItemAssigneesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemAssigneesSection.swift; sourceTree = "<group>"; };
+		067616FE0D8F4BB582025D8E /* ItemLabelsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemLabelsSection.swift; sourceTree = "<group>"; };
+		AC6D407A095F41C7BAB85F69 /* ItemMilestoneSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemMilestoneSection.swift; sourceTree = "<group>"; };
+		85B1AD773FC7441F91849A52 /* ItemPropertySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemPropertySection.swift; sourceTree = "<group>"; };
+		393A98A954EB4E10A1B5C5B7 /* ItemRelationshipsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemRelationshipsSection.swift; sourceTree = "<group>"; };
+		4C5D182101734B84B6F77F9A /* KanbanColumnsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanColumnsView.swift; sourceTree = "<group>"; };
+		BFE21A0911D247109916D351 /* ProjectTableRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTableRows.swift; sourceTree = "<group>"; };
+		409B744D9F7140539E4E1D1F /* ProjectWorkPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectWorkPreferences.swift; sourceTree = "<group>"; };
+		541867E96D4543D0A75FD19C /* TableDisplayOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableDisplayOptions.swift; sourceTree = "<group>"; };
+		BC96BAC013BA436CA00244F9 /* MenuBarConnectionErrorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarConnectionErrorView.swift; sourceTree = "<group>"; };
+		4E357115AA2E4E1C824AFD31 /* MenuBarControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarControls.swift; sourceTree = "<group>"; };
+		6BE86DAE172A4F919768058D /* Views/ProjectWorkPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ProjectWorkPreferencesTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -218,6 +244,7 @@
 				A1000036 /* GlobalHotKeyController.swift */,
 				A1000022 /* GitHubCommandRunner.swift */,
 				A1000027 /* ProjectCache.swift */,
+				BC0000000000000000000002 /* ProjectDisplayPreferences.swift */,
 				A1000034 /* ProjectMonitor.swift */,
 				A1000005 /* GitHubService.swift */,
 				A1000006 /* GraphQLQueries.swift */,
@@ -254,6 +281,8 @@
 		A3000006 /* MenuBar */ = {
 			isa = PBXGroup;
 			children = (
+				4E357115AA2E4E1C824AFD31 /* MenuBarControls.swift */,
+				BC96BAC013BA436CA00244F9 /* MenuBarConnectionErrorView.swift */,
 				A1000009 /* MenuBarPopoverView.swift */,
 				A1000049 /* MenuBarItemRow.swift */,
 				A1000010 /* ProjectSelectorView.swift */,
@@ -264,6 +293,10 @@
 		A3000007 /* Kanban */ = {
 			isa = PBXGroup;
 			children = (
+				541867E96D4543D0A75FD19C /* TableDisplayOptions.swift */,
+				409B744D9F7140539E4E1D1F /* ProjectWorkPreferences.swift */,
+				BFE21A0911D247109916D351 /* ProjectTableRows.swift */,
+				4C5D182101734B84B6F77F9A /* KanbanColumnsView.swift */,
 				A1000012 /* KanbanBoardView.swift */,
 				B9000002 /* ProjectTableView.swift */,
 				BB0000000000000000000002 /* ProjectWorkControls.swift */,
@@ -277,6 +310,11 @@
 		A3000008 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				393A98A954EB4E10A1B5C5B7 /* ItemRelationshipsSection.swift */,
+				85B1AD773FC7441F91849A52 /* ItemPropertySection.swift */,
+				AC6D407A095F41C7BAB85F69 /* ItemMilestoneSection.swift */,
+				067616FE0D8F4BB582025D8E /* ItemLabelsSection.swift */,
+				200CCB2760E44DB596C60314 /* ItemAssigneesSection.swift */,
 				D749BF94B5164F1385503B20 /* ProjectManagementViews.swift */,
 				A1000025 /* AddProjectItemView.swift */,
 				A1000038 /* CommandPaletteView.swift */,
@@ -324,6 +362,7 @@
 		A3000013 /* GitStrideTests */ = {
 			isa = PBXGroup;
 			children = (
+				6BE86DAE172A4F919768058D /* Views/ProjectWorkPreferencesTests.swift */,
 				A1000023 /* Services/GitHubServiceTests.swift */,
 				A1000059 /* Store/AutomationSetupModelTests.swift */,
 				B9000004 /* Views/ProjectTableTests.swift */,
@@ -445,6 +484,17 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DF3F8A19CD864E769BBE7AC2 /* MenuBarControls.swift in Sources */,
+				F42F07F625C74252B54C3FE2 /* MenuBarConnectionErrorView.swift in Sources */,
+				F64E84B907504E47A758E117 /* TableDisplayOptions.swift in Sources */,
+				B25D980EFC4840B0A60615D9 /* ProjectWorkPreferences.swift in Sources */,
+				FB4726B9B6864204851AC806 /* ProjectTableRows.swift in Sources */,
+				3069EB3E513B4854B1AC21D9 /* KanbanColumnsView.swift in Sources */,
+				88980FE0BAF047A1A87221B1 /* ItemRelationshipsSection.swift in Sources */,
+				3C2B7D323DB347409FD29995 /* ItemPropertySection.swift in Sources */,
+				96213ACF191740819FF81303 /* ItemMilestoneSection.swift in Sources */,
+				95F40CC60C9D4E16A2EE8C4D /* ItemLabelsSection.swift in Sources */,
+				481568AA2C0A41AEA9696AAF /* ItemAssigneesSection.swift in Sources */,
 				2AA6068167E44C96992DFA85 /* GitHubItemAddress.swift in Sources */,
 				F4C4EC6897F848BE861A88A0 /* GitHubResponse.swift in Sources */,
 				1C80C18DA5C64410A2039F07 /* GitHubProjectResponse.swift in Sources */,
@@ -470,6 +520,7 @@
 				A0000022 /* GitHubCommandRunner.swift in Sources */,
 				A0000036 /* GlobalHotKeyController.swift in Sources */,
 				A0000027 /* ProjectCache.swift in Sources */,
+				BC0000000000000000000001 /* ProjectDisplayPreferences.swift in Sources */,
 				A0000028 /* MyWork.swift in Sources */,
 				A0000006 /* GraphQLQueries.swift in Sources */,
 				A0000007 /* NotificationService.swift in Sources */,
@@ -508,6 +559,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7E11B23897274E1A8C79FFD8 /* Views/ProjectWorkPreferencesTests.swift in Sources */,
 				A0000023 /* Services/GitHubServiceTests.swift in Sources */,
 				A0000059 /* Store/AutomationSetupModelTests.swift in Sources */,
 				B9000003 /* Views/ProjectTableTests.swift in Sources */,
