@@ -23,6 +23,8 @@
 - `ProjectStore` 保持 `@MainActor` 隔离。所有会改变可观察 UI 状态的结果必须回到该 owner 应用。
 - Views 只持有搜索文本、输入草稿、表单校验、焦点、局部展开状态等 surface-local presentation state；不得复制可写的项目集合、当前项目或远程 mutation 状态。
 - 工作区的已保存视图只持久化用户命名、筛选身份和显示偏好；筛选与交付统计从 `ProjectStore` 的完整项目投影派生。看板隐藏列只影响看板呈现，不缩小表格或交付统计的数据范围。
+- `ProjectDisplayPreferences` 集中拥有展示偏好的键集合、项目/保存视图命名空间和复制、删除逻辑；View 通过其键继续使用 `@AppStorage`，不另建可写的偏好快照。
+- `ProjectWorkPreferences` 通过 `@AppStorage` 集中管理已保存工作视图和项目布局的编码、更新及关联展示偏好的复制、删除；看板只持有当前筛选和选择，不维护第二份持久化视图集合。
 - 菜单栏和看板可以采用不同的局部展示状态，但共享项目选择和远程数据。一个 surface 的出现或消失不得重建全局 store。
 - `GitHubService`、`ProjectMonitor` 和 `ProjectCache` 以 actor 隔离外部副作用或后台任务，不发布第二套可观察业务状态。
 - `AutomationService` 是桌面 App 与 Automation Worker 的唯一 HTTP/WebSocket 边界。View 不拼接 Worker 请求、不解析响应，也不接触 management token。
@@ -53,7 +55,9 @@
 - 远程响应先转换为 `Models` 中的明确类型，再进入 Store。不要让 GraphQL 响应容器成为 View 的长期接口。
 - 状态移动的乐观展示只保存进行中操作的目标字段值，不修改已确认快照。成功时在最新快照提交目标字段，失败时只移除本次操作的展示值；展示投影不进入缓存。
 - 同一 Project item 的状态、字段和成员移除操作共用冲突控制；内容修改按 `contentId` 共用冲突控制，并更新或刷新全部已加载的关联项目、失效关联详情缓存。内容 mutation 与项目读取重叠时，旧读取不得提交，包括当时尚未加载出内容关联的新项目。
+- 内容 mutation 的内部入口必须指定应用补丁或刷新关联项目。补丁在受保护的写入阶段提交，项目补刷在该阶段结束后发起；缓存保存和需要主动重载的详情由同一入口编排。
 - 创建、删除、指派和状态移动都通过 `ProjectStore` 编排，以维持菜单栏与看板窗口的一致状态。
+- Issue 创建由 `ProjectStore` 创建和更新 `IssueCreation` 操作，View 只持有只读引用。操作在内存中保留原项目、已确认身份、未完成字段和下一阶段；恢复只继续未完成步骤。已经取得身份或创建结果不确定时，不得重新执行创建命令；操作引用释放后不提供跨启动恢复。
 
 ## 本地持久化与可重建状态
 
@@ -73,6 +77,7 @@
 - 运行时目标 Project 的 Status 选项先按模板名称精确匹配，再做仅忽略大小写的匹配；空格及其它字符仍须一致。用户选择 `Move to In review` 时，Worker 仅在 Ready PR 的 closing Issue 已精确定位于该 Project 后，才复用对应选项，或在缺失时保留全部现有 option identity 并添加橙色 `In review`；用户选择 `Keep in In progress` 时不得添加选项。任何策略都不得自动添加 `Backlog`。
 - PR 事件通过 Queue 延迟 3 秒后重新读取当前事实；恢复未入队事件保留该延迟，installation 生命周期事件不增加此延迟。关联 closing PR 非空且全部合并才写 Done；任一打开的 Draft 优先写 In Progress，否则存在打开的 Ready 时使用配置的 Ready 策略。这两类打开 PR 即使 Issue 已关闭也参与计算；没有打开 PR 且未全部合并时，仅对仍打开且全部 PR 未合并关闭的 Issue 写 In Progress，其余不修改。
 - Worker 确认至少一次 Project Status 写入或 automation 连接健康发生变化后，通过按 automation 隔离的 Durable Object WebSocket 只发送带单调 revision 的分类失效事件，不发送 Project 或 Issue 内容。App 收到任一事件后重新加载 automation 连接状态；Project 数据变化或初次连接事件还会刷新当前和 followed Project 快照，以补偿 App 未运行期间错过的事件。
+- Gateway 在每次确认 Status 写入后向 Runner 回执；Runner 在本轮调用中保留该事实，包括 OAuth 重试和后续目标失败的情况，并在处理 delivery 结果后发送项目数据失效通知。回执不替代原有错误分类、重试或停用流程。
 - 已存在的账户级 automation 通过完成 OAuth 与 installation 归属验证的 setup session 恢复本机管理权限；恢复保留原映射和启停状态，不创建重复 automation。管理 token 在本机 Keychain 保存后才提交，服务端只保存其哈希，重复提交不得重复授予凭据。
 - 桌面 App 原有 `gh` 认证继续只服务交互式浏览与编辑；后台 automation 不读取或复制本机 `gh` token。
 - Worker 为完成自动化会瞬时接收 GitHub Project Item 响应，但应用层只传播必要 identity 字段，不持久化或记录私人 Issue 内容，也不保存 Issue 到 Project Item 的映射。
