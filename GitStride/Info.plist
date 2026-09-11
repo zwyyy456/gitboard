@@ -23,7 +23,7 @@
 	<key>GitStrideAutomationBaseURL</key>
 	<string>$(GITBOARD_AUTOMATION_BASE_URL)</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2024 Yogesh. All rights reserved.</string>
+	<string>Copyright © 2024 zwyyy456. All rights reserved.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>SUFeedURL</key>

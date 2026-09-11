@@ -107,4 +107,4 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ## Author
 
-Built by [Yogesh](https://yogesh.co?utm_source=gitstride_repo)
+Built by [zwyyy456](https://github.com/zwyyy456)
