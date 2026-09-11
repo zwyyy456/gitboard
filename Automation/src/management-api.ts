@@ -3,7 +3,7 @@ import {
     authenticateManagementRequest,
     ManagementAuthenticationError,
 } from "./management-auth";
-import { createReauthorizationSession } from "./setup-api";
+import { createReauthorizationSession } from "./setup-session";
 
 interface AutomationRecord {
     id: string;
