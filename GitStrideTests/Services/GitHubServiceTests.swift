@@ -3,6 +3,43 @@ import Testing
 @testable import GitStride
 
 struct GitHubServiceTests {
+    @Test(arguments: ["Issue", "PullRequest"])
+    func previewsItemURLWithoutAddingIt(_ typename: String) async throws {
+        let path = typename == "Issue" ? "issues" : "pull"
+        let url = "https://github.com/octocat/example/\(path)/42"
+        let runner = FixtureGitHubCommandRunner(responses: [
+            """
+            {"data":{"resource":{"__typename":"\(typename)","id":"ITEM","title":"Example item","number":42,"url":"\(url)","repository":{"nameWithOwner":"octocat/example"}}}}
+            """
+        ])
+        let item = try await GitHubService(runner: runner).resolveItem(url: url)
+        #expect(item.id == "ITEM")
+        #expect(item.contentType == (typename == "Issue" ? .issue : .pullRequest))
+        #expect(item.repository == "octocat/example")
+        #expect(item.title == "Example item")
+        #expect(item.number == 42)
+        #expect(item.url == url)
+        let calls = await runner.recordedArguments()
+        #expect(calls.count == 1)
+        #expect(calls[0].contains("query=\(GraphQLQueries.itemAtURL)"))
+        #expect(calls[0].contains("url=\(url)"))
+    }
+
+    @Test func itemURLPreviewReportsMissingItem() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [#"{"data":{"resource":null}}"#])
+        await #expect(throws: GitHubError.graphQLError("Item not found or no longer accessible.")) {
+            try await GitHubService(runner: runner).resolveItem(url: "https://github.com/octocat/example/issues/42")
+        }
+    }
+
+    @Test func itemURLPreviewRejectsNonItemURLBeforeRequesting() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [])
+        await #expect(throws: GitHubError.invalidItemURL) {
+            try await GitHubService(runner: runner).resolveItem(url: "https://github.com/octocat/example")
+        }
+        #expect(await runner.recordedArguments().isEmpty)
+    }
+
     private static let createdProjectResponse = """
         {"data":{"createProjectV2":{"projectV2":{"id":"NEW","title":"New project","number":9,"url":"https://github.com/users/me/projects/9","viewerCanUpdate":true}}}}
         """

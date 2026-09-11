@@ -632,6 +632,19 @@ actor GitHubService {
         }
     }
 
+    func resolveItem(url: String) async throws -> GitHubItemCandidate {
+        guard parseIssueURL(url) != nil else { throw GitHubError.invalidItemURL }
+        let payload: GitHubItemResourcePayload = try await request(
+            GraphQLQueries.itemAtURL,
+            variables: ["url": url],
+            as: GitHubItemResourcePayload.self
+        )
+        guard let candidate = payload.resource else {
+            throw GitHubError.graphQLError("Item not found or no longer accessible.")
+        }
+        return candidate
+    }
+
     func addExistingItem(projectId: String, url: String) async throws {
         guard let item = parseIssueURL(url) else {
             throw GitHubError.invalidItemURL

@@ -1347,6 +1347,10 @@ final class ProjectStore {
         try await gitHubService.searchItems(query: query)
     }
 
+    func resolveItem(url: String) async throws -> GitHubItemCandidate {
+        try await gitHubService.resolveItem(url: url)
+    }
+
     func addExistingItem(url: String) async throws {
         let project = try editableSelectedProject()
         try await performProjectMutation(projectID: project.id) {
