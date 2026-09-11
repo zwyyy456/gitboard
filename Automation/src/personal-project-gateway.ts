@@ -90,13 +90,14 @@ export class PersonalProjectGateway {
 
     async applyStatuses(
         project: PersonalProjectConfiguration,
-        assignments: IssueStatusAssignment[]
+        assignments: IssueStatusAssignment[],
+        onApplied: () => void
     ): Promise<Record<string, ApplyOutcome>> {
         return this.accessTokens.withValidAccessToken(
             project.oauthCredentialID,
             async (accessToken) => {
                 try {
-                    return await this.applyWithToken(accessToken, project, assignments);
+                    return await this.applyWithToken(accessToken, project, assignments, onApplied);
                 } catch (error) {
                     if (error instanceof SetupProjectError) throw mapProjectCatalogError(error);
                     throw error;
@@ -108,7 +109,8 @@ export class PersonalProjectGateway {
     private async applyWithToken(
         accessToken: string,
         template: PersonalProjectConfiguration,
-        assignments: IssueStatusAssignment[]
+        assignments: IssueStatusAssignment[],
+        onApplied: () => void
     ): Promise<Record<string, ApplyOutcome>> {
         const mapping = await this.loadMapping(accessToken, template);
         const projects = await this.projectCatalog.listProjects(
@@ -137,7 +139,8 @@ export class PersonalProjectGateway {
             const projectOutcomes = await this.applyToProject(
                 accessToken,
                 resolution,
-                assignments
+                assignments,
+                onApplied
             );
             for (const [issueNodeID, outcome] of Object.entries(projectOutcomes)) {
                 if (outcome === "APPLIED") outcomes[issueNodeID] = "APPLIED";
@@ -187,7 +190,8 @@ export class PersonalProjectGateway {
     private async applyToProject(
         accessToken: string,
         resolution: ProjectConfigurationResolution,
-        assignments: IssueStatusAssignment[]
+        assignments: IssueStatusAssignment[],
+        onApplied: () => void
     ): Promise<Record<string, ApplyOutcome>> {
         let project = resolution.configuration;
         const resolvedItems = new Map<string, string>();
@@ -243,6 +247,7 @@ export class PersonalProjectGateway {
                 assignment,
                 itemNodeID
             );
+            if (outcomes[assignment.issueNodeID] === "APPLIED") onApplied();
         }
         return outcomes;
     }

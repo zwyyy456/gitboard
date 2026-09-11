@@ -47,7 +47,7 @@ describe("PersonalProjectGateway", () => {
 
         await expect(gateway.applyStatuses(project, [
             assignment("ISSUE", "owner/repository", "IN_REVIEW"),
-        ])).resolves.toEqual({ ISSUE: "APPLIED" });
+        ], vi.fn())).resolves.toEqual({ ISSUE: "APPLIED" });
         expect(writer.updates).toEqual([
             { itemNodeID: "ITEM_1", optionID: "REVIEW_OPTION" },
             { itemNodeID: "ITEM_2", optionID: "PROGRESS_OPTION_2" },
@@ -103,7 +103,7 @@ describe("PersonalProjectGateway", () => {
 
         await expect(gateway.applyStatuses(project, [
             assignment("ISSUE", "owner/repository", "IN_REVIEW"),
-        ])).resolves.toEqual({ ISSUE: "APPLIED" });
+        ], vi.fn())).resolves.toEqual({ ISSUE: "APPLIED" });
         expect(writer.updates).toEqual([
             { itemNodeID: "ITEM_1", optionID: "REVIEW_OPTION" },
             { itemNodeID: "ITEM_2", optionID: "EXACT_OPTION_2" },
@@ -163,7 +163,7 @@ describe("PersonalProjectGateway", () => {
 
         await expect(gateway.applyStatuses(ensureProject, [
             assignment("ISSUE", "owner/repository", "IN_REVIEW"),
-        ])).resolves.toEqual({ ISSUE: "APPLIED" });
+        ], vi.fn())).resolves.toEqual({ ISSUE: "APPLIED" });
         expect(ensureCalls).toEqual([{
             fieldNodeID: "STATUS_FIELD_1",
             optionName: "In review",
@@ -211,7 +211,7 @@ describe("PersonalProjectGateway", () => {
             reviewStatusPolicy: "USE_IN_PROGRESS",
         }, [
             assignment("ISSUE", "owner/repository", "IN_REVIEW"),
-        ])).resolves.toEqual({ ISSUE: "APPLIED" });
+        ], vi.fn())).resolves.toEqual({ ISSUE: "APPLIED" });
         expect(writer.updates).toEqual([
             { itemNodeID: "ITEM_1", optionID: "PROGRESS_OPTION" },
         ]);
@@ -231,7 +231,7 @@ describe("PersonalProjectGateway", () => {
         await expect(gateway.applyStatuses(project, [
             assignment("ISSUE_1", "owner/repo-a", "IN_REVIEW"),
             assignment("ISSUE_2", "owner/repo-b", "DONE"),
-        ])).resolves.toEqual({ ISSUE_1: "APPLIED", ISSUE_2: "APPLIED" });
+        ], vi.fn())).resolves.toEqual({ ISSUE_1: "APPLIED", ISSUE_2: "APPLIED" });
 
         expect(fetchMock.mock.calls.map(([url]) => new URL(url).searchParams.get("q"))).toEqual([
             "repo:owner/repo-a is:issue",
@@ -255,7 +255,7 @@ describe("PersonalProjectGateway", () => {
 
         await expect(makeGateway(writer).applyStatuses(project, [
             assignment("ISSUE", "owner/repository", "IN_PROGRESS"),
-        ])).resolves.toEqual({ ISSUE: "APPLIED" });
+        ], vi.fn())).resolves.toEqual({ ISSUE: "APPLIED" });
         expect(writer.updates).toHaveLength(1);
     });
 
@@ -267,7 +267,7 @@ describe("PersonalProjectGateway", () => {
 
         await expect(makeGateway(writer).applyStatuses(project, [
             assignment("ISSUE", "owner/repository", "IN_PROGRESS"),
-        ])).resolves.toEqual({ ISSUE: "NOT_IN_PROJECT" });
+        ], vi.fn())).resolves.toEqual({ ISSUE: "NOT_IN_PROJECT" });
         expect(writer.updates).toEqual([]);
     });
 
@@ -279,7 +279,7 @@ describe("PersonalProjectGateway", () => {
 
         await expect(makeGateway(writer).applyStatuses(project, [
             assignment("ISSUE", "owner/repository", "IN_PROGRESS"),
-        ])).rejects.toMatchObject({ code: "VISIBILITY_INDETERMINATE" });
+        ], vi.fn())).rejects.toMatchObject({ code: "VISIBILITY_INDETERMINATE" });
         expect(writer.updates).toEqual([]);
     });
 
@@ -291,7 +291,7 @@ describe("PersonalProjectGateway", () => {
 
         await expect(makeGateway(new StubWriter()).applyStatuses(project, [
             assignment("ISSUE", "owner/repository", "IN_PROGRESS"),
-        ])).rejects.toMatchObject({ code: "OAUTH_SCOPE_MISSING" });
+        ], vi.fn())).rejects.toMatchObject({ code: "OAUTH_SCOPE_MISSING" });
     });
 
     test("classifies a rate-limited 403 as transient", async () => {
@@ -302,7 +302,7 @@ describe("PersonalProjectGateway", () => {
 
         await expect(makeGateway(new StubWriter()).applyStatuses(project, [
             assignment("ISSUE", "owner/repository", "IN_PROGRESS"),
-        ])).rejects.toMatchObject({ code: "TRANSIENT_GITHUB_FAILURE" });
+        ], vi.fn())).rejects.toMatchObject({ code: "TRANSIENT_GITHUB_FAILURE" });
     });
 
     test("classifies a server failure before checking the project scope", async () => {
@@ -313,7 +313,7 @@ describe("PersonalProjectGateway", () => {
 
         await expect(makeGateway(new StubWriter()).applyStatuses(project, [
             assignment("ISSUE", "owner/repository", "IN_PROGRESS"),
-        ])).rejects.toMatchObject({ code: "TRANSIENT_GITHUB_FAILURE" });
+        ], vi.fn())).rejects.toMatchObject({ code: "TRANSIENT_GITHUB_FAILURE" });
     });
 
     test("classifies an ordinary 403 as an invalid runtime configuration", async () => {
@@ -324,7 +324,7 @@ describe("PersonalProjectGateway", () => {
 
         await expect(makeGateway(new StubWriter()).applyStatuses(project, [
             assignment("ISSUE", "owner/repository", "IN_PROGRESS"),
-        ])).rejects.toMatchObject({ code: "PROJECT_CONFIGURATION_INVALID" });
+        ], vi.fn())).rejects.toMatchObject({ code: "PROJECT_CONFIGURATION_INVALID" });
     });
 
     test("re-resolves once when the looked-up item was deleted", async () => {
@@ -335,7 +335,7 @@ describe("PersonalProjectGateway", () => {
 
         await expect(makeGateway(writer).applyStatuses(project, [
             assignment("ISSUE", "owner/repository", "DONE"),
-        ])).resolves.toEqual({ ISSUE: "NOT_IN_PROJECT" });
+        ], vi.fn())).resolves.toEqual({ ISSUE: "NOT_IN_PROJECT" });
         expect(writer.updates).toEqual([{ itemNodeID: "OLD_ITEM", optionID: "DONE_OPTION" }]);
     });
 
@@ -347,7 +347,7 @@ describe("PersonalProjectGateway", () => {
 
         await expect(makeGateway(writer).applyStatuses(project, [
             assignment("ISSUE", "owner/repository", "DONE"),
-        ])).resolves.toEqual({ ISSUE: "APPLIED" });
+        ], vi.fn())).resolves.toEqual({ ISSUE: "APPLIED" });
         expect(writer.updates).toEqual([
             { itemNodeID: "OLD_ITEM", optionID: "DONE_OPTION" },
             { itemNodeID: "NEW_ITEM", optionID: "DONE_OPTION" },
