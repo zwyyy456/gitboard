@@ -1,10 +1,75 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { AutomationRunner } from "../src/automation-runner";
 import type { DeliveryMessage } from "../src/index";
-import { PersonalProjectError } from "../src/personal-project-gateway";
+import { PersonalProjectError, PersonalProjectGateway } from "../src/personal-project-gateway";
 import type { IssueWorkflowTruth } from "../src/workflow-models";
 
+afterEach(() => vi.unstubAllGlobals());
+
 describe("AutomationRunner", () => {
+    test.each([
+        ["TRANSIENT_GITHUB_FAILURE", true],
+        ["PROJECT_CONFIGURATION_INVALID", true],
+        ["TRANSIENT_GITHUB_FAILURE", false],
+        ["PROJECT_CONFIGURATION_INVALID", false],
+    ] as const)("publishes confirmed writes before %s (across projects: %s)", async (code, acrossProjects) => {
+        const database = new RunnerDatabase();
+        const notifier = new StubNotifier();
+        const writer = { updateStatus: vi.fn().mockResolvedValueOnce(undefined)
+            .mockRejectedValueOnce(new PersonalProjectError(code)) };
+        vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => itemResponse(
+            acrossProjects ? ["ISSUE"] : ["ISSUE", "ISSUE_2"]
+        )));
+        const gateway = new PersonalProjectGateway(
+            { withValidAccessToken: async (_id, operation) => operation("test-token") },
+            writer, projectCatalog(acrossProjects), "2026-03-10"
+        );
+        const runner = new AutomationRunner(
+            database.binding,
+            new StubTruthReader(acrossProjects ? [issueTruth()] : [issueTruth(), { ...issueTruth(), issueNodeID: "ISSUE_2" }]),
+            gateway, notifier
+        );
+
+        const transient = code === "TRANSIENT_GITHUB_FAILURE";
+        await expect(runner.run(message, 1)).resolves.toEqual(
+            transient ? { action: "retry", delaySeconds: 60 } : { action: "ack" }
+        );
+        expect(writer.updateStatus).toHaveBeenCalledTimes(2);
+        expect(database.deliveryState).toBe(transient ? "RETRYING" : "FAILED");
+        expect(database.errorCode).toBe(code);
+        expect(database.enabled).toBe(transient ? 1 : 0);
+        expect(notifier.calls.map((call) => call.type)).toEqual(
+            transient ? ["project_data_changed"] : ["automation_changed", "project_data_changed"]
+        );
+    });
+
+    test("keeps confirmed writes when OAuth repeats the operation and the retry fails", async () => {
+        const database = new RunnerDatabase();
+        const notifier = new StubNotifier();
+        vi.stubGlobal("fetch", vi.fn()
+            .mockResolvedValueOnce(itemResponse(["ISSUE"]))
+            .mockResolvedValueOnce(itemResponse(["ISSUE"]))
+            .mockResolvedValueOnce(Response.json({}, { status: 503 })));
+        const writer = { updateStatus: vi.fn().mockResolvedValueOnce(undefined)
+            .mockRejectedValueOnce(new PersonalProjectError("OAUTH_REAUTH_REQUIRED", 401)) };
+        let tokenAttempts = 0;
+        const gateway = new PersonalProjectGateway({
+            async withValidAccessToken(_id, operation) {
+                tokenAttempts += 1;
+                try { return await operation("initial-test-token"); }
+                catch (error) { expect(error).toMatchObject({ status: 401 }); }
+                tokenAttempts += 1;
+                return operation("refreshed-test-token");
+            },
+        }, writer, projectCatalog(true), "2026-03-10");
+        const runner = new AutomationRunner(database.binding, new StubTruthReader([issueTruth()]), gateway, notifier);
+
+        await expect(runner.run(message, 1)).resolves.toEqual({ action: "retry", delaySeconds: 60 });
+        expect(tokenAttempts).toBe(2);
+        expect(writer.updateStatus).toHaveBeenCalledTimes(2);
+        expect(database.deliveryState).toBe("RETRYING");
+        expect(notifier.calls).toEqual([{ automationID: "automation", type: "project_data_changed" }]);
+    });
     test("acks an already completed duplicate without reading GitHub again", async () => {
         const database = new RunnerDatabase({ processing_state: "COMPLETED" });
         const truthReader = new StubTruthReader([]);
@@ -154,10 +219,13 @@ class StubGateway {
 
     constructor(private readonly outcomes: Record<string, "APPLIED" | "NOT_IN_PROJECT">) {}
 
-    async applyStatuses(_project: unknown, assignments: unknown[]): Promise<Record<string, "APPLIED" | "NOT_IN_PROJECT">> {
+    async applyStatuses(_project: unknown, assignments: unknown[], onApplied: () => void): Promise<Record<string, "APPLIED" | "NOT_IN_PROJECT">> {
         this.calls += 1;
         this.assignments = assignments;
         if (this.error) throw this.error;
+        for (const outcome of Object.values(this.outcomes)) {
+            if (outcome === "APPLIED") onApplied();
+        }
         return this.outcomes;
     }
 }
@@ -175,6 +243,7 @@ class StubNotifier {
 class RunnerDatabase {
     deliveryState: string;
     attemptCount = 0;
+    enabled = 1;
     errorCode: string | null = null;
     automationHealth: string | null = null;
 
@@ -224,6 +293,9 @@ class RunnerDatabase {
                         } else if (sql.includes("SET processing_state = ?")) {
                             this.deliveryState = String(values[0]);
                             this.errorCode = values[1] == null ? null : String(values[1]);
+                        } else if (sql.includes("SET enabled = 0")) {
+                            this.enabled = 0;
+                            this.automationHealth = String(values[0]);
                         } else if (sql.includes("health_state = 'ACTIVE'")) {
                             this.automationHealth = "ACTIVE";
                         }
@@ -242,5 +314,29 @@ function issueTruth(): IssueWorkflowTruth {
         issueState: "OPEN",
         issueRepositoryNameWithOwner: "owner/issues",
         closingPullRequests: [{ state: "OPEN", isDraft: false }],
+    };
+}
+
+function itemResponse(issueIDs: string[]): Response {
+    return Response.json(issueIDs.map((id) => ({ node_id: `ITEM_${id}`, content: { node_id: id } })), {
+        headers: { "X-OAuth-Scopes": "project" },
+    });
+}
+
+function projectCatalog(acrossProjects: boolean) {
+    return {
+        async listProjects() {
+            return acrossProjects
+                ? [{ nodeID: "PROJECT", number: 1, title: "First" }, { nodeID: "PROJECT_2", number: 2, title: "Second" }]
+                : [{ nodeID: "PROJECT", number: 1, title: "First" }];
+        },
+        async listStatusFields() {
+            return [{ nodeID: "FIELD", name: "Status", options: [
+                { id: "PROGRESS", name: "In Progress" }, { id: "REVIEW", name: "In Review" }, { id: "DONE", name: "Done" },
+            ] }];
+        },
+        async ensureStatusOption(): Promise<{ id: string; name: string }> {
+            throw new Error("Unexpected status option creation");
+        },
     };
 }

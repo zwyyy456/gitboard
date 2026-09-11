@@ -38,7 +38,8 @@ interface WorkflowTruthLoader {
 interface StatusGateway {
     applyStatuses(
         project: PersonalProjectConfiguration,
-        assignments: IssueStatusAssignment[]
+        assignments: IssueStatusAssignment[],
+        onApplied: () => void
     ): Promise<Record<string, "APPLIED" | "NOT_IN_PROJECT">>;
 }
 
@@ -95,6 +96,7 @@ export class AutomationRunner {
         ).bind(new Date().toISOString(), message.deliveryID).run();
         if (started.meta.changes !== 1) return { action: "ack" };
 
+        let didApply = false;
         try {
             const repositoryNodeIDs = await this.loadInstallationRepositoryNodeIDs(
                 automation.installation_id
@@ -115,10 +117,9 @@ export class AutomationRunner {
                 }] : [];
             });
             const outcomes = assignments.length > 0
-                ? await this.projectGateway.applyStatuses(configuration(automation), assignments)
+                ? await this.projectGateway.applyStatuses(configuration(automation), assignments, () => { didApply = true; })
                 : {};
             const hasMissingItem = Object.values(outcomes).includes("NOT_IN_PROJECT");
-            const didApply = Object.values(outcomes).includes("APPLIED");
             if (didApply) {
                 await this.database.prepare(
                     `UPDATE project_automations
@@ -131,13 +132,6 @@ export class AutomationRunner {
                 "COMPLETED",
                 hasMissingItem ? "NOT_IN_PROJECT" : null
             );
-            if (didApply) {
-                await this.publishChange(
-                    message.deliveryID,
-                    automation.automation_id,
-                    "project_data_changed"
-                );
-            }
             console.info("automation_delivery_completed", {
                 deliveryID: message.deliveryID,
                 automationID: automation.automation_id,
@@ -147,7 +141,15 @@ export class AutomationRunner {
             });
             return { action: "ack" };
         } catch (error) {
-            return this.handleFailure(message.deliveryID, automation, error, attempt);
+            return await this.handleFailure(message.deliveryID, automation, error, attempt);
+        } finally {
+            if (didApply) {
+                await this.publishChange(
+                    message.deliveryID,
+                    automation.automation_id,
+                    "project_data_changed"
+                );
+            }
         }
     }
 
