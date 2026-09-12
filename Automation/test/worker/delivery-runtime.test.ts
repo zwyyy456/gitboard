@@ -1,8 +1,10 @@
 import { beforeAll, expect, test } from "vitest";
+import { createExecutionContext, createMessageBatch, getQueueResult } from "cloudflare:test";
 import { AutomationRunner } from "../../src/automation-runner";
-import { failExhaustedDelivery, flushDeliveryOutbox, queueDelivery } from "../../src/delivery-outbox";
+import { flushDeliveryOutbox, queueDelivery } from "../../src/delivery-outbox";
 import { InstallationLifecycleRunner, receiveInstallationWebhook } from "../../src/installation-lifecycle";
 import type { DeliveryMessage } from "../../src/index";
+import worker from "../../src/index";
 import { persistSetupCompletion } from "../../src/setup-completion";
 import { receiveGitHubWebhook } from "../../src/webhook-receiver";
 import { testEnv, initializeDatabase, queueThat, environmentWith, pullRequestWebhookRequest, deliveryState, seedCompletedAutomationDelivery, seedUser, seedConfigurableSetup, completionInput } from "./runtime-fixtures";
@@ -206,8 +208,20 @@ test("fails every nonterminal DLQ state without overwriting terminal deliveries"
             now,
             now
         ).run();
-        await failExhaustedDelivery(testEnv.DB, `dlq-${state}`);
     }
+
+    const batch = createMessageBatch<DeliveryMessage>("gitstride-automation-dlq", states.map((state) => ({
+        id: `message-${state}`,
+        timestamp: new Date(now),
+        attempts: 1,
+        body: { deliveryID: `dlq-${state}` },
+    })));
+    await worker.queue(batch, environmentWith(queueThat(async () => {
+        throw new Error("Exhausted deliveries must not be queued again");
+    })));
+    const outcome = await getQueueResult(batch, createExecutionContext());
+    expect(outcome.explicitAcks).toEqual(states.map((state) => `message-${state}`));
+    expect(outcome.retryMessages).toEqual([]);
 
     const deliveries = await testEnv.DB.prepare(
         `SELECT delivery_id, processing_state, error_code
