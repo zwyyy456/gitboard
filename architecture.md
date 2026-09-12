@@ -6,6 +6,12 @@
 - 适用平台：macOS 14+
 - 职责：定义 GitStride 当前长期工程边界；不定义产品功能、视觉设计或发布流程
 
+## 产品与发行标识
+
+- 英文产品名和 macOS 应用名使用 `GitStride`；README 标题、中文介绍和关于页使用 `GitStride · 迹程`。中文名只用于展示，不进入工程、Swift 模块或安装包文件名。
+- 工程与 Swift 类型名前缀使用 `GitStride`，新命名的仓库、命令和包名前缀使用 `gitstride`，客户端专属构建变量使用 `GITSTRIDE_`。既有仓库和 Automation 包名随对应组件迁移调整；描述平台或业务职责的类型名不加品牌前缀。
+- 品牌改名保留既有 Bundle ID、Keychain service、`Application Support/GitStride/` 缓存目录及 Sparkle 公钥和 `gitstride` 签名账户，以延续安装身份、凭据、缓存和更新签名。线上仓库、官网和 Automation 资源地址独立于客户端品牌，只随实际资源迁移调整。
+
 ## App、Scene 与依赖方向
 
 - `GitStrideApp` 是 composition root，创建 app-lifetime 的 `GitStrideModel`，并装配 `MenuBarExtra`、工作区窗口、快速新增窗口和设置窗口。

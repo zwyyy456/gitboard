@@ -908,8 +908,8 @@
 				DEVELOPMENT_TEAM = G38CM6VNCC;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				GITBOARD_OAUTH_CLIENT_ID = Ov23li10dlnS6KhCAKFE;
-				GITBOARD_AUTOMATION_BASE_URL = "https://gitstride-automation.zwyyy456.workers.dev";
+				GITSTRIDE_OAUTH_CLIENT_ID = Ov23li10dlnS6KhCAKFE;
+				GITSTRIDE_AUTOMATION_BASE_URL = "https://gitstride-automation.zwyyy456.workers.dev";
 				INFOPLIST_FILE = GitStride/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -938,8 +938,8 @@
 				DEVELOPMENT_TEAM = G38CM6VNCC;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				GITBOARD_OAUTH_CLIENT_ID = Ov23li10dlnS6KhCAKFE;
-				GITBOARD_AUTOMATION_BASE_URL = "https://gitstride-automation.zwyyy456.workers.dev";
+				GITSTRIDE_OAUTH_CLIENT_ID = Ov23li10dlnS6KhCAKFE;
+				GITSTRIDE_AUTOMATION_BASE_URL = "https://gitstride-automation.zwyyy456.workers.dev";
 				INFOPLIST_FILE = GitStride/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -1002,8 +1002,8 @@
 				DEVELOPMENT_TEAM = G38CM6VNCC;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				GITBOARD_OAUTH_CLIENT_ID = Ov23li10dlnS6KhCAKFE;
-				GITBOARD_AUTOMATION_BASE_URL = "https://gitstride-automation.zwyyy456.workers.dev";
+				GITSTRIDE_OAUTH_CLIENT_ID = Ov23li10dlnS6KhCAKFE;
+				GITSTRIDE_AUTOMATION_BASE_URL = "https://gitstride-automation.zwyyy456.workers.dev";
 				INFOPLIST_FILE = GitStride/Info-AppStore.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -1034,8 +1034,8 @@
 				DEVELOPMENT_TEAM = G38CM6VNCC;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				GITBOARD_OAUTH_CLIENT_ID = Ov23li10dlnS6KhCAKFE;
-				GITBOARD_AUTOMATION_BASE_URL = "https://gitstride-automation.zwyyy456.workers.dev";
+				GITSTRIDE_OAUTH_CLIENT_ID = Ov23li10dlnS6KhCAKFE;
+				GITSTRIDE_AUTOMATION_BASE_URL = "https://gitstride-automation.zwyyy456.workers.dev";
 				INFOPLIST_FILE = GitStride/Info-AppStore.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";

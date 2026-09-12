@@ -1,4 +1,4 @@
-# GitStride
+# GitStride · 迹程
 
 A native macOS app for GitHub Projects. Keep your board in the menu bar, organize work in Board or Table, and edit issues without switching to the browser.
 
@@ -64,7 +64,7 @@ Open Draft PRs keep an Issue In Progress. Ready PRs follow your selected review 
 
 Pause, resume, reauthorize, or delete the connection in Automation settings. Deleting the connection stops future automation processing; it does not undo earlier changes to GitHub Project statuses. To revoke GitHub access completely, also remove the OAuth authorization under [Authorized OAuth Apps](https://github.com/settings/applications) and uninstall the GitHub App under [Installed GitHub Apps](https://github.com/settings/installations).
 
-For deployment on your own Cloudflare account, see [Automation setup and deployment](Automation/README.md). Source builds can use a different service origin or disable Automation with an empty `GITBOARD_AUTOMATION_BASE_URL` build setting.
+For deployment on your own Cloudflare account, see [Automation setup and deployment](Automation/README.md). Source builds can use a different service origin or disable Automation with an empty `GITSTRIDE_AUTOMATION_BASE_URL` build setting.
 
 ## Data and privacy
 
@@ -94,15 +94,15 @@ Report reproducible problems in [GitHub Issues](https://github.com/zwyyy456/GitS
 The current development toolchain is Xcode 26.5. macOS 14 is the app's deployment target, not the required version of Xcode.
 
 ```bash
-git clone https://github.com/zwyyy456/GitStride.git
-cd GitStride
+git clone https://github.com/zwyyy456/GitStride.git gitstride
+cd gitstride
 xcodebuild -project GitStride.xcodeproj -scheme GitStride \
   -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
 ```
 
 For running from Xcode, open `GitStride.xcodeproj`, select the GitStride target, and choose your own development team under Signing & Capabilities. Sparkle uses hardened-runtime library validation, so an unsigned compile check does not establish that the app can launch locally.
 
-The `GITBOARD_OAUTH_CLIENT_ID` build setting is a public desktop OAuth App ID. For your own distribution, register an OAuth App, enable Device Flow, and set its Client ID on both app targets. Do not embed a Client Secret. The App Store scheme is `GitStrideAppStore`; select the appropriate signing setup for that distribution.
+The `GITSTRIDE_OAUTH_CLIENT_ID` build setting is a public desktop OAuth App ID. For your own distribution, register an OAuth App, enable Device Flow, and set its Client ID on both app targets. Do not embed a Client Secret. The App Store scheme is `GitStrideAppStore`; select the appropriate signing setup for that distribution.
 
 See [validation commands](docs-index.md#5-常用验证命令), [architecture](architecture.md), and the [release guide](docs/releasing.md). Worker development separately requires Node.js 22 or later; instructions are in [Automation/README.md](Automation/README.md).
 
