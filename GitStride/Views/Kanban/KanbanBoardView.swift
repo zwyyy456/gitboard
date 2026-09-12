@@ -283,15 +283,13 @@ struct KanbanBoardView: View {
     private func workControls(_ project: Project) -> ProjectWorkControls {
         ProjectWorkControls(
             project: project, items: project.items,
-            displayedCount: displayedItems(in: project).count,
+            matchingCount: filteredItems(for: project.items).count,
             currentUserLogin: store.currentUserLogin,
             savedViews: workPreferences.views.filter { $0.projectID == project.id }, selectedViewID: selectedViewID,
             filter: $workFilter, searchText: $searchText,
             selectView: selectWorkView,
             saveView: { viewName = selectedSavedView?.name ?? ""; showsSaveView = true },
-            updateView: updateCurrentView, deleteView: deleteCurrentView,
-            hiddenStatusCount: usesTable ? 0 : project.statusOptions.count - visibleStatuses(in: project).count,
-            showAllColumns: { visibleStatusBinding(project).wrappedValue = Set(project.statusOptions.map(\.id)) }
+            updateView: updateCurrentView, deleteView: deleteCurrentView
         )
     }
 
@@ -315,23 +313,6 @@ struct KanbanBoardView: View {
                 }
             }
         })
-    }
-
-    private func displayedItems(in project: Project) -> [ProjectItem] {
-        let items = filteredItems(for: project.items)
-        guard !usesTable else { return items }
-        let visibleIDs = Set(visibleStatuses(in: project).map(\.id))
-        let knownIDs = Set(project.statusOptions.map(\.id))
-        return items.filter { item in
-            guard let id = item.statusOptionId, knownIDs.contains(id) else { return true }
-            return visibleIDs.contains(id)
-        }
-    }
-
-    private func clearFilters(_ project: Project) {
-        workFilter = ProjectWorkFilter()
-        searchText = ""
-        visibleStatusBinding(project).wrappedValue = Set(project.statusOptions.map(\.id))
     }
 
     private func selectWorkView(_ view: SavedProjectWorkView?) {
@@ -544,14 +525,6 @@ struct KanbanBoardView: View {
                     reportError: report
                 )
                 .id(tablePreferenceID)
-            } else if displayedItems(in: project).isEmpty {
-                ContentUnavailableView {
-                    Label("No Matching Items", systemImage: "line.3.horizontal.decrease.circle")
-                } description: {
-                    Text("Try removing filters or changing your search.")
-                } actions: {
-                    Button("Clear Filters") { clearFilters(project) }
-                }
             } else {
                 boardContent(project)
             }
@@ -606,7 +579,7 @@ struct KanbanBoardView: View {
         KanbanColumnsView(
             store: store, project: project, items: filteredItems(for: project.items),
             statuses: visibleStatuses(in: project), preferenceID: tablePreferenceID,
-            emptyMessage: searchText.isEmpty ? "No items" : "No matching items",
+            emptyMessage: workFilter.isActive || !searchText.isEmpty ? "No matching items" : "No items",
             isSelecting: isSelecting, selectedItemIDs: $selectedItemIDs,
             showInspector: openItemDetail, reportError: report
         )
