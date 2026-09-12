@@ -95,7 +95,7 @@ struct ProjectTableView: View {
                     } description: {
                         Text("Try removing filters or changing your search.")
                     } actions: {
-                        Button("Clear Filters", action: workControls.clearAll)
+                        Button("Clear Filters", action: workControls.clearFilters)
                     }
                 }
             }

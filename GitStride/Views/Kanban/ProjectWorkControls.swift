@@ -3,7 +3,7 @@ import SwiftUI
 struct ProjectWorkControls: View {
     let project: Project
     let items: [ProjectItem]
-    let displayedCount: Int
+    let matchingCount: Int
     let currentUserLogin: String?
     let savedViews: [SavedProjectWorkView]
     let selectedViewID: String?
@@ -13,8 +13,6 @@ struct ProjectWorkControls: View {
     let saveView: () -> Void
     let updateView: () -> Void
     let deleteView: () -> Void
-    let hiddenStatusCount: Int
-    let showAllColumns: () -> Void
 
     private var milestones: [ProjectPlanningReference] { unique(items.compactMap(\.milestone)) }
     private var parents: [ProjectPlanningReference] { unique(items.compactMap(\.parentIssue)) }
@@ -48,14 +46,13 @@ struct ProjectWorkControls: View {
                             }
                             if filter.completion != .all { chip(filter.completion.rawValue) { filter.completion = .all } }
                             if !searchText.isEmpty { chip("Search: \(searchText)") { searchText = "" } }
-                            if hiddenStatusCount > 0 { chip("\(hiddenStatusCount) hidden columns", remove: showAllColumns) }
-                            Button("Clear All", action: clearAll).buttonStyle(.link)
+                            Button("Clear Filters", action: clearFilters).buttonStyle(.link)
                         }.padding(.vertical, 1)
                     }
-                    Text("\(displayedCount) of \(items.count)")
+                    Text("\(matchingCount) of \(items.count) match")
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                         .fixedSize()
-                        .accessibilityLabel("\(displayedCount) of \(items.count) items")
+                        .accessibilityLabel("\(matchingCount) of \(items.count) items match")
                 }
                 if filter.isDelivery { deliverySummary }
             }
@@ -81,7 +78,7 @@ struct ProjectWorkControls: View {
 
     @ViewBuilder
     var filterMenuContents: some View {
-        Text("\(displayedCount) of \(items.count) items")
+        Text("\(matchingCount) of \(items.count) items match")
         Section("Filter") {
             Toggle("Assigned to Me", isOn: $filter.assignedToMe).disabled(currentUserLogin == nil)
             Menu("Status") {
@@ -129,8 +126,8 @@ struct ProjectWorkControls: View {
                 }
             }
         }
-        Button("Clear Filters", action: clearAll)
-            .disabled(!filter.isActive && searchText.isEmpty && hiddenStatusCount == 0)
+        Button("Clear Filters", action: clearFilters)
+            .disabled(!filter.isActive && searchText.isEmpty)
     }
 
     @ViewBuilder
@@ -148,10 +145,9 @@ struct ProjectWorkControls: View {
             }
     }
 
-    func clearAll() {
+    func clearFilters() {
         filter = ProjectWorkFilter()
         searchText = ""
-        showAllColumns()
     }
 
     private var deliverySummary: some View {
@@ -227,7 +223,8 @@ struct BoardDisplayOptions: View {
                 }
             }
             Menu("Board Columns") {
-                Button("Show All") { visibleStatusIDs = Set(project.statusOptions.map(\.id)) }
+                Text("\(visibleStatusIDs.count) of \(project.statusOptions.count) columns shown")
+                Button("Show All Columns") { visibleStatusIDs = Set(project.statusOptions.map(\.id)) }
                 ForEach(project.statusOptions) { status in
                     Toggle(status.name, isOn: Binding(get: { visibleStatusIDs.contains(status.id) }, set: { enabled in
                         if enabled { visibleStatusIDs.insert(status.id) } else { visibleStatusIDs.remove(status.id) }
