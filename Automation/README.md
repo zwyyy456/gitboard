@@ -174,17 +174,25 @@ npm run config:check
 
 ### 3. Provision Cloudflare resources
 
-The production D1 database and both Queues are already provisioned, and
-`wrangler.jsonc` contains the database binding. Authenticate Wrangler and verify
-that the configured resources are visible before release:
+For a new deployment, authenticate Wrangler and create resources in your own
+Cloudflare account. The checked-in D1 database ID belongs to the maintainer's
+deployment; replace it with the ID returned by your create command:
 
 ```bash
 cd Automation
 npx wrangler login
 npx wrangler whoami
-npx wrangler d1 info gitstride-automation
-npx wrangler queues list
+npx wrangler d1 create gitstride-automation
+npx wrangler queues create gitstride-automation
+npx wrangler queues create gitstride-automation-dlq
 ```
+
+Set `d1_databases[0].database_id` in `wrangler.jsonc` to your database ID.
+Keep the configured queue names, since the consumer uses the dead-letter queue
+name to select its handler. For an existing deployment, use `wrangler d1 info
+gitstride-automation` and `wrangler queues list` to inspect the existing resources
+instead of creating them again. The configured Durable Object is provisioned
+by the Worker deployment migration.
 
 Apply the schema before serving setup or webhook traffic. Cloudflare records a
 backup when applying remote D1 migrations:
