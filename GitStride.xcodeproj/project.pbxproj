@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BE0000000000000000000001 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000000000000000000002 /* WelcomeView.swift */; };
 		BD0000000000000000000001 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = BD0000000000000000000002 /* LICENSE */; };
 		BC0000000000000000000001 /* ProjectDisplayPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000000000000000000002 /* ProjectDisplayPreferences.swift */; };
 		BA0000000000000000000002 /* ProjectWorkControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000002 /* ProjectWorkControls.swift */; };
@@ -114,6 +115,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		BE0000000000000000000002 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		BD0000000000000000000002 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = SOURCE_ROOT; };
 		BC0000000000000000000002 /* ProjectDisplayPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDisplayPreferences.swift; sourceTree = "<group>"; };
 		BB0000000000000000000002 /* ProjectWorkControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectWorkControls.swift; sourceTree = "<group>"; };
@@ -362,6 +364,7 @@
 		A3000008 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				BE0000000000000000000002 /* WelcomeView.swift */,
 				393A98A954EB4E10A1B5C5B7 /* ItemRelationshipsSection.swift */,
 				85B1AD773FC7441F91849A52 /* ItemPropertySection.swift */,
 				AC6D407A095F41C7BAB85F69 /* ItemMilestoneSection.swift */,
@@ -583,6 +586,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DA0000000000000000000004 /* GitHubSettingsView.swift in Sources */,
+				BE0000000000000000000001 /* WelcomeView.swift in Sources */,
 				DA0000000000000000000003 /* GitHubAuthentication.swift in Sources */,
 				DA0000000000000000000002 /* GitHubCredentialStore.swift in Sources */,
 				DA0000000000000000000001 /* GitHubHTTPClient.swift in Sources */,
@@ -688,6 +692,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DA0000000000000000000004 /* GitHubSettingsView.swift in Sources */,
+				BE0000000000000000000001 /* WelcomeView.swift in Sources */,
 				DA0000000000000000000003 /* GitHubAuthentication.swift in Sources */,
 				DA0000000000000000000002 /* GitHubCredentialStore.swift in Sources */,
 				DA0000000000000000000001 /* GitHubHTTPClient.swift in Sources */,

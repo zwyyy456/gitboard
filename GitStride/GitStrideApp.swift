@@ -16,6 +16,8 @@ extension EnvironmentValues {
 @main
 struct GitStrideApp: App {
     @State private var model = GitStrideModel()
+    @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
+    @State private var isShowingWelcome = false
     @State private var menuBarWindow: NSWindow?
     @State private var requestsProjectBoard = false
     @State private var requestedItemReference: ItemInspectorReference?
@@ -28,7 +30,18 @@ struct GitStrideApp: App {
                 requestsProjectBoard: $requestsProjectBoard
             )
                 .id(model.connectionID)
+                .sheet(isPresented: $isShowingWelcome) {
+                    WelcomeView()
+                }
                 .onAppear {
+                    if !hasSeenWelcome {
+                        let defaults = UserDefaults.standard
+                        let hasAccountSetup = defaults.object(forKey: "githubAuthenticationMethod") != nil
+                            || defaults.object(forKey: "githubSignedOut") != nil
+                            || defaults.object(forKey: "selectedOwnerId") != nil
+                        isShowingWelcome = !hasAccountSetup && model.projectStore.currentAccount == nil
+                        hasSeenWelcome = true
+                    }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         NSApp.activate(ignoringOtherApps: true)
                     }
@@ -39,7 +52,9 @@ struct GitStrideApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
-            GitStrideCommands(store: model.projectStore)
+            GitStrideCommands(store: model.projectStore) {
+                isShowingWelcome = true
+            }
         }
 
         MenuBarExtra {
@@ -155,6 +170,7 @@ struct GitStrideApp: App {
 
 private struct GitStrideCommands: Commands {
     @Bindable var store: ProjectStore
+    let showWelcome: () -> Void
     @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.workspaceCommandContext) private var workspaceCommandContext
 
@@ -162,6 +178,14 @@ private struct GitStrideCommands: Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About GitStride") {
                 openWindow(id: "about")
+            }
+        }
+
+        CommandGroup(after: .help) {
+            Button("Welcome to GitStride…") {
+                openWindow(id: "kanban-board")
+                showWelcome()
+                NSApp.activate(ignoringOtherApps: true)
             }
         }
 

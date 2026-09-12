@@ -23,9 +23,11 @@ A native macOS app for GitHub Projects. Keep your board in the menu bar, organiz
 
 1. Download GitStride from [gitstride.zwyyy456.tech](https://gitstride.zwyyy456.tech) or [GitHub Releases](https://github.com/zwyyy456/GitStride/releases).
 2. Open the DMG and drag GitStride into Applications.
-3. Open **Settings → GitHub → Account → Log In to GitHub**.
+3. On first launch, choose **Open GitHub Settings** in the welcome window, then **Log In to GitHub**. You can also open **Settings → GitHub → Account** directly.
 4. Choose **Copy Code and Open GitHub**, paste the code into GitHub’s Device activation page, and approve access.
 5. Choose your personal account or organization and select a Project.
+
+The welcome window appears once for new installations. Choose **Set Up Later** to skip it, or reopen it at any time from **Help → Welcome to GitStride…**. Existing account setups continue directly to the workspace. Pull request automation is optional and can be configured later.
 
 Desktop OAuth requests `repo project read:org offline_access`. GitHub’s `repo` scope includes reading and writing repository code, including private repositories; it is broader than board access. Login and refresh credentials stay in macOS Keychain.
 
