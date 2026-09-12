@@ -3,8 +3,8 @@
 ## Project Facts
 
 - GitStride is a native SwiftUI menu bar app for macOS 14+, built from `GitStride.xcodeproj` with the `GitStride` scheme.
-- The app uses GitHub CLI (`gh`) for authentication and GitHub GraphQL/API access, and uses Sparkle for updates.
-- The repository contains the `GitStride` application target and a focused `GitStrideTests` unit test target.
+- Both distributions use OAuth Device Flow and URLSession for GitHub access. The GitHub Release target also supports existing `gh` credentials and Sparkle updates.
+- The repository contains `GitStride` (GitHub Release), `GitStrideAppStore` (sandboxed OAuth-only) and the focused `GitStrideTests` unit test target.
 - `docs-index.md` is the command and document index; it does not define engineering rules.
 
 ## Document Routing

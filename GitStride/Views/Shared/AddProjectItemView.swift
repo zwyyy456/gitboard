@@ -223,6 +223,7 @@ struct AddProjectItemView: View {
     }
 
     private var createActionTitle: String {
+        if isWorking { return "Creating…" }
         if let issueCreation {
             switch issueCreation.phase {
             case .addingToProject: return "Retry Adding to Project"

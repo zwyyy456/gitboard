@@ -27,6 +27,7 @@ struct GitStrideApp: App {
                 requestedItemReference: $requestedItemReference,
                 requestsProjectBoard: $requestsProjectBoard
             )
+                .id(model.connectionID)
                 .onAppear {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         NSApp.activate(ignoringOtherApps: true)
@@ -46,6 +47,7 @@ struct GitStrideApp: App {
                 store: model.projectStore,
                 requestedItemReference: $requestedItemReference
             )
+                .id(model.connectionID)
                 .environment(\.dismissMenuBar) { @MainActor @Sendable in
                     menuBarWindow?.close()
                 }
@@ -77,7 +79,7 @@ struct GitStrideApp: App {
         .menuBarExtraStyle(.window)
 
         Window("Command Palette", id: "command-palette") {
-            CommandPaletteView(model: model)
+            CommandPaletteView(model: model).id(model.connectionID)
         }
         .windowResizability(.contentSize)
         .commandsRemoved()
@@ -94,12 +96,13 @@ struct GitStrideApp: App {
                     ContentUnavailableView("Item Unavailable", systemImage: "archivebox")
                 }
             }
+            .id(model.connectionID)
         }
         .defaultSize(width: 980, height: 720)
         .windowResizability(.contentMinSize)
 
         Window("Add to Project", id: "quick-add") {
-            QuickAddWindow(model: model)
+            QuickAddWindow(model: model).id(model.connectionID)
         }
         .defaultSize(
             width: AddProjectItemView.windowDefaultSize.width,
@@ -110,6 +113,7 @@ struct GitStrideApp: App {
 
         Window("New Project", id: "new-project") {
             CreateProjectView(store: model.projectStore) { requestsProjectBoard = true }
+                .id(model.connectionID)
         }
         .defaultSize(width: 480, height: 240)
         .windowResizability(.contentSize)
@@ -118,6 +122,7 @@ struct GitStrideApp: App {
         WindowGroup("Link Repository", id: "link-project-repository", for: String.self) { $projectID in
             if let projectID {
                 LinkProjectRepositoryView(store: model.projectStore, projectID: projectID)
+                    .id(model.connectionID)
             }
         }
         .defaultSize(width: 480, height: 260)
@@ -127,6 +132,7 @@ struct GitStrideApp: App {
         WindowGroup("Delete Project", id: "delete-project", for: String.self) { $projectID in
             if let projectID {
                 DeleteProjectView(model: model, projectID: projectID)
+                    .id(model.connectionID)
             }
         }
         .defaultSize(width: 480, height: 300)

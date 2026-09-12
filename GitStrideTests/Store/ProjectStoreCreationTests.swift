@@ -26,7 +26,7 @@ extension ProjectStoreTests {
             with: #""repositories":{"nodes":[{"nameWithOwner":"acme/linked"}]"#
         )
         if !hasItems { responses[4] = Self.emptyItemsResponse }
-        let (store, cleanup) = makeStore(runner: FixtureGitHubCommandRunner(responses: responses))
+        let (store, cleanup) = makeStore(runner: FixtureGitHubHTTPClient(responses: responses))
         defer { cleanup() }
         await store.loadProjects()
         #expect(store.defaultIssueRepository == "acme/linked")
@@ -39,7 +39,7 @@ extension ProjectStoreTests {
             of: #""repositories":{"nodes":[]"#,
             with: #""repositories":{"nodes":[{"nameWithOwner":"acme/one"},{"nameWithOwner":"acme/two"}]"#
         )
-        let (store, cleanup) = makeStore(runner: FixtureGitHubCommandRunner(responses: responses))
+        let (store, cleanup) = makeStore(runner: FixtureGitHubHTTPClient(responses: responses))
         defer { cleanup() }
         await store.loadProjects()
         #expect(store.defaultIssueRepository.isEmpty)
@@ -50,10 +50,10 @@ extension ProjectStoreTests {
         let repositoryWithLabel = Self.issueRepositoryResponse.replacingOccurrences(
             of: #""nodes":[]"#, with: #""nodes":[{"id":"FEATURE","name":"feature"}]"#
         )
-        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: Self.mutationProjectResponses.map { .response($0) } + [
             .response(Self.issueRepositoryResponse), .failure(.timedOut),
             .response(repositoryWithLabel), .response(Self.createdIssueResponse),
-            .response("CONTENT1"), .response(Self.addedIssueResponse),
+            .response(#"{"node_id":"CONTENT1"}"#), .response(Self.addedIssueResponse),
             .response(Self.mutationFieldsResponse), .response(Self.mutationItemsResponse)
         ])
         let (store, cleanup) = makeStore(runner: runner)
@@ -70,20 +70,20 @@ extension ProjectStoreTests {
         #expect(operation.phase == .ready)
         #expect(operation.canResume)
         #expect(!operation.isRunning)
-        #expect(issueCreationCount(await runner.recordedInputs()) == 0)
+        #expect(issueCreationCount(await runner.recordedBodies()) == 0)
 
         // A ready failure releases the form's operation so the edited draft can be submitted.
         let edited = try store.prepareIssueCreation(repository: "acme/app", title: "Edited", body: "",
                                                     labels: ["feature"], assignees: [])
         try await store.resumeIssueCreation(edited)
         #expect(edited.phase == .completed(issueURL: "https://github.com/acme/app/issues/1"))
-        #expect(issueCreationCount(await runner.recordedInputs()) == 1)
-        let calls = await runner.recordedArguments()
-        #expect(calls.filter { $0.contains("query=\(GraphQLQueries.createLabel)") }.count == 1)
+        #expect(issueCreationCount(await runner.recordedBodies()) == 1)
+        let calls = await runner.recordedRequests()
+        #expect(calls.filter { $0.graphQLQuery == GraphQLQueries.createLabel }.count == 1)
     }
 
     @Test func issueValidationFailureKeepsTheFormEditable() async throws {
-        let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [
+        let runner = FixtureGitHubHTTPClient(responses: Self.mutationProjectResponses + [
             Self.issueRepositoryResponse, #"{"errors":[{"message":"Title can't be blank"}]}"#
         ])
         let (store, cleanup) = makeStore(runner: runner)
@@ -103,8 +103,8 @@ extension ProjectStoreTests {
     }
 
     @Test func creationRejectsRepositoryFromAnotherOwner() async throws {
-        let runner = FixtureGitHubCommandRunner(responses: [])
-        let store = ProjectStore(gitHubService: GitHubService(runner: runner))
+        let runner = FixtureGitHubHTTPClient(responses: [])
+        let store = ProjectStore(gitHubService: GitHubService(http: runner))
         let owner = ProjectOwner(id: "OWNER", login: "me", name: nil, kind: .user)
         do {
             try await store.createProject(
@@ -113,12 +113,12 @@ extension ProjectStoreTests {
             )
             Issue.record("Expected a repository ownership error")
         } catch ProjectStoreError.repositoryOwnerMismatch {}
-        #expect(await runner.recordedArguments().isEmpty)
+        #expect(await runner.recordedRequests().isEmpty)
         #expect(!store.isCreatingProject)
     }
 
     @Test func createdProjectSurvivesFollowupReadFailure() async throws {
-        let runner = FixtureGitHubCommandRunner(responses: [
+        let runner = FixtureGitHubHTTPClient(responses: [
             Self.createdProjectResponse,
             #"{"errors":[{"message":"List unavailable"}]}"#,
             #"{"errors":[{"message":"Details unavailable"}]}"#
@@ -126,7 +126,7 @@ extension ProjectStoreTests {
         let suite = "CreateProjectTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = ProjectStore(gitHubService: GitHubService(runner: runner), defaults: defaults)
+        let store = ProjectStore(gitHubService: GitHubService(http: runner), defaults: defaults)
         let owner = ProjectOwner(id: "OWNER", login: "me", name: nil, kind: .user)
         try await store.createProject(owner: owner, title: "New project")
         #expect(store.selectedProjectId == "NEW")
@@ -135,15 +135,15 @@ extension ProjectStoreTests {
         #expect(!store.isCreatingProject)
         #expect(!store.isLoading)
         #expect(store.operationErrorMessage != nil)
-        #expect(await runner.recordedArguments().count == 3)
+        #expect(await runner.recordedRequests().count == 3)
     }
 
     @Test(arguments: [true, false])
     func createdIssueAppliesFieldsBeforeRefreshingItsProject(setsStatus: Bool) async throws {
         var initial = Self.mutationProjectResponses
         initial[4] = Self.emptyItemsResponse
-        let runner = FixtureGitHubCommandRunner(responses: initial + [
-            Self.issueRepositoryResponse, Self.createdIssueResponse, "CONTENT1",
+        let runner = FixtureGitHubHTTPClient(responses: initial + [
+            Self.issueRepositoryResponse, Self.createdIssueResponse, #"{"node_id":"CONTENT1"}"#,
             Self.addedIssueResponse
         ] + (setsStatus ? [Self.graphQLSuccessResponse] : []) + [
             Self.mutationFieldsResponse, Self.emptyItemsResponse
@@ -158,13 +158,13 @@ extension ProjectStoreTests {
 
         #expect(operation.phase == .completed(issueURL: "https://github.com/acme/app/issues/1"))
         #expect(operation.errorMessage == nil)
-        let calls = Array(await runner.recordedArguments().dropFirst(initial.count + 1))
+        let calls = Array(await runner.recordedRequests().dropFirst(initial.count + 1))
         #expect(calls.count == (setsStatus ? 6 : 5))
-        let fieldWrites = calls.filter { $0.contains("optionId=TODO") }
+        let fieldWrites = calls.filter { $0.hasVariable("optionId", "TODO") }
         if setsStatus {
             let fieldWrite = try #require(fieldWrites.first)
-            #expect(fieldWrite.contains("itemId=NEW_ITEM"))
-            #expect(fieldWrite.contains("projectId=P1"))
+            #expect(fieldWrite.hasVariable("itemId", "NEW_ITEM"))
+            #expect(fieldWrite.hasVariable("projectId", "P1"))
             #expect(calls[3] == fieldWrite)
         } else {
             #expect(fieldWrites.isEmpty)
@@ -175,9 +175,9 @@ extension ProjectStoreTests {
     @Test func createdIssueFinishesInOriginalProjectAndRetryDoesNotRecreateIt() async throws {
         let fields = Self.mutationFieldsResponse
         let items = Self.mutationItemsResponse
-        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: Self.mutationProjectResponses.map { .response($0) } + [
             .response(Self.issueRepositoryResponse), .suspended("create", Self.createdIssueResponse),
-            .response("CONTENT1"), .response(Self.addedIssueResponse),
+            .response(#"{"node_id":"CONTENT1"}"#), .response(Self.addedIssueResponse),
             .response(Self.graphQLFailureResponse),
             .response(Self.graphQLSuccessResponse),
             .response(fields), .response(items)
@@ -206,19 +206,19 @@ extension ProjectStoreTests {
             try await store.resumeIssueCreation(operation)
         }
         #expect(operation.phase == .completed(issueURL: "https://github.com/acme/app/issues/1"))
-        let calls = await runner.recordedArguments()
-        #expect(issueCreationCount(await runner.recordedInputs()) == 1)
-        #expect(calls.filter { $0.contains("optionId=REVIEW") }.count == 2)
-        #expect(calls.filter { $0.contains("optionId=REVIEW") }.allSatisfy { $0.contains("projectId=P1") && $0.contains("itemId=NEW_ITEM") })
+        let calls = await runner.recordedRequests()
+        #expect(issueCreationCount(await runner.recordedBodies()) == 1)
+        #expect(calls.filter { $0.hasVariable("optionId", "REVIEW") }.count == 2)
+        #expect(calls.filter { $0.hasVariable("optionId", "REVIEW") }.allSatisfy { $0.hasVariable("projectId", "P1") && $0.hasVariable("itemId", "NEW_ITEM") })
         #expect(store.selectedProjectId == "P2")
     }
 
     @Test func createdIssueResumesAddingToItsOriginalProject() async throws {
         let fields = Self.mutationFieldsResponse
         let items = Self.mutationItemsResponse
-        let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [
-            Self.issueRepositoryResponse, Self.createdIssueResponse, "CONTENT1", Self.graphQLFailureResponse,
-            "CONTENT1", Self.addedIssueResponse,
+        let runner = FixtureGitHubHTTPClient(responses: Self.mutationProjectResponses + [
+            Self.issueRepositoryResponse, Self.createdIssueResponse, #"{"node_id":"CONTENT1"}"#, Self.graphQLFailureResponse,
+            #"{"node_id":"CONTENT1"}"#, Self.addedIssueResponse,
             Self.graphQLSuccessResponse, fields, items
         ])
         let (store, cleanup) = makeStore(runner: runner)
@@ -237,12 +237,12 @@ extension ProjectStoreTests {
         try await store.resumeIssueCreation(operation)
         try await store.resumeIssueCreation(operation)
         #expect(operation.phase == .completed(issueURL: "https://github.com/acme/app/issues/1"))
-        let calls = await runner.recordedArguments()
-        #expect(issueCreationCount(await runner.recordedInputs()) == 1)
-        let additions = calls.filter { $0.contains("contentId=CONTENT1") }
+        let calls = await runner.recordedRequests()
+        #expect(issueCreationCount(await runner.recordedBodies()) == 1)
+        let additions = calls.filter { $0.hasVariable("contentId", "CONTENT1") }
         #expect(additions.count == 2)
-        #expect(additions.allSatisfy { $0.contains("projectId=P1") })
-        #expect(calls.filter { $0.contains("optionId=REVIEW") }.count == 1)
+        #expect(additions.allSatisfy { $0.hasVariable("projectId", "P1") })
+        #expect(calls.filter { $0.hasVariable("optionId", "REVIEW") }.count == 1)
         #expect(store.selectedProjectId == "P2")
     }
 
@@ -254,8 +254,8 @@ extension ProjectStoreTests {
         let items = Self.mutationItemsResponse
         var initial = Self.mutationProjectResponses
         initial[3] = fields
-        let runner = FixtureGitHubCommandRunner(responses: initial + [
-            Self.issueRepositoryResponse, Self.createdIssueResponse, "CONTENT1", Self.addedIssueResponse,
+        let runner = FixtureGitHubHTTPClient(responses: initial + [
+            Self.issueRepositoryResponse, Self.createdIssueResponse, #"{"node_id":"CONTENT1"}"#, Self.addedIssueResponse,
             Self.graphQLSuccessResponse, Self.graphQLFailureResponse,
             Self.graphQLSuccessResponse, Self.graphQLFailureResponse,
             fields, items
@@ -279,11 +279,11 @@ extension ProjectStoreTests {
         }
         try await store.resumeIssueCreation(operation)
         #expect(operation.phase == .completed(issueURL: "https://github.com/acme/app/issues/1"))
-        let calls = await runner.recordedArguments()
-        #expect(issueCreationCount(await runner.recordedInputs()) == 1)
-        #expect(calls.filter { $0.contains("contentId=CONTENT1") }.count == 1)
-        #expect(calls.filter { $0.contains("optionId=REVIEW") }.count == 1)
-        #expect(calls.filter { $0.contains("optionId=HIGH") }.count == 2)
+        let calls = await runner.recordedRequests()
+        #expect(issueCreationCount(await runner.recordedBodies()) == 1)
+        #expect(calls.filter { $0.hasVariable("contentId", "CONTENT1") }.count == 1)
+        #expect(calls.filter { $0.hasVariable("optionId", "REVIEW") }.count == 1)
+        #expect(calls.filter { $0.hasVariable("optionId", "HIGH") }.count == 2)
     }
 
     @Test(arguments: [
@@ -291,7 +291,7 @@ extension ProjectStoreTests {
         #"{"data":{"createIssue":{"issue":{}}}}"#
     ])
     func creationWithoutAConfirmedIdentityCannotBeResubmitted(response: String) async throws {
-        let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [
+        let runner = FixtureGitHubHTTPClient(responses: Self.mutationProjectResponses + [
             Self.issueRepositoryResponse, response
         ])
         let (store, cleanup) = makeStore(runner: runner)
@@ -312,12 +312,12 @@ extension ProjectStoreTests {
         }
         #expect(operation.phase == .unconfirmed)
         #expect(!operation.canResume)
-        #expect(issueCreationCount(await runner.recordedInputs()) == 1)
+        #expect(issueCreationCount(await runner.recordedBodies()) == 1)
     }
 
     @Test(arguments: [true, false])
     func interruptedCreationKeepsItsOutcomeUnconfirmed(_ cancelled: Bool) async throws {
-        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: Self.mutationProjectResponses.map { .response($0) } + [
             .response(Self.issueRepositoryResponse),
             cancelled ? .cancelled : .failure(.timedOut),
             .suspended("reconcile", Self.mutationFieldsResponse), .response(Self.mutationItemsResponse)
@@ -345,6 +345,6 @@ extension ProjectStoreTests {
         } catch {
             #expect((error as? GitHubError) == .issueCreationUnconfirmed)
         }
-        #expect(issueCreationCount(await runner.recordedInputs()) == 1)
+        #expect(issueCreationCount(await runner.recordedBodies()) == 1)
     }
 }

@@ -26,14 +26,14 @@ extension ProjectStoreTests {
     }
 
     func makeStore(
-        runner: any GitHubCommandRunning
+        runner: any GitHubHTTPClient
     ) -> (ProjectStore, @MainActor () -> Void) {
         let identifier = "GitStrideTests.ProjectStore.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: identifier)!
         let cacheURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(identifier).json")
         let store = ProjectStore(
-            gitHubService: GitHubService(runner: runner),
+            gitHubService: GitHubService(http: runner),
             projectCache: ProjectCache(fileURL: cacheURL),
             defaults: defaults
         )

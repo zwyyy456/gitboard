@@ -10,7 +10,7 @@
 
 ## 1. 项目定位
 
-GitStride 是 macOS 14+ 的原生 SwiftUI 菜单栏应用。工程入口为 `GitStride.xcodeproj`，包含 `GitStride` app target 和聚焦确定性边界的 `GitStrideTests` unit test target；GitHub 数据通过本机 `gh` CLI 与 GitHub GraphQL/API 获取，应用更新由 Sparkle 提供。
+GitStride 是 macOS 14+ 的原生 SwiftUI 菜单栏应用。工程入口为 `GitStride.xcodeproj`，包含 `GitStride`、`GitStrideAppStore` app targets 和聚焦确定性边界的 `GitStrideTests` unit test target；两个发行版通过 URLSession 直接访问 GitHub，Release 版还提供 CLI 凭据来源与 Sparkle。
 
 ## 2. 最短阅读路径
 
@@ -18,7 +18,7 @@ GitStride 是 macOS 14+ 的原生 SwiftUI 菜单栏应用。工程入口为 `Git
 2. `GitStride/Store/GitStrideModel.swift`：app 级组合、My Work 协调、监控和通知动作。
 3. `GitStride/Store/ProjectStore.swift`：远程项目快照真源、目录/选择、加载和 mutation 编排。
 4. `GitStride/Store/MyWorkStore.swift`：关注引用与筛选偏好。
-5. `GitStride/Services/GitHubService.swift`：`gh` 定位、进程执行、GraphQL/API 调用和错误转换。
+5. `GitStride/Services/GitHubService.swift`：GraphQL/API 调用和错误转换；`GitHubAuthentication.swift` 拥有 OAuth/CLI 认证。
 6. `GitStride/Services/ProjectMonitor.swift`：关注项目的后台快照与变化事件流。
 7. `GitStride/Services/GraphQLQueries.swift`：GitHub Projects 查询与 mutation 文本。
 8. `GitStride/Models/Project.swift`、`ProjectItem.swift`、`MyWork.swift`：领域模型、搜索/筛选规则和响应解码结构。
@@ -45,7 +45,7 @@ View task / refresh action
   -> ProjectStore.loadProjects or refresh
   -> optional ProjectCache restore
   -> GitHubService
-  -> gh api graphql
+  -> GitHubAuthentication + URLSession
   -> typed Models
   -> ProjectStore observable state
   -> menu bar and kanban surfaces
@@ -67,7 +67,7 @@ View intent
 View intent
   -> ProjectStore mutation orchestration
   -> optional pending status presentation
-  -> GitHubService GraphQL/API/gh operation
+  -> GitHubService GraphQL/REST operation
   -> commit a patch to the current confirmed snapshot, or remove pending presentation + error
 ```
 

@@ -3,6 +3,12 @@
 [Back to README](../README.md)
 
 
+### GitHub Connection
+
+Open **Settings → GitHub** to log in, change connections, or disconnect. OAuth shows a device code: choose **Copy Code and Open GitHub**, paste it into Device activation, and approve access. You can close Settings while waiting; Cancel stops the login attempt.
+
+The Release build can also use an existing GitHub CLI login. Switching connections clears the previous project cache and pending operations; complete or check any submitted work on GitHub before reconnecting. Background automation keeps its own connection.
+
 ### Menu Bar
 Click the GitStride icon in your menu bar to see your projects. Select a project and browse issues by status.
 

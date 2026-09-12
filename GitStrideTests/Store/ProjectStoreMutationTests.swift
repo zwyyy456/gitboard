@@ -4,7 +4,7 @@ import Testing
 
 extension ProjectStoreTests {
     @Test func itemRejectsASecondStatusMoveWhileOneIsPending() async throws {
-        let runner = SuspendingGitHubCommandRunner(steps:
+        let runner = SuspendingGitHubHTTPClient(steps:
             Self.mutationProjectResponses.map { .response($0) } + [
                 .suspended("status-move", Self.graphQLSuccessResponse)
             ]
@@ -31,7 +31,7 @@ extension ProjectStoreTests {
     }
 
     @Test func archiveKeepsAnotherItemsCompletedStatusMove() async throws {
-        let runner = SuspendingGitHubCommandRunner(steps: try Self.twoItemResponses().map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: try Self.twoItemResponses().map { .response($0) } + [
             .suspended("archive", Self.graphQLSuccessResponse), .response(Self.graphQLSuccessResponse)
         ])
         let (store, cleanup) = makeStore(runner: runner)
@@ -55,7 +55,7 @@ extension ProjectStoreTests {
             of: "\"labels\":{\"nodes\":[]}",
             with: "\"labels\":{\"nodes\":[{\"id\":\"L1\",\"name\":\"bug\",\"color\":\"ffffff\"}]}"
         )
-        let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [
+        let runner = FixtureGitHubHTTPClient(responses: Self.mutationProjectResponses + [
             fields, Self.mutationItemsResponse, fields,
             Self.mutationItemsResponse.replacingOccurrences(of: "Todo", with: "Review")
                 .replacingOccurrences(of: "TODO", with: "REVIEW"),
@@ -109,7 +109,7 @@ extension ProjectStoreTests {
                 .replacingOccurrences(of: "acme/repo", with: "acme/app")
         }
         let fields = Self.mutationFieldsResponse
-        let runner = FixtureGitHubCommandRunner(responses: [
+        let runner = FixtureGitHubHTTPClient(responses: [
             Self.sessionResponse, Self.ownersResponse, Self.projectsResponse,
             fields, itemsResponse(milestone: milestoneA),
             fields, itemsResponse(milestone: milestoneA, secondProject: true),
@@ -165,7 +165,7 @@ extension ProjectStoreTests {
             of: "\"assignees\":{\"nodes\":[]}",
             with: "\"assignees\":{\"nodes\":[{\"login\":\"octocat\",\"avatarUrl\":\"\",\"name\":null}]}"
         )
-        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: Self.mutationProjectResponses.map { .response($0) } + [
             .suspended("new-project", fields), .response(""),
             .response(Self.mutationItemsResponse),
             .suspended("reconcile", fields), .response(updatedItems)
@@ -192,7 +192,7 @@ extension ProjectStoreTests {
     }
 
     @Test func optimisticStatusIsSharedButNeverCachedAndConflictsWithFieldEdits() async throws {
-        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: Self.mutationProjectResponses.map { .response($0) } + [
             .suspended("status", Self.graphQLFailureResponse), .response("")
         ])
         let identifier = "GitStrideTests.Optimistic.\(UUID())"
@@ -203,7 +203,7 @@ extension ProjectStoreTests {
             defaults.removePersistentDomain(forName: identifier)
             try? FileManager.default.removeItem(at: url)
         }
-        let store = ProjectStore(gitHubService: GitHubService(runner: runner), projectCache: cache, defaults: defaults)
+        let store = ProjectStore(gitHubService: GitHubService(http: runner), projectCache: cache, defaults: defaults)
         await store.loadProjects()
         let project = try #require(store.selectedProject)
         let item = try #require(project.items.first)
@@ -232,7 +232,7 @@ extension ProjectStoreTests {
     }
 
     @Test func contentMutationInvalidatesAnInFlightDetailRead() async throws {
-        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: Self.mutationProjectResponses.map { .response($0) } + [
             .suspended("old-detail", Self.itemDetailResponse(body: "Old")), .response(""),
             .response(Self.itemDetailResponse(body: "Updated"))
         ])

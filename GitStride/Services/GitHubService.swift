@@ -1,6 +1,14 @@
 import Foundation
 
 enum GitHubError: Error, LocalizedError, Equatable {
+    case invalidResponse
+    case httpError(Int)
+    case insufficientPermissions
+    case credentialStorage
+    case oauthUnavailable
+    case authorizationDenied
+    case authorizationExpired
+    case accountChanged
     case ghCLINotFound
     case notAuthenticated
     case missingProjectScope
@@ -13,16 +21,24 @@ enum GitHubError: Error, LocalizedError, Equatable {
     case issueCreationNotStarted(String)
     case graphQLError(String)
     case decodingError(String)
-    case processError(String)
+    case connectionError(String)
 
     var errorDescription: String? {
         switch self {
+        case .invalidResponse: return "GitHub returned an invalid response."
+        case .httpError(let status): return "GitHub request failed (HTTP \(status))."
+        case .insufficientPermissions: return "This connection does not have permission for this operation. Check GitHub access in Settings."
+        case .credentialStorage: return "GitStride could not access its GitHub credentials in Keychain."
+        case .oauthUnavailable: return "GitHub login is unavailable. Check the connection and try again."
+        case .authorizationDenied: return "GitHub authorization was declined."
+        case .authorizationExpired: return "The login code expired. Start GitHub login again."
+        case .accountChanged: return "The GitHub account changed. Reconnect in Settings before continuing."
         case .ghCLINotFound:
             return "GitHub CLI (gh) not found. Please install it from https://cli.github.com"
         case .notAuthenticated:
-            return "Not authenticated with GitHub. Run 'gh auth login' in Terminal."
+            return "Connect to GitHub in Settings to continue."
         case .missingProjectScope:
-            return "GitStride needs the GitHub project scope. Run 'gh auth refresh -s project' in Terminal."
+            return "This connection needs GitHub Projects access. Open GitHub settings in GitStride to reconnect."
         case .organizationAccess(let message):
             return message
         case .rateLimited(let resetDescription):
@@ -44,13 +60,13 @@ enum GitHubError: Error, LocalizedError, Equatable {
             return "GitHub API error: \(message)"
         case .decodingError(let message):
             return "Failed to parse GitHub response: \(message)"
-        case .processError(let message):
-            return "GitHub CLI error: \(message)"
+        case .connectionError(let message):
+            return "GitHub connection failed: \(message)"
         }
     }
 }
 
-struct GitHubAccount: Equatable, Sendable {
+struct GitHubAccount: Codable, Equatable, Sendable {
     let id: String
     let login: String
 }
@@ -65,13 +81,24 @@ enum GitHubSessionState: Equatable, Sendable {
 }
 
 actor GitHubService {
-    static let shared = GitHubService()
-
-    private let runner: any GitHubCommandRunning
+    private let http: any GitHubHTTPClient
+    private let credentials: any GitHubAuthenticating
     private let decoder = JSONDecoder()
 
-    init(runner: any GitHubCommandRunning = ProcessGitHubCommandRunner()) {
-        self.runner = runner
+    init(http: any GitHubHTTPClient, credentials: any GitHubAuthenticating) {
+        self.http = http
+        self.credentials = credentials
+    }
+
+    init() {
+        let http = URLSession.gitHubSession()
+        self.http = http
+        self.credentials = GitHubAuthentication(method: .oauth, http: http)
+    }
+
+    func invalidate() async {
+        await credentials.invalidate()
+        await http.cancel()
     }
 
     func inspectSession() async -> GitHubSessionState {
@@ -81,6 +108,8 @@ actor GitHubService {
                 as: GitHubResponse.SessionPayload.self
             )
             return .ready(GitHubAccount(id: payload.viewer.id, login: payload.viewer.login))
+        } catch is CancellationError {
+            return .signedOut
         } catch GitHubError.ghCLINotFound {
             return .missingCLI
         } catch GitHubError.notAuthenticated {
@@ -511,47 +540,34 @@ actor GitHubService {
     }
 
     func addAssignee(issueUrl: String, userLogin: String) async throws {
-        guard let components = GitHubItemAddress(issueUrl) else {
-            throw GitHubError.graphQLError("Invalid issue URL")
-        }
-        _ = try await run([
-            components.command, "edit", String(components.number),
-            "--repo", "\(components.owner)/\(components.repository)",
-            "--add-assignee", userLogin
-        ])
+        try await editIssue(url: issueUrl, suffix: "assignees", method: "POST", body: ["assignees": [userLogin]])
     }
 
     func removeAssignee(issueUrl: String, userLogin: String) async throws {
-        guard let components = GitHubItemAddress(issueUrl) else {
-            throw GitHubError.graphQLError("Invalid issue URL")
-        }
-        _ = try await run([
-            components.command, "edit", String(components.number),
-            "--repo", "\(components.owner)/\(components.repository)",
-            "--remove-assignee", userLogin
-        ])
+        try await editIssue(url: issueUrl, suffix: "assignees", method: "DELETE", body: ["assignees": [userLogin]])
     }
 
     func addLabel(issueUrl: String, label: String) async throws {
-        guard let components = GitHubItemAddress(issueUrl) else {
-            throw GitHubError.invalidItemURL
-        }
-        _ = try await run([
-            components.command, "edit", String(components.number),
-            "--repo", "\(components.owner)/\(components.repository)",
-            "--add-label", label
-        ])
+        try await editIssue(url: issueUrl, suffix: "labels", method: "POST", body: ["labels": [label]])
     }
 
     func removeLabel(issueUrl: String, label: String) async throws {
-        guard let components = GitHubItemAddress(issueUrl) else {
-            throw GitHubError.invalidItemURL
+        try await editIssue(url: issueUrl, suffix: "labels", component: label, method: "DELETE")
+    }
+
+    private func editIssue(url: String, suffix: String, component: String? = nil,
+                           method: String, body: [String: [String]]? = nil) async throws {
+        guard let address = GitHubItemAddress(url) else { throw GitHubError.invalidItemURL }
+        var endpoint = URL(string: "https://api.github.com/repos")!
+            .appendingPathComponent(address.owner).appendingPathComponent(address.repository)
+            .appendingPathComponent("issues").appendingPathComponent(String(address.number))
+            .appendingPathComponent(suffix)
+        if let component {
+            let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+            endpoint = URL(string: endpoint.absoluteString + "/" + component.addingPercentEncoding(withAllowedCharacters: allowed)!)!
         }
-        _ = try await run([
-            components.command, "edit", String(components.number),
-            "--repo", "\(components.owner)/\(components.repository)",
-            "--remove-label", label
-        ])
+        let data = try body.map { try JSONEncoder().encode($0) }
+        _ = try await send(url: endpoint, method: method, body: data, allowsAuthenticationRetry: false)
     }
 
     func createDraftIssue(projectId: String, title: String, body: String) async throws -> String {
@@ -693,16 +709,15 @@ actor GitHubService {
         guard let item = GitHubItemAddress(url) else {
             throw GitHubError.invalidItemURL
         }
-        let result = try await run([
-            "api",
-            "repos/\(item.owner)/\(item.repository)/issues/\(item.number)",
-            "--jq", ".node_id"
-        ])
-        let contentId = String(decoding: result.standardOutput, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard contentId.isEmpty == false else {
+        let endpoint = URL(string: "https://api.github.com/repos")!
+            .appendingPathComponent(item.owner).appendingPathComponent(item.repository)
+            .appendingPathComponent("issues").appendingPathComponent(String(item.number))
+        let data = try await send(url: endpoint, method: "GET", body: nil, allowsAuthenticationRetry: true)
+        struct IssueIdentity: Decodable { let node_id: String }
+        guard let identity = try? decoder.decode(IssueIdentity.self, from: data), !identity.node_id.isEmpty else {
             throw GitHubError.decodingError("GitHub returned no item identifier.")
         }
+        let contentId = identity.node_id
         return try await addExistingItem(projectId: projectId, contentId: contentId)
     }
 
@@ -935,57 +950,36 @@ actor GitHubService {
         arrayVariables: [String: [String]] = [:],
         as type: Payload.Type
     ) async throws -> Payload {
-        var arguments = ["api", "graphql", "-f", "query=\(query)"]
-        for key in variables.keys.sorted() {
-            guard let value = variables[key] else { continue }
-            arguments += ["-f", "\(key)=\(value)"]
-        }
-        var input: Data?
-        if !numberVariables.isEmpty || !arrayVariables.isEmpty {
-            var values: [String: Any] = variables
-            for (key, value) in numberVariables { values[key] = value }
-            for (key, value) in arrayVariables { values[key] = value }
-            input = try JSONSerialization.data(withJSONObject: ["query": query, "variables": values])
-            arguments = ["api", "graphql", "--input", "-"]
-        }
-
-        let result = try await run(arguments, standardInput: input)
+        var values: [String: Any] = variables
+        for (key, value) in numberVariables { values[key] = value }
+        for (key, value) in arrayVariables { values[key] = value }
+        let body = try JSONSerialization.data(withJSONObject: ["query": query, "variables": values])
+        let data = try await send(url: URL(string: "https://api.github.com/graphql")!, method: "POST",
+                                  body: body, allowsAuthenticationRetry: !query.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("mutation"))
         do {
-            let issues = try decoder.decode(GitHubResponse.GraphQLErrorResponse.self, from: result.standardOutput)
+            let issues = try decoder.decode(GitHubResponse.GraphQLErrorResponse.self, from: data)
             if let errors = issues.errors, !errors.isEmpty { throw classifyGraphQLErrors(errors) }
-            let envelope = try decoder.decode(GitHubResponse.GraphQLEnvelope<Payload>.self, from: result.standardOutput)
-            guard let payload = envelope.data else {
-                throw GitHubError.decodingError("GitHub returned no data.")
-            }
+            let envelope = try decoder.decode(GitHubResponse.GraphQLEnvelope<Payload>.self, from: data)
+            guard let payload = envelope.data else { throw GitHubError.invalidResponse }
             return payload
-        } catch let error as GitHubError {
-            throw error
-        } catch {
-            throw GitHubError.decodingError(error.localizedDescription)
-        }
+        } catch let error as GitHubError { throw error }
+        catch { throw GitHubError.decodingError("GitHub returned an unexpected response format.") }
     }
 
-    private func run(_ arguments: [String], standardInput: Data? = nil) async throws -> GitHubCommandResult {
-        do {
-            return try await runner.run(arguments: arguments, standardInput: standardInput)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch GitHubCommandError.executableNotFound {
-            throw GitHubError.ghCLINotFound
-        } catch let error as GitHubCommandError {
-            if arguments.starts(with: ["api", "graphql"]),
-               case .failed(_, _, let output) = error,
-               let response = try? decoder.decode(GitHubResponse.GraphQLErrorResponse.self, from: output),
-               let errors = response.errors, !errors.isEmpty {
-                throw classifyGraphQLErrors(errors)
+    private func send(url: URL, method: String, body: Data?, allowsAuthenticationRetry: Bool) async throws -> Data {
+        let token = try await credentials.accessToken()
+        var (data, response) = try await http.send(GitHubHTTP.request(url: url, method: method, token: token, body: body))
+        try await credentials.checkActive()
+        if response.statusCode == 401 {
+            await credentials.rejectAccessToken(token)
+            if allowsAuthenticationRetry {
+                let replacement = try await credentials.accessToken()
+                (data, response) = try await http.send(GitHubHTTP.request(url: url, method: method, token: replacement, body: body))
+                try await credentials.checkActive()
             }
-            let message = error.localizedDescription
-            let lowercased = message.lowercased()
-            if lowercased.contains("authentication") || lowercased.contains("auth login") {
-                throw GitHubError.notAuthenticated
-            }
-            throw GitHubError.processError(message)
         }
+        try GitHubHTTP.check(response)
+        return data
     }
 
     private func classifyGraphQLErrors(_ errors: [GitHubResponse.GraphQLIssue]) -> GitHubError {
