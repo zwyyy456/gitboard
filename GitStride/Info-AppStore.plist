@@ -28,11 +28,5 @@
 	<string>Copyright © 2025-2026 zwyyy456. Portions © 2025 Yogesh. MIT License.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/zwyyy456/GitStride/main/appcast.xml</string>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
-	<key>SUPublicEDKey</key>
-	<string>CdKMB5WifABieE/kt63i8LcSSHaVf+0JvJXqXGwi4BQ=</string>
 </dict>
 </plist>

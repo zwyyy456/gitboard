@@ -12,7 +12,7 @@ struct ProjectCacheTests {
             Project(id: $0, owner: owner, title: $0, number: 1, url: "", viewerCanUpdate: true)
         }
         try await cache.save(ProjectCacheSnapshot(
-            accountLogin: "me", owner: owner, projects: projects,
+            accountID: "U", accountLogin: "me", owner: owner, projects: projects,
             detailedProjectIDs: ["P1", "P2"], selectedProjectId: "P1", selectedStatusFilter: "Todo"
         ))
         try await cache.removeProject(id: "P1")
@@ -69,7 +69,7 @@ struct ProjectCacheTests {
 
         try await cache.save(
             ProjectCacheSnapshot(
-                accountLogin: "octocat",
+                accountID: "U1", accountLogin: "octocat",
                 owner: owner,
                 projects: [project],
                 detailedProjectIDs: ["P1"],

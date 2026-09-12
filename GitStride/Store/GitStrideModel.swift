@@ -4,7 +4,14 @@ import Observation
 @MainActor
 @Observable
 final class GitStrideModel {
-    let projectStore = ProjectStore()
+    private(set) var projectStore: ProjectStore
+    private(set) var authenticationMethod: GitHubAuthenticationMethod
+    private(set) var connectionID = UUID()
+    private(set) var deviceAuthorization: GitHubDeviceAuthorization?
+    private(set) var isConnecting = false
+    private(set) var authenticationError: String?
+    private var authentication: GitHubAuthentication
+    private var authorizationTask: Task<Void, Never>?
     let myWorkStore = MyWorkStore()
     let automationSetup = AutomationSetupModel()
 
@@ -38,6 +45,17 @@ final class GitStrideModel {
 
     init() {
         let defaults = UserDefaults.standard
+        let storedMethod = defaults.string(forKey: "githubAuthenticationMethod").flatMap(GitHubAuthenticationMethod.init(rawValue:))
+        var initialMethod = storedMethod ?? .oauth
+        #if !APP_STORE
+        if storedMethod == nil, defaults.string(forKey: "selectedOwnerId") != nil { initialMethod = .cli }
+        #endif
+        authenticationMethod = initialMethod
+        let http = URLSession.gitHubSession()
+        let authentication = GitHubAuthentication(method: initialMethod, http: http,
+                                                    restoringSession: !defaults.bool(forKey: "githubSignedOut"))
+        self.authentication = authentication
+        projectStore = ProjectStore(gitHubService: GitHubService(http: http, credentials: authentication))
         monitoringEnabled = defaults.bool(forKey: "monitoringEnabled")
         let interval = defaults.integer(forKey: "monitoringIntervalMinutes")
         monitoringIntervalMinutes = interval == 0 ? 15 : interval
@@ -57,8 +75,10 @@ final class GitStrideModel {
         didStart = true
         startAutomationEventHandling()
         await automationSetup.loadConnection()
-        if projectStore.currentUserLogin == nil {
+        if !UserDefaults.standard.bool(forKey: "githubSignedOut") {
             await projectStore.loadProjects()
+        } else {
+            projectStore.sessionState = .signedOut
         }
         myWorkStore.activate(accountLogin: projectStore.currentUserLogin)
         if myWorkStore.followedProjects.isEmpty == false {
@@ -75,6 +95,75 @@ final class GitStrideModel {
             }
             await restartMonitoring()
         }
+    }
+
+    func connectGitHub(using method: GitHubAuthenticationMethod) {
+        guard !isConnecting else { return }
+        isConnecting = true
+        authenticationError = nil
+        authorizationTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                self.isConnecting = false
+                self.deviceAuthorization = nil
+                self.authorizationTask = nil
+            }
+            do {
+                try await self.replaceConnection(method: method)
+                if method == .oauth {
+                    let code = try await self.authentication.beginDeviceAuthorization()
+                    self.deviceAuthorization = code
+                    try await self.authentication.completeDeviceAuthorization(code)
+                }
+                try Task.checkCancellation()
+                UserDefaults.standard.set(false, forKey: "githubSignedOut")
+                await self.projectStore.loadProjects()
+                try Task.checkCancellation()
+                await self.activateMyWork(accountLogin: self.projectStore.currentUserLogin)
+                if self.monitoringEnabled { await self.restartMonitoring() }
+            } catch {
+                await self.authentication.invalidate()
+                if !Task.isCancelled, !(error is CancellationError) { self.authenticationError = error.localizedDescription }
+            }
+        }
+    }
+
+    func cancelGitHubLogin() {
+        authorizationTask?.cancel()
+    }
+
+    func disconnectGitHub() async {
+        guard !isConnecting else { return }
+        isConnecting = true
+        defer { isConnecting = false }
+        authenticationError = nil
+        UserDefaults.standard.set(true, forKey: "githubSignedOut")
+        monitorTask?.cancel()
+        monitorTask = nil
+        await projectMonitor.stop()
+        do { try await projectStore.invalidateSession() }
+        catch { authenticationError = "Could not remove the previous account’s project cache." }
+        myWorkStore.activate(accountLogin: nil)
+        connectionID = UUID()
+        do { try await authentication.deleteCredential() }
+        catch { authenticationError = error.localizedDescription }
+    }
+
+    private func replaceConnection(method: GitHubAuthenticationMethod) async throws {
+        UserDefaults.standard.set(true, forKey: "githubSignedOut")
+        monitorTask?.cancel()
+        monitorTask = nil
+        await projectMonitor.stop()
+        myWorkStore.activate(accountLogin: nil)
+        try await projectStore.invalidateSession()
+        try await authentication.deleteCredential()
+        try Task.checkCancellation()
+        let http = URLSession.gitHubSession()
+        authentication = GitHubAuthentication(method: method, http: http)
+        projectStore = ProjectStore(gitHubService: GitHubService(http: http, credentials: authentication))
+        authenticationMethod = method
+        connectionID = UUID()
+        UserDefaults.standard.set(method.rawValue, forKey: "githubAuthenticationMethod")
     }
 
     private func startAutomationEventHandling() {
@@ -167,6 +256,7 @@ final class GitStrideModel {
     }
 
     func activateMyWork(accountLogin: String?) async {
+        guard accountLogin == projectStore.currentUserLogin else { return }
         let oldProjects = myWorkStore.followedProjects.map(\.id)
         myWorkStore.activate(accountLogin: accountLogin)
         if myWorkStore.followedProjects.isEmpty {

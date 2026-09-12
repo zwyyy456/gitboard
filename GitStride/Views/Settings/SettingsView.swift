@@ -1,15 +1,16 @@
 import SwiftUI
-#if canImport(Sparkle)
+#if !APP_STORE && canImport(Sparkle)
 import Sparkle
 #endif
 
 struct SettingsView: View {
     @Bindable var model: GitStrideModel
     private enum Pane: String {
-        case general, automation, shortcuts
+        case github, general, automation, shortcuts
 
         var height: CGFloat {
             switch self {
+            case .github: 490
             case .general: 360
             case .automation: 280
             case .shortcuts: 500
@@ -21,6 +22,10 @@ struct SettingsView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
+            GitHubSettingsView(model: model)
+                .tabItem { Label("GitHub", systemImage: "person.crop.circle") }
+                .tag(Pane.github)
+
             GeneralSettingsView(model: model)
                 .tabItem {
                     Label("General", systemImage: "gear")
@@ -130,15 +135,16 @@ struct GeneralSettingsView: View {
                 Text("Monitoring")
             }
 
+            #if !APP_STORE
             Section {
                 Toggle("Automatically check for updates", isOn: $autoCheckForUpdates)
                     .onChange(of: autoCheckForUpdates) { _, newValue in
-                        #if canImport(Sparkle)
+                        #if !APP_STORE && canImport(Sparkle)
                         UpdateController.shared.automaticallyChecksForUpdates = newValue
                         #endif
                     }
 
-                #if canImport(Sparkle)
+                #if !APP_STORE && canImport(Sparkle)
                 Button("Check for Updates…") {
                     UpdateController.shared.checkForUpdates()
                 }
@@ -147,11 +153,12 @@ struct GeneralSettingsView: View {
             } header: {
                 Text("Updates")
             }
+            #endif
 
         }
         .formStyle(.grouped)
         .onAppear {
-            #if canImport(Sparkle)
+            #if !APP_STORE && canImport(Sparkle)
             UpdateController.shared.automaticallyChecksForUpdates = autoCheckForUpdates
             #endif
         }

@@ -14,7 +14,7 @@ struct ProjectStoreTests {
                 of: "],\"pageInfo\"",
                 with: #",{"id":"P3","title":"New Project","number":3,"url":"https://github.com/users/me/projects/3","viewerCanUpdate":true}],"pageInfo""#
             )
-        let runner = SuspendingGitHubCommandRunner(steps: initialResponses.map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: initialResponses.map { .response($0) } + [
             .response(Self.secondProjectFieldsResponse), .response(Self.emptyItemsResponse),
             .response(Self.sessionResponse), .response(Self.ownersResponse),
             .suspended("catalog", updatedCatalog),
@@ -51,7 +51,7 @@ struct ProjectStoreTests {
 
     @Test(arguments: [true, false])
     func interruptedCatalogReloadPreservesProjectsAndAllowsRetry(cancelled: Bool) async throws {
-        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: Self.mutationProjectResponses.map { .response($0) } + [
             .response(Self.sessionResponse), .response(Self.ownersResponse),
             cancelled ? .cancelled : .response(Self.graphQLFailureResponse)
         ] + Self.mutationProjectResponses.map { .response($0) })
@@ -83,7 +83,7 @@ struct ProjectStoreTests {
     @Test func catalogReloadSelectsAnAvailableProjectWhenTheSelectionDisappears() async {
         let remainingCatalog = Self.projectsResponse
             .replacingOccurrences(of: "\"P1\"", with: "\"P3\"")
-        let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [
+        let runner = FixtureGitHubHTTPClient(responses: Self.mutationProjectResponses + [
             Self.sessionResponse, Self.ownersResponse, remainingCatalog,
             Self.firstProjectFieldsResponse, Self.emptyItemsResponse
         ])
@@ -102,7 +102,7 @@ struct ProjectStoreTests {
 
     @Test func managementPermissionsFollowTheLatestTargetSnapshot() async throws {
         let fields = Self.mutationFieldsResponse
-        let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [
+        let runner = FixtureGitHubHTTPClient(responses: Self.mutationProjectResponses + [
             fields.replacingOccurrences(of: "\"viewerCanUpdate\":true", with: "\"viewerCanUpdate\":false"),
             Self.emptyItemsResponse,
             fields, Self.emptyItemsResponse
@@ -125,7 +125,7 @@ struct ProjectStoreTests {
     func deletionCommitsOnlyAfterGitHubSuccess(_ succeeds: Bool) async throws {
         let response = succeeds ? #"{"data":{"deleteProjectV2":{"clientMutationId":null}}}"#
                                 : #"{"errors":[{"message":"Deletion denied"}]}"#
-        let runner = FixtureGitHubCommandRunner(responses: Self.mutationProjectResponses + [response])
+        let runner = FixtureGitHubHTTPClient(responses: Self.mutationProjectResponses + [response])
         let (store, cleanup) = makeStore(runner: runner)
         defer { cleanup() }
         await store.loadProjects()
@@ -146,12 +146,12 @@ struct ProjectStoreTests {
             store.setFollowedProjects([FollowedProject(project: project)])
             #expect(store.project(id: project.id) == nil)
         }
-        let calls = await runner.recordedArguments()
-        #expect(calls.last?.contains("projectId=P1") == true)
+        let calls = await runner.recordedRequests()
+        #expect(calls.last?.hasVariable("projectId", "P1") == true)
     }
 
     @Test func catalogResponseCannotRestoreDeletedProject() async throws {
-        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: Self.mutationProjectResponses.map { .response($0) } + [
             .response(Self.sessionResponse), .response(Self.ownersResponse),
             .suspended("catalog", Self.mutationProjectsResponse),
             .response(#"{"data":{"deleteProjectV2":{"clientMutationId":null}}}"#)
@@ -170,7 +170,7 @@ struct ProjectStoreTests {
     }
 
     @Test func deletingSelectedProjectLoadsTheNextProject() async throws {
-        let runner = FixtureGitHubCommandRunner(responses: [
+        let runner = FixtureGitHubHTTPClient(responses: [
             Self.sessionResponse, Self.ownersResponse, Self.projectsResponse,
             Self.firstProjectFieldsResponse, Self.emptyItemsResponse,
             #"{"data":{"deleteProjectV2":{"clientMutationId":null}}}"#,
@@ -190,7 +190,7 @@ struct ProjectStoreTests {
     }
 
     @Test func kanbanDefaultsToTheActiveWorkflowStatusesInPreferredOrder() {
-        let runner = FixtureGitHubCommandRunner(responses: [])
+        let runner = FixtureGitHubHTTPClient(responses: [])
         let (store, cleanup) = makeStore(runner: runner)
         defer { cleanup() }
         let project = Self.kanbanProject()
@@ -207,7 +207,7 @@ struct ProjectStoreTests {
     }
 
     @Test func kanbanVisibilityCanShowAllButCannotHideTheFinalColumn() throws {
-        let runner = FixtureGitHubCommandRunner(responses: [])
+        let runner = FixtureGitHubHTTPClient(responses: [])
         let (store, cleanup) = makeStore(runner: runner)
         defer { cleanup() }
         let project = Self.kanbanProject()
@@ -225,7 +225,7 @@ struct ProjectStoreTests {
     }
 
     @Test func loadedEmptyProjectIsNotFetchedAgainWhenReselected() async throws {
-        let runner = FixtureGitHubCommandRunner(responses: Self.emptyProjectResponses)
+        let runner = FixtureGitHubHTTPClient(responses: Self.emptyProjectResponses)
         let (store, cleanup) = makeStore(runner: runner)
         defer { cleanup() }
 
@@ -241,14 +241,14 @@ struct ProjectStoreTests {
             Issue.record("Expected a loaded, empty Project.")
         }
 
-        let callCount = await runner.recordedArguments().count
+        let callCount = await runner.recordedRequests().count
         await store.selectProject(project)
 
-        #expect(await runner.recordedArguments().count == callCount)
+        #expect(await runner.recordedRequests().count == callCount)
     }
 
     @Test func selectingAnotherProjectDiscardsThePreviousInFlightLoad() async throws {
-        let runner = SuspendingGitHubCommandRunner(steps: [
+        let runner = SuspendingGitHubHTTPClient(steps: [
             .response(Self.sessionResponse),
             .response(Self.ownersResponse),
             .response(Self.projectsResponse),
@@ -284,7 +284,7 @@ struct ProjectStoreTests {
 
     @Test func itemDetailLoadIsSharedWhileTheRequestIsInFlight() async {
         let response = Self.itemDetailResponse(body: "Shared")
-        let runner = SuspendingGitHubCommandRunner(steps: [
+        let runner = SuspendingGitHubHTTPClient(steps: [
             .suspended("item-detail", response)
         ])
         let (store, cleanup) = makeStore(runner: runner)
@@ -325,7 +325,7 @@ struct ProjectStoreTests {
     }
 
     @Test func forcedItemDetailRefreshDiscardsTheOlderResponse() async {
-        let runner = SuspendingGitHubCommandRunner(steps: [
+        let runner = SuspendingGitHubHTTPClient(steps: [
             .suspended("old-detail", Self.itemDetailResponse(body: "Old")),
             .response(Self.itemDetailResponse(body: "New"))
         ])
@@ -348,7 +348,7 @@ struct ProjectStoreTests {
     }
 
     @Test func itemDetailCacheUsesTheItemUpdatedAtVersion() async {
-        let runner = FixtureGitHubCommandRunner(responses: [
+        let runner = FixtureGitHubHTTPClient(responses: [
             Self.itemDetailResponse(body: "First"),
             Self.itemDetailResponse(body: "Updated")
         ])
@@ -361,7 +361,7 @@ struct ProjectStoreTests {
         await store.loadItemDetail(for: firstVersion)
         await store.loadItemDetail(for: secondVersion)
 
-        #expect(await runner.recordedArguments().count == 2)
+        #expect(await runner.recordedRequests().count == 2)
         guard case .loaded(let detail) = store.itemDetailState(for: secondVersion) else {
             Issue.record("Expected the changed updatedAt value to reload details.")
             return
@@ -370,7 +370,7 @@ struct ProjectStoreTests {
     }
 
     @Test func concurrentDeletesKeepBothItemsRemoved() async throws {
-        let runner = SuspendingGitHubCommandRunner(steps: try Self.twoItemResponses().map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: try Self.twoItemResponses().map { .response($0) } + [
             .suspended("first", Self.graphQLSuccessResponse),
             .suspended("second", Self.graphQLSuccessResponse)
         ])
@@ -393,7 +393,7 @@ struct ProjectStoreTests {
 
     @Test func staleRefreshCannotRestoreADeletedItemAndCoalescesReconciliation() async throws {
         let fields = Self.mutationFieldsResponse
-        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: Self.mutationProjectResponses.map { .response($0) } + [
             .suspended("old-read", fields), .response(Self.graphQLSuccessResponse),
             .response(Self.mutationItemsResponse),
             .suspended("reconcile", fields), .response(Self.emptyItemsResponse)
@@ -418,7 +418,7 @@ struct ProjectStoreTests {
     }
 
     @Test func supersededFailureCannotClearANewerLoadingState() async throws {
-        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: Self.mutationProjectResponses.map { .response($0) } + [
             .suspended("old-read", Self.graphQLFailureResponse),
             .suspended("new-read", Self.mutationFieldsResponse), .response(Self.emptyItemsResponse)
         ])
@@ -470,7 +470,7 @@ struct ProjectStoreTests {
 
     @Test func removedAndRefollowedProjectRejectsItsPreviousRead() async throws {
         let fields = Self.mutationFieldsResponse
-        let runner = SuspendingGitHubCommandRunner(steps: Self.mutationProjectResponses.map { .response($0) } + [
+        let runner = SuspendingGitHubHTTPClient(steps: Self.mutationProjectResponses.map { .response($0) } + [
             .suspended("old-membership", fields), .suspended("new-membership", fields),
             .response(Self.mutationItemsResponse), .response(Self.emptyItemsResponse)
         ])
@@ -502,5 +502,39 @@ private actor MonitorSnapshotSource {
     func next() throws -> [Project]? {
         guard !cycles.isEmpty else { throw GitHubError.rateLimited(nil) }
         return cycles.removeFirst()
+    }
+}
+
+extension ProjectStoreTests {
+    @Test func cacheIsNotRestoredForAnotherAccountEvenWhenLoginMatches() async throws {
+        let identifier = "GitStrideTests.AccountCache.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: identifier)!
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(identifier + ".json")
+        defer { defaults.removePersistentDomain(forName: identifier); try? FileManager.default.removeItem(at: url) }
+        let cache = ProjectCache(fileURL: url)
+        let project = Self.kanbanProject()
+        try await cache.save(ProjectCacheSnapshot(accountID: "DIFFERENT_ACCOUNT", accountLogin: "me",
+                                                   owner: project.owner, projects: [project], detailedProjectIDs: [project.id],
+                                                   selectedProjectId: project.id, selectedStatusFilter: nil))
+        let http = FixtureGitHubHTTPClient(responses: [Self.sessionResponse, Self.graphQLFailureResponse])
+        let store = ProjectStore(gitHubService: GitHubService(http: http), projectCache: cache, defaults: defaults)
+        await store.loadProjects()
+        #expect(store.projects.isEmpty)
+        #expect(!store.isShowingCachedData)
+    }
+
+    @Test func issueCreationCannotResumeInAnotherSession() async throws {
+        let firstHTTP = FixtureGitHubHTTPClient(responses: Self.mutationProjectResponses)
+        let (first, cleanupFirst) = makeStore(runner: firstHTTP)
+        defer { cleanupFirst() }
+        await first.loadProjects()
+        let creation = try first.prepareIssueCreation(repository: "acme/app", title: "Example", body: "", labels: [], assignees: [])
+        let nextHTTP = FixtureGitHubHTTPClient(responses: Self.mutationProjectResponses)
+        let (next, cleanupNext) = makeStore(runner: nextHTTP)
+        defer { cleanupNext() }
+        await next.loadProjects()
+        let count = await nextHTTP.recordedRequests().count
+        await #expect(throws: GitHubError.accountChanged) { try await next.resumeIssueCreation(creation) }
+        #expect(await nextHTTP.recordedRequests().count == count)
     }
 }

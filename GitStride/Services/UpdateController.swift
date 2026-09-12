@@ -1,5 +1,5 @@
 import Foundation
-#if canImport(Sparkle)
+#if !APP_STORE && canImport(Sparkle)
 import Sparkle
 
 /// Controller for managing app updates via Sparkle framework

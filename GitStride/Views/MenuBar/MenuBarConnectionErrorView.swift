@@ -4,45 +4,20 @@ struct MenuBarConnectionErrorView: View {
     let error: Error
     let retry: () -> Void
 
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.dismissMenuBar) private var dismissMenuBar
+
     var body: some View {
         VStack(spacing: 16) {
-            if let ghError = error as? GitHubError {
-                switch ghError {
-                case .ghCLINotFound:
-                    onboardingView(
-                        icon: "terminal",
-                        title: "GitHub CLI Required",
-                        message: "GitStride uses the GitHub CLI (gh) for authentication.",
-                        buttonTitle: "Install GitHub CLI",
-                        buttonAction: {
-                            NSWorkspace.shared.open(URL(string: "https://cli.github.com")!)
-                        }
-                    )
-
-                case .notAuthenticated:
-                    onboardingView(
-                        icon: "person.crop.circle.badge.questionmark",
-                        title: "Sign in to GitHub",
-                        message: "Open Terminal and run:\ngh auth login",
-                        buttonTitle: "Try Again",
-                        buttonAction: {
-                            retry()
-                        }
-                    )
-
-                case .missingProjectScope:
-                    onboardingView(
-                        icon: "lock.shield",
-                        title: "Project Access Required",
-                        message: "Open Terminal and run:\ngh auth refresh -s project",
-                        buttonTitle: "Try Again",
-                        buttonAction: {
-                            retry()
-                        }
-                    )
-
-                default:
-                    genericErrorView(error)
+            if let error = error as? GitHubError,
+               [.ghCLINotFound, .notAuthenticated, .missingProjectScope, .accountChanged, .insufficientPermissions].contains(error) {
+                onboardingView(icon: "person.crop.circle", title: "Connect to GitHub",
+                               message: error.localizedDescription,
+                               buttonTitle: "Open GitHub Settings") {
+                    UserDefaults.standard.set("github", forKey: "selectedSettingsPane")
+                    dismissMenuBar()
+                    NSApp.activate(ignoringOtherApps: true)
+                    openSettings()
                 }
             } else {
                 genericErrorView(error)
@@ -62,7 +37,7 @@ struct MenuBarConnectionErrorView: View {
                 .font(.system(size: 15, weight: .semibold))
 
             Text(message)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 20)

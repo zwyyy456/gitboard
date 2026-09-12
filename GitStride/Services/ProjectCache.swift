@@ -1,9 +1,10 @@
 import Foundation
 
 struct ProjectCacheSnapshot: Codable {
-    static let currentVersion = 4
+    static let currentVersion = 5
 
     let version: Int
+    let accountID: String
     let accountLogin: String
     let owner: ProjectOwner
     let projects: [Project]
@@ -13,6 +14,7 @@ struct ProjectCacheSnapshot: Codable {
     let savedAt: Date
 
     init(
+        accountID: String,
         accountLogin: String,
         owner: ProjectOwner,
         projects: [Project],
@@ -22,6 +24,7 @@ struct ProjectCacheSnapshot: Codable {
         savedAt: Date = Date()
     ) {
         version = Self.currentVersion
+        self.accountID = accountID
         self.accountLogin = accountLogin
         self.owner = owner
         self.projects = projects
@@ -47,6 +50,7 @@ enum ProjectCacheError: LocalizedError {
 }
 
 actor ProjectCache {
+    private var active = true
     private let fileURL: URL?
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -71,6 +75,7 @@ actor ProjectCache {
     }
 
     func save(_ snapshot: ProjectCacheSnapshot) throws {
+        guard active else { throw CancellationError() }
         guard let fileURL else { throw ProjectCacheError.applicationSupportUnavailable }
         let directory = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(
@@ -84,12 +89,18 @@ actor ProjectCache {
         guard let snapshot = try load(), snapshot.projects.contains(where: { $0.id == id }) else { return }
         let remaining = snapshot.projects.filter { $0.id != id }
         try save(ProjectCacheSnapshot(
-            accountLogin: snapshot.accountLogin, owner: snapshot.owner,
+            accountID: snapshot.accountID, accountLogin: snapshot.accountLogin, owner: snapshot.owner,
             projects: remaining, detailedProjectIDs: snapshot.detailedProjectIDs.subtracting([id]),
             selectedProjectId: snapshot.selectedProjectId == id ? remaining.first?.id : snapshot.selectedProjectId,
             selectedStatusFilter: snapshot.selectedProjectId == id ? nil : snapshot.selectedStatusFilter,
             savedAt: snapshot.savedAt
         ))
+    }
+
+    func invalidate() throws {
+        active = false
+        guard let fileURL, FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        try FileManager.default.removeItem(at: fileURL)
     }
 
     private static var defaultFileURL: URL? {

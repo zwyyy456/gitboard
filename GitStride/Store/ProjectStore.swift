@@ -59,6 +59,7 @@ final class IssueCreation {
         case unconfirmed
     }
 
+    fileprivate let sessionID: UUID
     let projectID: String
     let repository: String
     fileprivate let title: String
@@ -78,8 +79,9 @@ final class IssueCreation {
         }
     }
 
-    fileprivate init(projectID: String, repository: String, title: String, body: String,
+    fileprivate init(sessionID: UUID, projectID: String, repository: String, title: String, body: String,
                      labels: [String], assignees: [String], fields: [(ProjectField, ProjectFieldOption)]) {
+        self.sessionID = sessionID
         self.projectID = projectID
         self.repository = repository
         self.title = title
@@ -182,7 +184,10 @@ final class ProjectStore {
     var error: Error?
     private(set) var operationErrorMessage: String?
     var lastUpdated: Date?
-    var currentUserLogin: String?
+    private(set) var currentAccount: GitHubAccount?
+    var currentUserLogin: String? { currentAccount?.login }
+    private var isActive = true
+    private let sessionID = UUID()
 
     private var catalogGeneration = 0
     private var projectGeneration = 0
@@ -540,7 +545,7 @@ final class ProjectStore {
     }
 
     init(
-        gitHubService: GitHubService = .shared,
+        gitHubService: GitHubService = GitHubService(),
         projectCache: ProjectCache = ProjectCache(),
         defaults: UserDefaults = .standard
     ) {
@@ -586,9 +591,40 @@ final class ProjectStore {
         name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
+    func invalidateSession() async throws {
+        isActive = false
+        catalogGeneration += 1
+        followedProjectsGeneration += 1
+        contentRevision += 1
+        cancelProjectLoad()
+        reconciliationTasks.values.forEach { $0.task.cancel() }
+        reconciliationTasks = [:]
+        itemDetailTasks.values.forEach { $0.cancel() }
+        itemDetailTasks = [:]
+        itemDetailGenerations = [:]
+        itemDetailEntries = [:]
+        projectStates = [:]
+        catalogProjectIDs = []
+        followedProjectIDs = []
+        pendingItemMutations = [:]
+        pendingContentMutations = [:]
+        pendingStatusMoves = [:]
+        owners = []
+        repositoryLists = [:]
+        repositoryReadIDs = [:]
+        repositoryMilestones = [:]
+        selectedOwnerId = nil
+        selectedProjectId = nil
+        selectedStatusFilter = nil
+        currentAccount = nil
+        sessionState = .signedOut
+        await gitHubService.invalidate()
+        try await projectCache.invalidate()
+    }
+
     func loadProjects() async {
         cancelProjectLoad()
-        await restoreCacheIfNeeded()
+        guard isActive else { return }
         catalogGeneration += 1
         let generation = catalogGeneration
         isLoading = true
@@ -613,26 +649,9 @@ final class ProjectStore {
             return
         }
 
-        if let cachedAccountLogin, cachedAccountLogin != account.login {
-            owners = []
-            repositoryLists = [:]
-            repositoryReadIDs = [:]
-            projectStates = [:]
-            reconciliationTasks.values.forEach { $0.task.cancel() }
-            reconciliationTasks = [:]
-            pendingStatusMoves = [:]
-            pendingItemMutations = [:]
-            pendingContentMutations = [:]
-            invalidateContentDetails(Array(itemDetailEntries.keys))
-            contentRevision += 1
-            catalogProjectIDs = []
-            followedProjectIDs = []
-            followedProjectsGeneration += 1
-            selectedOwnerId = nil
-            selectedProjectId = nil
-            selectedStatusFilter = nil
-        }
-        currentUserLogin = account.login
+        currentAccount = account
+        await restoreCacheIfNeeded(account: account)
+        guard generation == catalogGeneration, isActive else { return }
 
         do {
             let loadedOwners = try await gitHubService.fetchOwners()
@@ -942,15 +961,15 @@ final class ProjectStore {
         }
     }
 
-    private func restoreCacheIfNeeded() async {
+    private func restoreCacheIfNeeded(account: GitHubAccount) async {
         guard didRestoreCache == false else { return }
         didRestoreCache = true
 
         guard let snapshot = try? await projectCache.load(),
+              snapshot.accountID == account.id, isActive,
               snapshot.projects.isEmpty == false else { return }
 
         cachedAccountLogin = snapshot.accountLogin
-        currentUserLogin = snapshot.accountLogin
         owners = [snapshot.owner]
         let cachedProjects = snapshot.projects.map(makeReadOnly)
         replaceCatalog(with: cachedProjects)
@@ -972,13 +991,14 @@ final class ProjectStore {
     }
 
     private func persistCache() async {
-        guard let accountLogin = currentUserLogin,
+        guard isActive, let account = currentAccount,
               let owner = selectedOwner,
               projects.isEmpty == false else { return }
         do {
             try await projectCache.save(
                 ProjectCacheSnapshot(
-                    accountLogin: accountLogin,
+                    accountID: account.id,
+                    accountLogin: account.login,
                     owner: owner,
                     projects: catalogProjectIDs.compactMap { projectStates[$0]?.snapshot },
                     detailedProjectIDs: Set(projectStates.compactMap { id, state in
@@ -988,7 +1008,7 @@ final class ProjectStore {
                     selectedStatusFilter: selectedStatusFilter
                 )
             )
-            cachedAccountLogin = accountLogin
+            cachedAccountLogin = account.login
         } catch {
             operationErrorMessage = "Project loaded, but the local cache could not be updated: \(error.localizedDescription)"
         }
@@ -1155,7 +1175,7 @@ final class ProjectStore {
         case .missingProjectScope:
             return .missingProjectScope
         case .failed(let message):
-            return .processError(message)
+            return .connectionError(message)
         }
     }
 
@@ -1338,11 +1358,12 @@ final class ProjectStore {
             resolvedFields.append((field, option))
         }
 
-        return IssueCreation(projectID: project.id, repository: repository, title: title, body: body,
+        return IssueCreation(sessionID: sessionID, projectID: project.id, repository: repository, title: title, body: body,
                              labels: labels, assignees: assignees, fields: resolvedFields)
     }
 
     func resumeIssueCreation(_ creation: IssueCreation) async throws {
+        guard isActive, creation.sessionID == sessionID else { throw GitHubError.accountChanged }
         guard !creation.isRunning else { throw ProjectStoreError.operationInProgress }
         if case .completed = creation.phase { return }
         guard creation.phase != .unconfirmed else { throw GitHubError.issueCreationUnconfirmed }
@@ -1560,8 +1581,9 @@ final class ProjectStore {
     }
 
     private func requiresReconciliation(_ error: Error) -> Bool {
-        if error is CancellationError { return true }
-        if case GitHubError.processError = error { return true }
+        if error is CancellationError || error is URLError { return true }
+        if case GitHubError.httpError(let status) = error, status >= 500 { return true }
+        if case GitHubError.connectionError = error { return true }
         return false
     }
 
