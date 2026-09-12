@@ -61,6 +61,7 @@ struct Project: Identifiable, Codable, Hashable {
     let number: Int
     let url: String
     let viewerCanUpdate: Bool
+    var linkedRepositories: [String]
     var fields: [ProjectField]
     var statusField: StatusField?
     var items: [ProjectItem]
@@ -72,6 +73,7 @@ struct Project: Identifiable, Codable, Hashable {
         number: Int,
         url: String,
         viewerCanUpdate: Bool,
+        linkedRepositories: [String] = [],
         fields: [ProjectField] = [],
         statusField: StatusField? = nil,
         items: [ProjectItem] = []
@@ -82,6 +84,7 @@ struct Project: Identifiable, Codable, Hashable {
         self.number = number
         self.url = url
         self.viewerCanUpdate = viewerCanUpdate
+        self.linkedRepositories = linkedRepositories
         self.fields = fields
         self.statusField = statusField
         self.items = items

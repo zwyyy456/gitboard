@@ -109,13 +109,17 @@ enum GraphQLQueries {
         """
 
     static let projectFields = """
-        query($id: ID!, $after: String) {
+        query($id: ID!, $after: String, $repositoryAfter: String) {
             node(id: $id) {
                 ... on ProjectV2 {
                     title
                     number
                     url
                     viewerCanUpdate
+                    repositories(first: 100, after: $repositoryAfter) {
+                        nodes { nameWithOwner }
+                        pageInfo { hasNextPage endCursor }
+                    }
                     fields(first: 100, after: $after) {
                         nodes {
                             ... on ProjectV2Field {
@@ -153,6 +157,41 @@ enum GraphQLQueries {
                     }
                 }
             }
+        }
+        """
+
+    static let issueRepository = """
+        query($owner: String!, $name: String!, $after: String) {
+            repository(owner: $owner, name: $name) {
+                id
+                labels(first: 100, after: $after) {
+                    nodes { id name }
+                    pageInfo { hasNextPage endCursor }
+                }
+            }
+        }
+        """
+
+    static let issueAssignee = """
+        query($login: String!) {
+            user(login: $login) { id }
+        }
+        """
+
+    static let createLabel = """
+        mutation($repositoryId: ID!, $name: String!) {
+            createLabel(input: { repositoryId: $repositoryId, name: $name, color: "ededed" }) {
+                label { id name }
+            }
+        }
+        """
+
+    static let createIssue = """
+        mutation($repositoryId: ID!, $title: String!, $body: String!, $labelIds: [ID!]!, $assigneeIds: [ID!]!) {
+            createIssue(input: {
+                repositoryId: $repositoryId, title: $title, body: $body,
+                labelIds: $labelIds, assigneeIds: $assigneeIds
+            }) { issue { id url } }
         }
         """
 

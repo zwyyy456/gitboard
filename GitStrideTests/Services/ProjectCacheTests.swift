@@ -61,6 +61,7 @@ struct ProjectCacheTests {
             number: 1,
             url: "https://github.com/users/octocat/projects/1",
             viewerCanUpdate: true,
+            linkedRepositories: ["acme/repo"],
             fields: [field],
             items: [item]
         )
@@ -80,6 +81,7 @@ struct ProjectCacheTests {
 
         #expect(loaded.version == ProjectCacheSnapshot.currentVersion)
         #expect(loaded.accountLogin == "octocat")
+        #expect(loaded.projects.first?.linkedRepositories == ["acme/repo"])
         #expect(loaded.detailedProjectIDs == ["P1"])
         #expect(loaded.projects.first?.items.first?.title == "Cached issue")
         #expect(loaded.projects.first?.items.first?.fieldValues["F1"] == .singleSelect(optionId: "HIGH", name: "High"))

@@ -53,10 +53,10 @@ extension ProjectStoreTests {
         #"{"data":{"owner":{"projectsV2":{"nodes":[{"id":"P1","title":"One","number":1,"url":"https://github.com/users/me/projects/1","viewerCanUpdate":true},{"id":"P2","title":"Two","number":2,"url":"https://github.com/users/me/projects/2","viewerCanUpdate":true}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
 
     static let firstProjectFieldsResponse =
-        #"{"data":{"node":{"title":"One","number":1,"url":"https://github.com/users/me/projects/1","viewerCanUpdate":true,"fields":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+        #"{"data":{"node":{"title":"One","number":1,"url":"https://github.com/users/me/projects/1","viewerCanUpdate":true,"repositories":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}},"fields":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
 
     static let secondProjectFieldsResponse =
-        #"{"data":{"node":{"title":"Two","number":2,"url":"https://github.com/users/me/projects/2","viewerCanUpdate":true,"fields":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+        #"{"data":{"node":{"title":"Two","number":2,"url":"https://github.com/users/me/projects/2","viewerCanUpdate":true,"repositories":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}},"fields":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
 
     static let emptyItemsResponse =
         #"{"data":{"node":{"items":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
@@ -73,7 +73,7 @@ extension ProjectStoreTests {
         #"{"data":{"owner":{"projectsV2":{"nodes":[{"id":"P1","title":"One","number":1,"url":"https://github.com/users/me/projects/1","viewerCanUpdate":true}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
 
     static let mutationFieldsResponse =
-        #"{"data":{"node":{"title":"One","number":1,"url":"https://github.com/users/me/projects/1","viewerCanUpdate":true,"fields":{"nodes":[{"__typename":"ProjectV2SingleSelectField","id":"STATUS","name":"Status","dataType":"SINGLE_SELECT","options":[{"id":"TODO","name":"Todo","color":"GRAY"},{"id":"REVIEW","name":"Review","color":"YELLOW"}]}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+        #"{"data":{"node":{"title":"One","number":1,"url":"https://github.com/users/me/projects/1","viewerCanUpdate":true,"repositories":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}},"fields":{"nodes":[{"__typename":"ProjectV2SingleSelectField","id":"STATUS","name":"Status","dataType":"SINGLE_SELECT","options":[{"id":"TODO","name":"Todo","color":"GRAY"},{"id":"REVIEW","name":"Review","color":"YELLOW"}]}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
 
     static let mutationItemsResponse =
         #"{"data":{"node":{"items":{"nodes":[{"id":"ITEM1","content":{"__typename":"Issue","id":"CONTENT1","title":"Item","number":1,"url":"https://github.com/acme/app/issues/1","state":"OPEN","updatedAt":"2026-08-01T00:00:00Z","assignees":{"nodes":[]},"labels":{"nodes":[]},"closedByPullRequestsReferences":{"nodes":[]}},"fieldValueByName":{"name":"Todo","optionId":"TODO"},"fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"TODO","field":{"id":"STATUS"}}]}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#

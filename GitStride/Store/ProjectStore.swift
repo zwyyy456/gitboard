@@ -60,7 +60,7 @@ final class IssueCreation {
     }
 
     let projectID: String
-    fileprivate let repository: String
+    let repository: String
     fileprivate let title: String
     fileprivate let body: String
     fileprivate let labels: [String]
@@ -527,7 +527,16 @@ final class ProjectStore {
 
     var repositorySuggestions: [String] {
         guard let project = selectedProject else { return [] }
-        return Array(Set(project.items.compactMap(\.repositoryName))).sorted()
+        let linked = project.linkedRepositories.sorted()
+        let used = Set(project.items.compactMap(\.repositoryName)).subtracting(linked)
+        return linked + used.sorted()
+    }
+
+    var defaultIssueRepository: String {
+        guard let project = selectedProject else { return "" }
+        if project.linkedRepositories.count == 1 { return project.linkedRepositories[0] }
+        let suggestions = repositorySuggestions
+        return project.linkedRepositories.isEmpty && suggestions.count == 1 ? suggestions[0] : ""
     }
 
     init(
@@ -844,7 +853,8 @@ final class ProjectStore {
         guard !isCreatingProject else { throw ProjectStoreError.operationInProgress }
         isCreatingProject = true
         defer { isCreatingProject = false }
-        let project = try await gitHubService.createProject(owner: owner, title: title, repositoryID: repository?.id)
+        var project = try await gitHubService.createProject(owner: owner, title: title, repositoryID: repository?.id)
+        project.linkedRepositories = repository.map { [$0.nameWithOwner] } ?? []
 
         // The mutation succeeded. Subsequent read failures must not invite creation again.
         cancelProjectLoad()
@@ -1087,6 +1097,7 @@ final class ProjectStore {
                 viewerCanUpdate: projectStates[project.id]?.source == .cache
                     ? false
                     : project.viewerCanUpdate,
+                linkedRepositories: detailed.linkedRepositories,
                 fields: detailed.fields,
                 statusField: detailed.statusField,
                 items: detailed.items
@@ -1115,6 +1126,7 @@ final class ProjectStore {
             number: project.number,
             url: project.url,
             viewerCanUpdate: false,
+            linkedRepositories: project.linkedRepositories,
             fields: project.fields,
             statusField: project.statusField,
             items: project.items
@@ -1347,9 +1359,11 @@ final class ProjectStore {
                         )
                         creation.phase = .addingToProject(issueURL: issueURL)
                     } catch {
-                        if self.requiresReconciliation(error)
-                            || (error as? GitHubError) == .issueCreationUnconfirmed {
+                        switch error {
+                        case GitHubError.issueCreationUnconfirmed, GitHubError.decodingError:
                             creation.phase = .unconfirmed
+                        default:
+                            if self.requiresReconciliation(error) { creation.phase = .unconfirmed }
                         }
                         throw error
                     }
