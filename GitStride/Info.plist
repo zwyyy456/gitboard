@@ -15,19 +15,19 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>GitStrideAutomationBaseURL</key>
 	<string>$(GITBOARD_AUTOMATION_BASE_URL)</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2024 zwyyy456. All rights reserved.</string>
+	<string>Copyright © 2025-2026 zwyyy456. Portions © 2025 Yogesh. MIT License.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/yogesharc/GitStride/main/appcast.xml</string>
+	<string>https://raw.githubusercontent.com/zwyyy456/GitStride/main/appcast.xml</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUPublicEDKey</key>

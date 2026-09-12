@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BD0000000000000000000001 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = BD0000000000000000000002 /* LICENSE */; };
 		BC0000000000000000000001 /* ProjectDisplayPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000000000000000000002 /* ProjectDisplayPreferences.swift */; };
 		BA0000000000000000000002 /* ProjectWorkControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000002 /* ProjectWorkControls.swift */; };
 		BA0000000000000000000001 /* ProjectWorkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000001 /* ProjectWorkView.swift */; };
@@ -108,6 +109,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		BD0000000000000000000002 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = SOURCE_ROOT; };
 		BC0000000000000000000002 /* ProjectDisplayPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDisplayPreferences.swift; sourceTree = "<group>"; };
 		BB0000000000000000000002 /* ProjectWorkControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectWorkControls.swift; sourceTree = "<group>"; };
 		BB0000000000000000000001 /* ProjectWorkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectWorkView.swift; sourceTree = "<group>"; };
@@ -232,6 +234,7 @@
 		A3000001 /* GitStride */ = {
 			isa = PBXGroup;
 			children = (
+				BD0000000000000000000002 /* LICENSE */,
 				A1000001 /* GitStrideApp.swift */,
 				A1000044 /* WorkspaceCommandContext.swift */,
 				A3000002 /* Models */,
@@ -509,6 +512,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A0000047 /* AppIcon.icon in Resources */,
+				BD0000000000000000000001 /* LICENSE in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

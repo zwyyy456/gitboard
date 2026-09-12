@@ -1,63 +1,23 @@
 #!/bin/bash
+# Package the exported app; use its version for the DMG filename.
+set -euo pipefail
 
-# Create DMG installer for GitStride
-
-set -e
-
-APP_NAME="GitStride"
-VERSION="1.0.0"
-DMG_FILE="${APP_NAME}-${VERSION}.dmg"
-TEMP_DIR="dmg_temp"
-
-echo "Creating DMG for $APP_NAME..."
-
-# Build the app first if it doesn't exist
-if [ ! -d "$APP_NAME.app" ]; then
-    echo "Building app first..."
-    ./build_release.sh
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+APP_PATH="$REPO_ROOT/GitStride.app"
+if [ ! -d "$APP_PATH" ]; then
+    echo "Run ./build_release.sh before packaging GitStride." >&2
+    exit 1
 fi
+codesign --verify --deep --strict "$APP_PATH"
+VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")
+DMG_PATH="$REPO_ROOT/GitStride-$VERSION.dmg"
+STAGING_DIR=$(mktemp -d "${TMPDIR:-/tmp}/gitstride-dmg.XXXXXX")
+trap 'rm -rf "$STAGING_DIR"' EXIT
 
-# Clean up any previous temp directory
-rm -rf "$TEMP_DIR"
-rm -f "$DMG_FILE"
+ditto "$APP_PATH" "$STAGING_DIR/GitStride.app"
+ln -s /Applications "$STAGING_DIR/Applications"
+hdiutil create -volname GitStride -srcfolder "$STAGING_DIR" -ov -format UDZO "$DMG_PATH"
 
-# Create temp directory structure
-mkdir -p "$TEMP_DIR"
-
-# Copy app to temp directory (use ditto to preserve symlinks)
-ditto "$APP_NAME.app" "$TEMP_DIR/$APP_NAME.app"
-
-# Create symlink to Applications folder
-ln -s /Applications "$TEMP_DIR/Applications"
-
-# Create the DMG
-echo "Creating DMG..."
-hdiutil create -volname "$APP_NAME" \
-    -srcfolder "$TEMP_DIR" \
-    -ov -format UDZO \
-    "$DMG_FILE"
-
-# Clean up
-rm -rf "$TEMP_DIR"
-
-# Get file size for appcast
-FILE_SIZE=$(stat -f%z "$DMG_FILE")
-
-echo ""
-echo "✅ DMG created: $DMG_FILE"
-echo "   Size: $FILE_SIZE bytes"
-echo ""
-echo "Next steps:"
-echo ""
-echo "1. Notarize the DMG:"
-echo "   xcrun notarytool submit $DMG_FILE --keychain-profile \"notarytool-profile\" --wait"
-echo ""
-echo "2. Staple the ticket:"
-echo "   xcrun stapler staple $DMG_FILE"
-echo ""
-echo "3. Update appcast:"
-echo "   ./update_appcast.sh $VERSION \"Release notes\""
-echo ""
-echo "4. Upload to server:"
-echo "   - $DMG_FILE → https://yogesh.co/gitstride/"
-echo "   - appcast.xml → https://yogesh.co/gitstride/"
+printf 'Created %s\n' "$DMG_PATH"
+printf 'Next: notarize and staple this DMG, then run ./update_appcast.sh "%s".\n' "$DMG_PATH"
+echo "See docs/releasing.md for the notarization and publication steps."
