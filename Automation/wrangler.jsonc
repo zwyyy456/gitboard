@@ -16,7 +16,7 @@
     {
       "binding": "DB",
       "database_name": "gitstride-automation",
-      "database_id": "4aacb44d-f927-4018-9738-9214c7539004",
+      "database_id": "f01dfae0-9218-4b5e-b3b4-194e576b5f40",
       "migrations_dir": "migrations"
     }
   ],
