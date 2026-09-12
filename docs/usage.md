@@ -2,6 +2,12 @@
 
 [Back to README](../README.md)
 
+### First Launch
+
+New installations show a brief welcome window. Choose **Open GitHub Settings** to connect your account, or **Set Up Later** to continue without signing in. The welcome window does not appear again automatically; reopen it from **Help → Welcome to GitStride…** to review the introduction without resetting preferences or credentials. Existing account setups skip the automatic welcome.
+
+Until you connect, the workspace and menu bar offer **Open GitHub Settings**. Pull request automation is an optional, separate connection in the same settings page.
+
 ### GitHub Connection
 
 Open **Settings → GitHub → Account** to log in or disconnect. To change accounts or connection methods, disconnect first, then log in again. OAuth shows a device code: choose **Copy Code and Open GitHub**, paste it into Device activation, and approve access. You can close Settings while waiting; Cancel stops the login attempt.
