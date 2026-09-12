@@ -2,10 +2,9 @@
 
 [Back to README](../README.md)
 
-
 ### GitHub Connection
 
-Open **Settings → GitHub** to log in, change connections, or disconnect. OAuth shows a device code: choose **Copy Code and Open GitHub**, paste it into Device activation, and approve access. You can close Settings while waiting; Cancel stops the login attempt.
+Open **Settings → GitHub → Account** to log in or disconnect. To change accounts or connection methods, disconnect first, then log in again. OAuth shows a device code: choose **Copy Code and Open GitHub**, paste it into Device activation, and approve access. You can close Settings while waiting; Cancel stops the login attempt.
 
 The Release build can also use an existing GitHub CLI login. Switching connections clears the previous project cache and pending operations; complete or check any submitted work on GitHub before reconnecting. Background automation keeps its own connection.
 
@@ -43,7 +42,7 @@ Selecting an item in Board, Table, or My Work opens the detail page with Back na
 
 ### Pull Request Automation
 
-Connect automation once from Settings. Every repository currently available to the GitHub App is included automatically, and closing Issues are updated in every matching personal Project. The selected Project supplies the Status mapping names used across Projects; In Progress and Done are required. For Ready pull requests, choose either `Move to In review` or `Keep in In progress`. The first choice reuses a case-insensitive `In review` match or adds an Orange `In review` only when a matching Project first needs it. The second never changes Project options. Automation never adds Backlog. The hosted Worker runs even when GitStride is closed, and a running app refreshes displayed Project data and Automation connection health when the Worker reports a change.
+Connect automation once from **Settings → GitHub → Pull Request Automation**. Every repository currently available to the GitHub App is included automatically, and closing Issues are updated in every matching personal Project. The selected Project supplies the Status mapping names used across Projects; In Progress and Done are required. For Ready pull requests, choose either `Move to In review` or `Keep in In progress`. The first choice reuses a case-insensitive `In review` match or adds an Orange `In review` only when a matching Project first needs it. The second never changes Project options. Automation never adds Backlog. The hosted Worker runs even when GitStride is closed, and a running app refreshes displayed Project data and Automation connection health when the Worker reports a change.
 
 Automation waits 3 seconds before reading current PR states and updating linked Issue items. All linked closing PRs must be merged for Done; any open Draft keeps the Issue In Progress; otherwise an open Ready uses your review policy. We recommend disabling overlapping built-in Project Status workflows, but this is optional. The delay currently requires a Worker code change and deployment to adjust; it is not editable in GitStride.
 
@@ -71,4 +70,3 @@ Project field configuration remains managed on GitHub. If an existing `Phase` fi
 | `⌘ →` | Next status tab |
 | `>` | Enter quick create mode |
 | `Esc` | Exit quick create mode |
-

@@ -6,13 +6,11 @@ import Sparkle
 struct SettingsView: View {
     @Bindable var model: GitStrideModel
     private enum Pane: String {
-        case github, general, automation, shortcuts
+        case github, general, shortcuts
 
         var height: CGFloat {
             switch self {
-            case .github: 490
-            case .general: 360
-            case .automation: 280
+            case .github, .general: 360
             case .shortcuts: 500
             }
         }
@@ -32,12 +30,6 @@ struct SettingsView: View {
                 }
                 .tag(Pane.general)
 
-            AutomationSettingsView(setup: model.automationSetup)
-                .tabItem {
-                    Label("Automation", systemImage: "arrow.triangle.branch")
-                }
-                .tag(Pane.automation)
-
             ShortcutsSettingsView()
                 .tabItem {
                     Label("Shortcuts", systemImage: "keyboard")
@@ -45,6 +37,11 @@ struct SettingsView: View {
                 .tag(Pane.shortcuts)
         }
         .frame(width: 520, height: selectedTab.height)
+        .onAppear {
+            if UserDefaults.standard.string(forKey: "selectedSettingsPane") == "automation" {
+                selectedTab = .github
+            }
+        }
     }
 }
 

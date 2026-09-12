@@ -23,13 +23,13 @@ A native macOS app for GitHub Projects. Keep your board in the menu bar, organiz
 
 1. Download GitStride from [gitstride.zwyyy456.tech](https://gitstride.zwyyy456.tech) or [GitHub Releases](https://github.com/zwyyy456/GitStride/releases).
 2. Open the DMG and drag GitStride into Applications.
-3. Open **Settings → GitHub → Log In to GitHub**.
+3. Open **Settings → GitHub → Account → Log In to GitHub**.
 4. Choose **Copy Code and Open GitHub**, paste the code into GitHub’s Device activation page, and approve access.
 5. Choose your personal account or organization and select a Project.
 
 Desktop OAuth requests `repo project read:org offline_access`. GitHub’s `repo` scope includes reading and writing repository code, including private repositories; it is broader than board access. Login and refresh credentials stay in macOS Keychain.
 
-The GitHub Release build also supports **Settings → GitHub → Connect using → GitHub CLI**. Install [GitHub CLI](https://cli.github.com), run `gh auth login --hostname github.com`, and grant Projects access with `gh auth refresh --hostname github.com --scopes project,read:org`. GitStride keeps the selected CLI account until you reconnect. Disconnecting GitStride leaves your terminal login intact. Existing installations with a saved owner keep CLI mode on upgrade; new installations default to OAuth.
+The GitHub Release build also supports **Settings → GitHub → Connection method → GitHub CLI** when disconnected. Install [GitHub CLI](https://cli.github.com), run `gh auth login --hostname github.com`, and grant Projects access with `gh auth refresh --hostname github.com --scopes project,read:org`. GitStride keeps the selected CLI account until you reconnect. Disconnecting GitStride leaves your terminal login intact. Existing installations with a saved owner keep CLI mode on upgrade; new installations default to OAuth.
 
 The `GitStrideAppStore` build provides OAuth login only. This build target does not imply the app is already published in the Mac App Store.
 
@@ -51,7 +51,7 @@ See the [user guide](docs/usage.md) for saved views, table columns, delivery sum
 
 ## Optional pull request automation
 
-Open **Settings → Automation → Set Up Automation** to connect. The hosted service is operated by [zwyyy456](https://github.com/zwyyy456) on Cloudflare Workers. It continues running while GitStride is closed.
+Open **Settings → GitHub → Pull Request Automation → Set Up Automation** to connect. The hosted service is operated by [zwyyy456](https://github.com/zwyyy456) on Cloudflare Workers. It continues running while GitStride is closed.
 
 The setup uses two separate GitHub authorizations:
 
@@ -62,7 +62,7 @@ Choose a personal Project as the Status mapping template, with In Progress and D
 
 Open Draft PRs keep an Issue In Progress. Ready PRs follow your selected review policy, and a nonempty set of closing PRs must all be merged before the Issue moves to Done. Updates wait at least three seconds before reloading current PR state. With **Move to In review**, automation can add that Status option to a matching Project if needed. See the [full behavior](docs/usage.md#pull-request-automation).
 
-Pause, resume, reauthorize, or delete the connection in Automation settings. Deleting the connection stops future automation processing; it does not undo earlier changes to GitHub Project statuses. To revoke GitHub access completely, also remove the OAuth authorization under [Authorized OAuth Apps](https://github.com/settings/applications) and uninstall the GitHub App under [Installed GitHub Apps](https://github.com/settings/installations).
+Pause, resume, reauthorize, or delete the connection under **Settings → GitHub → Pull Request Automation**. Deleting the connection stops future automation processing; it does not undo earlier changes to GitHub Project statuses. To revoke GitHub access completely, also remove the OAuth authorization under [Authorized OAuth Apps](https://github.com/settings/applications) and uninstall the GitHub App under [Installed GitHub Apps](https://github.com/settings/installations).
 
 For deployment on your own Cloudflare account, see [Automation setup and deployment](Automation/README.md). Source builds can use a different service origin or disable Automation with an empty `GITSTRIDE_AUTOMATION_BASE_URL` build setting.
 

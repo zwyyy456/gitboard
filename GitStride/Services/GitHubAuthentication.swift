@@ -28,6 +28,12 @@ struct GitHubDeviceAuthorization: Decodable, Sendable {
     }
 }
 
+enum GitHubDeviceAuthorizationProgress: Sendable, Equatable {
+    case waitingForAuthorization
+    case retrying
+    case verifyingAccount
+}
+
 protocol GitHubAuthenticating: Sendable {
     func accessToken() async throws -> String
     func rejectAccessToken(_ token: String) async
@@ -136,23 +142,46 @@ actor GitHubAuthentication: GitHubAuthenticating {
         return authorization
     }
 
-    func completeDeviceAuthorization(_ authorization: GitHubDeviceAuthorization) async throws {
-        let deadline = Date().addingTimeInterval(TimeInterval(authorization.expiresIn))
-        var interval = authorization.interval
-        while Date() < deadline {
-            try await Task.sleep(for: .seconds(interval))
+    func completeDeviceAuthorization(
+        _ authorization: GitHubDeviceAuthorization,
+        onProgress: @Sendable (GitHubDeviceAuthorizationProgress) async throws -> Void
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(authorization.expiresIn))
+        var interval = Duration.seconds(authorization.interval)
+        try checkActive()
+        try await onProgress(.waitingForAuthorization)
+        while clock.now < deadline {
             try checkActive()
-            let response = try await tokenRequest([
-                "client_id": clientID, "device_code": authorization.deviceCode,
-                "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
-            ])
+            try await clock.sleep(until: min(clock.now.advanced(by: interval), deadline))
+            try checkActive()
+            guard clock.now < deadline else { break }
+            let response: TokenResponse
+            do {
+                response = try await tokenRequest([
+                    "client_id": clientID, "device_code": authorization.deviceCode,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
+                ])
+            } catch let error as URLError where error.code == .timedOut {
+                try checkActive()
+                // RFC 8628 requires a lower polling frequency after a connection timeout.
+                interval *= 2
+                try await onProgress(.retrying)
+                continue
+            }
             switch response.error {
-            case "authorization_pending": continue
-            case "slow_down": interval += 5; continue
+            case "authorization_pending":
+                try await onProgress(.waitingForAuthorization)
+            case "slow_down":
+                interval += .seconds(5)
+                try await onProgress(.waitingForAuthorization)
             case "access_denied": throw GitHubError.authorizationDenied
             case "expired_token": throw GitHubError.authorizationExpired
             case nil:
-                let account = try await identity(token: response.validatedAccessToken())
+                let token = try response.validatedAccessToken()
+                try await onProgress(.verifyingAccount)
+                try checkActive()
+                let account = try await identity(token: token)
                 try save(response.credential(clientID: clientID, account: account))
                 return
             default: throw GitHubError.oauthUnavailable

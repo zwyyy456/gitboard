@@ -22,6 +22,45 @@ struct GitHubAuthenticationTests {
                               refreshToken: "old-refresh", expiresAt: .distantPast, refreshExpiresAt: .distantFuture)
     }
 
+    private func deviceAuthorization(expiresIn: Int = 60) throws -> GitHubDeviceAuthorization {
+        let data = Data("""
+        {"device_code":"device","user_code":"ABCD-EFGH","verification_uri":"https://github.com/login/device","expires_in":\(expiresIn),"interval":1}
+        """.utf8)
+        return try JSONDecoder().decode(GitHubDeviceAuthorization.self, from: data)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func timedOutPollingBacksOffAndReportsAccountVerification() async throws {
+        let keychain = MemoryGitHubCredentials(nil)
+        let http = SuspendingGitHubHTTPClient(steps: [
+            .failure(.timedOut), .response(Self.refreshed), .response(Self.identity)
+        ], headers: Self.headers)
+        let auth = GitHubAuthentication(method: .oauth, http: http, clientID: "public-client", keychain: keychain)
+        let events = OSAllocatedUnfairLock(initialState: [(GitHubDeviceAuthorizationProgress, ContinuousClock.Instant)]())
+
+        try await auth.completeDeviceAuthorization(deviceAuthorization()) { progress in
+            events.withLock { $0.append((progress, .now)) }
+        }
+
+        let recorded = events.withLock { $0 }
+        #expect(recorded.map(\.0) == [.waitingForAuthorization, .retrying, .verifyingAccount])
+        try #require(recorded.count == 3)
+        #expect(recorded[1].1.duration(to: recorded[2].1) >= .seconds(2))
+        #expect(keychain.load()?.accessToken == "new-access")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func pollingBackoffStopsAtDeviceCodeExpiry() async throws {
+        let keychain = MemoryGitHubCredentials(nil)
+        let http = SuspendingGitHubHTTPClient(steps: [.failure(.timedOut)])
+        let auth = GitHubAuthentication(method: .oauth, http: http, clientID: "public-client", keychain: keychain)
+        await #expect(throws: GitHubError.authorizationExpired) {
+            try await auth.completeDeviceAuthorization(deviceAuthorization(expiresIn: 2)) { _ in }
+        }
+        #expect(await http.recordedCallCount() == 1)
+        #expect(keychain.load() == nil)
+    }
+
     @Test(arguments: GitHubAuthenticationMethod.allCases)
     func disconnectedLaunchDoesNotRestoreAnyCredential(_ method: GitHubAuthenticationMethod) async throws {
         let http = FixtureGitHubHTTPClient(responses: [])
