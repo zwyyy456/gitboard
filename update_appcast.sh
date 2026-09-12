@@ -1,101 +1,70 @@
 #!/bin/bash
+# Generate a signed update entry from a notarized DMG using Sparkle.
+# Usage: ./update_appcast.sh path/to/GitStride-VERSION.dmg [release-notes.html]
+set -euo pipefail
 
-# Update appcast.xml for Sparkle updates
-# Usage: ./update_appcast.sh VERSION "Release notes"
-# Example: ./update_appcast.sh 1.1.0 "Added dark mode support"
-
-set -e
-
-VERSION=$1
-NOTES=$2
-DMG_FILE="GitStride-${VERSION}.dmg"
-APPCAST_FILE="appcast.xml"
-PRIVATE_KEY="$HOME/.sparkle_private_key"
-
-if [ -z "$VERSION" ]; then
-    echo "Usage: $0 VERSION \"Release notes\""
-    echo "Example: $0 1.1.0 \"Added dark mode support\""
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+DMG_PATH="${1:-}"
+NOTES_PATH="${2:-}"
+if [ -z "$DMG_PATH" ] || [ ! -f "$DMG_PATH" ]; then
+    echo "Usage: $0 path/to/GitStride-VERSION.dmg [release-notes.html]" >&2
     exit 1
 fi
 
-if [ ! -f "$DMG_FILE" ]; then
-    echo "Error: $DMG_FILE not found"
-    echo "Build the DMG first using create_dmg.sh"
+# The release build resolves Sparkle at this deterministic artifact location.
+SPARKLE_BIN="$REPO_ROOT/build/release/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin"
+if [ ! -x "$SPARKLE_BIN/generate_appcast" ]; then
+    echo "Sparkle tools are missing. Run ./build_release.sh first." >&2
     exit 1
 fi
+xcrun stapler validate "$DMG_PATH"
 
-if [ ! -f "$PRIVATE_KEY" ]; then
-    echo "Error: Sparkle private key not found at $PRIVATE_KEY"
-    echo "Generate one with: ./generate_keys"
-    exit 1
+DMG_NAME=$(basename "$DMG_PATH")
+case "$DMG_NAME" in
+    GitStride-*.dmg) VERSION="${DMG_NAME#GitStride-}"; VERSION="${VERSION%.dmg}" ;;
+    *) echo "Expected a DMG created by ./create_dmg.sh." >&2; exit 1 ;;
+esac
+
+STAGING_DIR=$(mktemp -d "${TMPDIR:-/tmp}/gitstride-appcast.XXXXXX")
+trap 'rm -rf "$STAGING_DIR"' EXIT
+cp "$DMG_PATH" "$STAGING_DIR/$DMG_NAME"
+cp "$REPO_ROOT/appcast.xml" "$STAGING_DIR/appcast.xml"
+if [ -n "$NOTES_PATH" ]; then
+    cp "$NOTES_PATH" "$STAGING_DIR/${DMG_NAME%.dmg}.html"
 fi
 
-# Get DMG file size
-FILE_SIZE=$(stat -f%z "$DMG_FILE")
+"$SPARKLE_BIN/generate_appcast" \
+    --account gitstride \
+    --download-url-prefix "https://github.com/zwyyy456/GitStride/releases/download/v$VERSION/" \
+    --link "https://gitstride.zwyyy456.tech" \
+    --embed-release-notes --maximum-deltas 0 --maximum-versions 0 \
+    "$STAGING_DIR"
 
-# Sign the DMG and get signature
-echo "Signing $DMG_FILE..."
-# You need Sparkle's sign_update tool - path may vary
-SIGN_TOOL="$HOME/.build/checkouts/Sparkle/bin/sign_update"
-if [ ! -f "$SIGN_TOOL" ]; then
-    # Try alternative location from Xcode derived data
-    SIGN_TOOL=$(find ~/Library/Developer/Xcode/DerivedData -name "sign_update" -type f 2>/dev/null | head -1)
-fi
-
-if [ -z "$SIGN_TOOL" ] || [ ! -f "$SIGN_TOOL" ]; then
-    echo "Error: sign_update tool not found"
-    echo "Build Sparkle first or locate the sign_update binary"
-    exit 1
-fi
-
-SIGNATURE=$("$SIGN_TOOL" "$DMG_FILE" 2>&1 | grep "sparkle:edSignature" | sed 's/.*sparkle:edSignature="\([^"]*\)".*/\1/')
-
-if [ -z "$SIGNATURE" ]; then
-    echo "Error: Failed to generate signature"
-    exit 1
-fi
-
-echo "Signature: $SIGNATURE"
-
-# Get current build number and increment
-CURRENT_BUILD=$(grep -o '<sparkle:version>[0-9]*</sparkle:version>' "$APPCAST_FILE" | head -1 | grep -o '[0-9]*')
-NEW_BUILD=$((CURRENT_BUILD + 1))
-
-# Generate pubDate
-PUB_DATE=$(date -R)
-
-# Create new item entry
-NEW_ITEM="        <item>
-            <title>Version $VERSION</title>
-            <description><![CDATA[
-                <h2>What's New</h2>
-                <p>$NOTES</p>
-            ]]></description>
-            <pubDate>$PUB_DATE</pubDate>
-            <sparkle:version>$NEW_BUILD</sparkle:version>
-            <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure
-                url=\"https://github.com/yogesharc/GitStride/releases/download/v$VERSION/$DMG_FILE\"
-                sparkle:edSignature=\"$SIGNATURE\"
-                length=\"$FILE_SIZE\"
-                type=\"application/octet-stream\"/>
-        </item>"
-
-# Backup current appcast
-cp "$APPCAST_FILE" "${APPCAST_FILE}.bak"
-
-# Insert new item after <language>en</language>
-sed -i '' "/<language>en<\/language>/a\\
-\\
-$NEW_ITEM
-" "$APPCAST_FILE"
-
-echo ""
-echo "Updated $APPCAST_FILE with version $VERSION (build $NEW_BUILD)"
-echo ""
-echo "Next steps:"
-echo "1. Commit the updated appcast.xml to the repo"
-echo "2. Create a GitHub release tagged v$VERSION"
-echo "3. Upload $DMG_FILE to the release"
-echo "4. Test the update by running an older version of the app"
+# Check the filename against the version extracted by Sparkle from the DMG.
+# Never invent or increment a build number separately from the packaged app.
+SIGNATURE=$(python3 - "$STAGING_DIR/appcast.xml" "$DMG_NAME" "$VERSION" <<'PY'
+import sys
+import urllib.parse
+import xml.etree.ElementTree as ET
+feed, name, version = sys.argv[1:]
+namespace = {"sparkle": "http://www.andymatuschak.org/xml-namespaces/sparkle"}
+for item in ET.parse(feed).findall("./channel/item"):
+    enclosure = item.find("enclosure")
+    if enclosure is None:
+        continue
+    filename = urllib.parse.unquote(urllib.parse.urlparse(enclosure.get("url", "")).path.rsplit("/", 1)[-1])
+    if filename == name:
+        if item.findtext("sparkle:shortVersionString", namespaces=namespace) != version:
+            raise SystemExit("DMG filename does not match the packaged app version.")
+        signature = enclosure.get("{" + namespace["sparkle"] + "}edSignature")
+        if not signature:
+            raise SystemExit("Sparkle did not sign the update. Check the gitstride Keychain account and the app's SUPublicEDKey.")
+        print(signature)
+        break
+else:
+    raise SystemExit("Sparkle did not generate an update entry for this DMG.")
+PY
+)
+"$SPARKLE_BIN/sign_update" --account gitstride --verify "$DMG_PATH" "$SIGNATURE"
+cp "$STAGING_DIR/appcast.xml" "$REPO_ROOT/appcast.xml"
+printf 'Updated appcast.xml for %s. Upload the DMG to GitHub release v%s before publishing the feed.\n' "$DMG_NAME" "$VERSION"
