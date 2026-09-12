@@ -2,11 +2,13 @@
 
 This guide covers local distribution through [gitstride.zwyyy456.tech](https://gitstride.zwyyy456.tech) and [zwyyy456/GitStride Releases](https://github.com/zwyyy456/GitStride/releases). It does not deploy the website or Automation Worker.
 
+The client and release artifacts use GitStride. The repository, website, and Sparkle feed still use their existing URLs. When those resources move, update `GitStride/Info.plist` (`SUFeedURL`), the download prefix and website link in `update_appcast.sh`, and the channel link in `appcast.xml` together. Existing feed entries must continue to point to their published assets.
+
 ## Distribution targets and desktop OAuth
 
 `GitStride` is the Developer ID / GitHub Release target. `GitStrideAppStore` shares the app sources, enables App Sandbox with outgoing network access, and excludes the CLI runner and Sparkle. Use its shared scheme to archive for App Store Connect; the DMG and appcast scripts remain specific to the Release target. Update version and build numbers on both targets when shipping both distributions.
 
-Both targets use the public `GITBOARD_OAUTH_CLIENT_ID` build setting. Register a desktop OAuth App separately from the Worker OAuth App and enable Device Flow. Never embed a Client Secret or reuse Worker access/refresh tokens. Signed Keychain access and container behavior must be checked with the actual distribution signing setup; unsigned builds do not validate these permissions.
+Both targets use the public `GITSTRIDE_OAUTH_CLIENT_ID` build setting. Register a desktop OAuth App separately from the Worker OAuth App and enable Device Flow. Never embed a Client Secret or reuse Worker access/refresh tokens. Signed Keychain access and container behavior must be checked with the actual distribution signing setup; unsigned builds do not validate these permissions.
 
 ## Version and update feed
 

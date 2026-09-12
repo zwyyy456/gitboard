@@ -212,7 +212,7 @@ curl --fail --silent --show-error https://WORKER_ORIGIN/health
 
 The expected health response is `{"status":"ok"}`. Enable the GitHub App
 webhook only after this succeeds. Build the release app with
-`GITBOARD_AUTOMATION_BASE_URL` set to the same origin; an empty setting
+`GITSTRIDE_AUTOMATION_BASE_URL` set to the same origin; an empty setting
 deliberately makes Automation unavailable rather than selecting an implicit
 server.
 

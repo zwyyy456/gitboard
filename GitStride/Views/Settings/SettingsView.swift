@@ -223,7 +223,7 @@ struct AboutView: View {
                 .frame(width: 64, height: 64)
                 .accessibilityHidden(true)
 
-            Text("GitStride")
+            Text("GitStride · 迹程")
                 .font(.system(size: 24, weight: .bold))
 
             Text("Version \(appVersion) (\(buildNumber))")
