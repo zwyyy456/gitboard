@@ -45,6 +45,7 @@ actor SuspendingGitHubCommandRunner: GitHubCommandRunning {
     private var steps: [SuspendingRunnerStep]
     private var callCount = 0
     private var calls: [[String]] = []
+    private var inputs: [Data?] = []
     private var suspendedIDs: Set<String> = []
     private var resultWaiters: [String: CheckedContinuation<GitHubCommandResult, Never>] = [:]
     private var suspensionWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
@@ -57,6 +58,7 @@ actor SuspendingGitHubCommandRunner: GitHubCommandRunning {
         guard steps.isEmpty == false else { throw RunnerError.missingResponse }
         callCount += 1
         calls.append(arguments)
+        inputs.append(standardInput)
 
         switch steps.removeFirst() {
         case .failure(let error):
@@ -89,6 +91,8 @@ actor SuspendingGitHubCommandRunner: GitHubCommandRunning {
     }
 
     func recordedArguments() -> [[String]] { calls }
+
+    func recordedInputs() -> [Data?] { inputs }
 
     func recordedCallCount() -> Int {
         callCount

@@ -25,7 +25,7 @@ enum ProjectStoreError: LocalizedError {
     case itemUnavailable
     case operationInProgress
     case missingFieldOption(field: String, option: String)
-    case createdIssueUnavailable
+    case projectRefreshIncomplete
 
     var errorDescription: String? {
         switch self {
@@ -41,8 +41,8 @@ enum ProjectStoreError: LocalizedError {
             "This item is no longer available."
         case .missingFieldOption(let field, let option):
             "\(field) has no option named \(option)."
-        case .createdIssueUnavailable:
-            "The issue was added, but GitStride could not apply its Project fields."
+        case .projectRefreshIncomplete:
+            "GitStride could not finish refreshing the project."
         }
     }
 }
@@ -53,14 +53,14 @@ final class IssueCreation {
     enum Phase: Equatable {
         case ready
         case addingToProject(issueURL: String)
-        case applyingFields(issueURL: String)
+        case applyingFields(issueURL: String, itemID: String)
         case refreshingProject(issueURL: String)
         case completed(issueURL: String)
         case unconfirmed
     }
 
     let projectID: String
-    fileprivate let repository: String
+    let repository: String
     fileprivate let title: String
     fileprivate let body: String
     fileprivate let labels: [String]
@@ -527,7 +527,16 @@ final class ProjectStore {
 
     var repositorySuggestions: [String] {
         guard let project = selectedProject else { return [] }
-        return Array(Set(project.items.compactMap(\.repositoryName))).sorted()
+        let linked = project.linkedRepositories.sorted()
+        let used = Set(project.items.compactMap(\.repositoryName)).subtracting(linked)
+        return linked + used.sorted()
+    }
+
+    var defaultIssueRepository: String {
+        guard let project = selectedProject else { return "" }
+        if project.linkedRepositories.count == 1 { return project.linkedRepositories[0] }
+        let suggestions = repositorySuggestions
+        return project.linkedRepositories.isEmpty && suggestions.count == 1 ? suggestions[0] : ""
     }
 
     init(
@@ -844,7 +853,8 @@ final class ProjectStore {
         guard !isCreatingProject else { throw ProjectStoreError.operationInProgress }
         isCreatingProject = true
         defer { isCreatingProject = false }
-        let project = try await gitHubService.createProject(owner: owner, title: title, repositoryID: repository?.id)
+        var project = try await gitHubService.createProject(owner: owner, title: title, repositoryID: repository?.id)
+        project.linkedRepositories = repository.map { [$0.nameWithOwner] } ?? []
 
         // The mutation succeeded. Subsequent read failures must not invite creation again.
         cancelProjectLoad()
@@ -1087,6 +1097,7 @@ final class ProjectStore {
                 viewerCanUpdate: projectStates[project.id]?.source == .cache
                     ? false
                     : project.viewerCanUpdate,
+                linkedRepositories: detailed.linkedRepositories,
                 fields: detailed.fields,
                 statusField: detailed.statusField,
                 items: detailed.items
@@ -1115,6 +1126,7 @@ final class ProjectStore {
             number: project.number,
             url: project.url,
             viewerCanUpdate: false,
+            linkedRepositories: project.linkedRepositories,
             fields: project.fields,
             statusField: project.statusField,
             items: project.items
@@ -1347,9 +1359,11 @@ final class ProjectStore {
                         )
                         creation.phase = .addingToProject(issueURL: issueURL)
                     } catch {
-                        if self.requiresReconciliation(error)
-                            || (error as? GitHubError) == .issueCreationUnconfirmed {
+                        switch error {
+                        case GitHubError.issueCreationUnconfirmed, GitHubError.decodingError:
                             creation.phase = .unconfirmed
+                        default:
+                            if self.requiresReconciliation(error) { creation.phase = .unconfirmed }
                         }
                         throw error
                     }
@@ -1357,23 +1371,19 @@ final class ProjectStore {
             }
             if case .addingToProject(let issueURL) = creation.phase {
                 try await performProjectMutation(projectID: creation.projectID) {
-                    try await self.gitHubService.addExistingItem(projectId: creation.projectID, url: issueURL)
-                    creation.phase = .applyingFields(issueURL: issueURL)
+                    let itemID = try await self.gitHubService.addExistingItem(
+                        projectId: creation.projectID, url: issueURL
+                    )
+                    creation.phase = creation.remainingFields.isEmpty
+                        ? .refreshingProject(issueURL: issueURL)
+                        : .applyingFields(issueURL: issueURL, itemID: itemID)
                 }
             }
-            if case .applyingFields(let issueURL) = creation.phase {
-                guard let project = try await refreshProjectSnapshot(id: creation.projectID),
-                      let item = project.items.first(where: { $0.url == issueURL }) else {
-                    throw ProjectStoreError.createdIssueUnavailable
-                }
-                if creation.remainingFields.isEmpty {
-                    creation.phase = .completed(issueURL: issueURL)
-                    return
-                }
-                try await performProjectMutation(projectID: creation.projectID, itemID: item.id) {
+            if case .applyingFields(let issueURL, let itemID) = creation.phase {
+                try await performProjectMutation(projectID: creation.projectID, itemID: itemID) {
                     while let (field, option) = creation.remainingFields.first {
                         try await self.gitHubService.updateItemField(
-                            projectId: creation.projectID, itemId: item.id, fieldId: field.id,
+                            projectId: creation.projectID, itemId: itemID, fieldId: field.id,
                             value: .singleSelect(optionId: option.id, name: option.name)
                         )
                         creation.remainingFields.removeFirst()
@@ -1383,7 +1393,7 @@ final class ProjectStore {
             }
             if case .refreshingProject(let issueURL) = creation.phase {
                 guard try await refreshProjectSnapshot(id: creation.projectID) != nil else {
-                    throw ProjectStoreError.createdIssueUnavailable
+                    throw ProjectStoreError.projectRefreshIncomplete
                 }
                 creation.phase = .completed(issueURL: issueURL)
             }
@@ -1392,7 +1402,7 @@ final class ProjectStore {
             switch creation.phase {
             case .addingToProject(let url):
                 context = "The issue was created at \(url). Retry to add it to the original project. "
-            case .applyingFields(let url):
+            case .applyingFields(let url, _):
                 context = "The issue at \(url) was added. Retry to finish its Project fields. "
             case .refreshingProject:
                 context = "The issue and its Project fields were saved. Retry to refresh the project. "

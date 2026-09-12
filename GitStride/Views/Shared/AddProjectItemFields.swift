@@ -86,7 +86,7 @@ struct LabelTokenField: NSViewRepresentable {
         field.placeholderString = "bug, enhancement"
         field.tokenizingCharacterSet = CharacterSet(charactersIn: ",")
         field.setAccessibilityLabel("Labels")
-        field.setAccessibilityHelp("Type a label, then press comma or Return. Suggestions come from this project's loaded items.")
+        field.setAccessibilityHelp("Type a label, then press comma or Return. Missing labels will be created in the repository when you submit.")
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return field
@@ -162,7 +162,7 @@ struct RepositoryComboBox: NSViewRepresentable {
         comboBox.setContentHuggingPriority(.defaultLow, for: .horizontal)
         comboBox.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         comboBox.setAccessibilityLabel("Repository, required")
-        comboBox.toolTip = "Choose a repository used in this project, or type owner/repository."
+        comboBox.toolTip = "Choose a repository linked to or used in this project, or type owner/repository."
         return comboBox
     }
 
@@ -207,4 +207,3 @@ struct RepositoryComboBox: NSViewRepresentable {
         }
     }
 }
-

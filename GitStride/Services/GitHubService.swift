@@ -10,6 +10,7 @@ enum GitHubError: Error, LocalizedError, Equatable {
     case invalidItemURL
     case itemUnavailable
     case issueCreationUnconfirmed
+    case issueCreationNotStarted(String)
     case graphQLError(String)
     case decodingError(String)
     case processError(String)
@@ -37,6 +38,8 @@ enum GitHubError: Error, LocalizedError, Equatable {
             return "This item is unavailable or no longer accessible."
         case .issueCreationUnconfirmed:
             return "GitHub did not confirm the issue’s identity. Check the repository before creating another issue."
+        case .issueCreationNotStarted(let message):
+            return "The issue was not created. \(message)"
         case .graphQLError(let message):
             return "GitHub API error: \(message)"
         case .decodingError(let message):
@@ -247,6 +250,7 @@ actor GitHubService {
             number: projectData.number,
             url: projectData.url,
             viewerCanUpdate: projectData.viewerCanUpdate,
+            linkedRepositories: projectData.linkedRepositories,
             fields: fields,
             statusField: statusField,
             items: itemNodes.map(makeProjectItem)
@@ -569,27 +573,77 @@ actor GitHubService {
         guard let repository = parseRepository(repository) else {
             throw GitHubError.invalidRepository
         }
-        var arguments = [
-            "issue", "create",
-            "--repo", repository,
-            "--title", title,
-            "--body", body
-        ]
+        let repositoryID: String
+        var labelIDs: [String] = []
+        var assigneeIDs: [String] = []
+        do {
+            let parts = repository.split(separator: "/").map(String.init)
+            var after: String?
+            var existingLabels: [GitHubResponse.IssueLabel] = []
+            var resolvedRepositoryID: String?
+            repeat {
+                try Task.checkCancellation()
+                var variables = cursorVariables(after)
+                variables["owner"] = parts[0]
+                variables["name"] = parts[1]
+                let payload: GitHubResponse.IssueRepositoryPayload = try await request(
+                    GraphQLQueries.issueRepository, variables: variables,
+                    as: GitHubResponse.IssueRepositoryPayload.self
+                )
+                guard let remoteRepository = payload.repository else {
+                    throw GitHubError.graphQLError("Repository not found or no longer accessible.")
+                }
+                resolvedRepositoryID = remoteRepository.id
+                existingLabels += remoteRepository.labels.nodes
+                after = labels.isEmpty ? nil : try nextCursor(from: remoteRepository.labels.pageInfo)
+            } while after != nil
+            guard let resolvedRepositoryID else { throw GitHubError.invalidRepository }
+            repositoryID = resolvedRepositoryID
 
-        if labels.isEmpty == false {
-            arguments += ["--label", labels.joined(separator: ",")]
-        }
-        if assignees.isEmpty == false {
-            arguments += ["--assignee", assignees.joined(separator: ",")]
-        }
-        let result = try await run(arguments)
-        let output = String(decoding: result.standardOutput, as: UTF8.self)
-        let issueURL = output
-            .split(whereSeparator: \Character.isWhitespace)
-            .map(String.init)
-            .first(where: { GitHubItemAddress($0) != nil })
+            for login in Set(assignees).sorted() {
+                try Task.checkCancellation()
+                let payload: GitHubResponse.IssueAssigneePayload = try await request(
+                    GraphQLQueries.issueAssignee, variables: ["login": login],
+                    as: GitHubResponse.IssueAssigneePayload.self
+                )
+                guard let user = payload.user else {
+                    throw GitHubError.graphQLError("Assignee @\(login) was not found.")
+                }
+                assigneeIDs.append(user.id)
+            }
 
-        guard let issueURL else {
+            for name in labels {
+                try Task.checkCancellation()
+                let label: GitHubResponse.IssueLabel
+                if let existing = existingLabels.first(where: {
+                    $0.name.caseInsensitiveCompare(name) == .orderedSame
+                }) {
+                    label = existing
+                } else {
+                    let payload: GitHubResponse.CreateLabelPayload = try await request(
+                        GraphQLQueries.createLabel,
+                        variables: ["repositoryId": repositoryID, "name": name],
+                        as: GitHubResponse.CreateLabelPayload.self
+                    )
+                    label = payload.createLabel.label
+                    existingLabels.append(label)
+                }
+                if !labelIDs.contains(label.id) { labelIDs.append(label.id) }
+            }
+            try Task.checkCancellation()
+        } catch {
+            // Reads and label creation cannot create an issue, even if interrupted.
+            throw GitHubError.issueCreationNotStarted(error.localizedDescription)
+        }
+
+        let payload: GitHubResponse.CreateIssuePayload = try await request(
+            GraphQLQueries.createIssue,
+            variables: ["repositoryId": repositoryID, "title": title, "body": body],
+            arrayVariables: ["labelIds": labelIDs, "assigneeIds": assigneeIDs],
+            as: GitHubResponse.CreateIssuePayload.self
+        )
+        let issueURL = payload.createIssue.issue.url
+        guard GitHubItemAddress(issueURL) != nil else {
             throw GitHubError.issueCreationUnconfirmed
         }
         return issueURL
@@ -635,7 +689,7 @@ actor GitHubService {
         return candidate
     }
 
-    func addExistingItem(projectId: String, url: String) async throws {
+    func addExistingItem(projectId: String, url: String) async throws -> String {
         guard let item = GitHubItemAddress(url) else {
             throw GitHubError.invalidItemURL
         }
@@ -649,30 +703,34 @@ actor GitHubService {
         guard contentId.isEmpty == false else {
             throw GitHubError.decodingError("GitHub returned no item identifier.")
         }
-        try await addExistingItem(projectId: projectId, contentId: contentId)
+        return try await addExistingItem(projectId: projectId, contentId: contentId)
     }
 
     func addExistingItem(projectId: String, candidate: GitHubItemCandidate) async throws {
-        try await addExistingItem(projectId: projectId, contentId: candidate.id)
+        _ = try await addExistingItem(projectId: projectId, contentId: candidate.id)
     }
 
-    private func addExistingItem(projectId: String, contentId: String) async throws {
-        let _: GitHubResponse.EmptyPayload = try await request(
+    private func addExistingItem(projectId: String, contentId: String) async throws -> String {
+        let payload: GitHubResponse.AddProjectItemPayload = try await request(
             GraphQLQueries.addItemToProject,
             variables: ["projectId": projectId, "contentId": contentId],
-            as: GitHubResponse.EmptyPayload.self
+            as: GitHubResponse.AddProjectItemPayload.self
         )
+        return payload.addProjectV2ItemById.item.id
     }
 
     private func fetchProjectFields(projectID: String) async throws -> ProjectFieldsResult {
         var after: String?
+        var repositoryAfter: String?
         var metadata: GitHubResponse.ProjectFieldsPayload.ProjectNode?
         var fields: [GitHubResponse.FieldNode] = []
+        var repositories: [String] = []
 
         repeat {
             try Task.checkCancellation()
             var variables = cursorVariables(after)
             variables["id"] = projectID
+            variables["repositoryAfter"] = repositoryAfter
             let payload: GitHubResponse.ProjectFieldsPayload = try await request(
                 GraphQLQueries.projectFields,
                 variables: variables,
@@ -681,10 +739,16 @@ actor GitHubService {
             guard let node = payload.node else {
                 throw GitHubError.graphQLError("Project not found or no longer accessible.")
             }
+            if metadata == nil || after != nil {
+                fields.append(contentsOf: node.fields.nodes)
+                after = try nextCursor(from: node.fields.pageInfo)
+            }
+            if metadata == nil || repositoryAfter != nil {
+                repositories += node.repositories.nodes.map(\.nameWithOwner)
+                repositoryAfter = try nextCursor(from: node.repositories.pageInfo)
+            }
             metadata = metadata ?? node
-            fields.append(contentsOf: node.fields.nodes)
-            after = try nextCursor(from: node.fields.pageInfo)
-        } while after != nil
+        } while after != nil || repositoryAfter != nil
 
         guard let metadata else {
             throw GitHubError.decodingError("Project metadata is missing.")
@@ -694,6 +758,7 @@ actor GitHubService {
             number: metadata.number,
             url: metadata.url,
             viewerCanUpdate: metadata.viewerCanUpdate,
+            linkedRepositories: repositories,
             fields: fields
         )
     }
@@ -867,6 +932,7 @@ actor GitHubService {
         _ query: String,
         variables: [String: String] = [:],
         numberVariables: [String: Double] = [:],
+        arrayVariables: [String: [String]] = [:],
         as type: Payload.Type
     ) async throws -> Payload {
         var arguments = ["api", "graphql", "-f", "query=\(query)"]
@@ -875,9 +941,10 @@ actor GitHubService {
             arguments += ["-f", "\(key)=\(value)"]
         }
         var input: Data?
-        if !numberVariables.isEmpty {
+        if !numberVariables.isEmpty || !arrayVariables.isEmpty {
             var values: [String: Any] = variables
             for (key, value) in numberVariables { values[key] = value }
+            for (key, value) in arrayVariables { values[key] = value }
             input = try JSONSerialization.data(withJSONObject: ["query": query, "variables": values])
             arguments = ["api", "graphql", "--input", "-"]
         }
@@ -964,6 +1031,7 @@ actor GitHubService {
         let number: Int
         let url: String
         let viewerCanUpdate: Bool
+        let linkedRepositories: [String]
         let fields: [GitHubResponse.FieldNode]
     }
 }

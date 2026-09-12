@@ -163,7 +163,7 @@ struct GitHubServiceTests {
     @Test func projectLoadKeepsContentIdentityAndRedactedItems() async throws {
         let runner = FixtureGitHubCommandRunner(responses: [
             """
-            {"data":{"node":{"title":"Work","number":7,"url":"https://github.com/users/me/projects/7","viewerCanUpdate":true,"fields":{"nodes":[{"__typename":"ProjectV2SingleSelectField","id":"F1","name":"Status","dataType":"SINGLE_SELECT","options":[{"id":"todo","name":"Todo","color":"GRAY"}]},{"__typename":"ProjectV2IterationField","id":"F2","name":"Iteration","dataType":"ITERATION","configuration":{"iterations":[{"id":"SPRINT1","title":"Sprint 1","startDate":"2026-08-24","duration":14}],"completedIterations":[]}},{"__typename":"ProjectV2Field","id":"F3","name":"Estimate","dataType":"NUMBER"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
+            {"data":{"node":{"title":"Work","number":7,"url":"https://github.com/users/me/projects/7","viewerCanUpdate":true,"repositories":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}},"fields":{"nodes":[{"__typename":"ProjectV2SingleSelectField","id":"F1","name":"Status","dataType":"SINGLE_SELECT","options":[{"id":"todo","name":"Todo","color":"GRAY"}]},{"__typename":"ProjectV2IterationField","id":"F2","name":"Iteration","dataType":"ITERATION","configuration":{"iterations":[{"id":"SPRINT1","title":"Sprint 1","startDate":"2026-08-24","duration":14}],"completedIterations":[]}},{"__typename":"ProjectV2Field","id":"F3","name":"Estimate","dataType":"NUMBER"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
             """,
             """
             {"data":{"node":{"items":{"nodes":[{"id":"I1","content":{"__typename":"Issue","id":"CONTENT1","title":"First","number":1,"url":"https://github.com/acme/repo/issues/1","state":"OPEN","assignees":{"nodes":[]},"labels":{"nodes":[{"id":"L1","name":"bug","color":"d73a4a"}]},"closedByPullRequestsReferences":{"nodes":[]},"subIssuesSummary":{"completed":2,"total":3},"issueDependenciesSummary":{"blockedBy":1,"blocking":4},"milestone":{"id":"M1","title":"v1"},"parent":{"id":"P1","title":"Delivery","number":9,"repository":{"nameWithOwner":"acme/plan"}},"issueType":{"id":"T1","name":"Bug"}},"fieldValueByName":{"name":"Todo","optionId":"todo"},"fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"id":"F1"}},{"__typename":"ProjectV2ItemFieldIterationValue","title":"Sprint 1","iterationId":"SPRINT1","field":{"id":"F2"}},{"__typename":"ProjectV2ItemFieldNumberValue","number":3,"field":{"id":"F3"}},{"__typename":"ProjectV2ItemFieldRepositoryValue"}]}}],"pageInfo":{"hasNextPage":true,"endCursor":"items-next"}}}}}
@@ -232,7 +232,9 @@ struct GitHubServiceTests {
 
     @Test func creationAndProjectMembershipUseSeparateCommands() async throws {
         let runner = FixtureGitHubCommandRunner(responses: [
-            "https://github.com/acme/widgets/issues/42\n",
+            #"{"data":{"repository":{"id":"REPO1","labels":{"nodes":[{"id":"BUG","name":"bug"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#,
+            #"{"data":{"user":{"id":"USER1"}}}"#,
+            #"{"data":{"createIssue":{"issue":{"id":"ISSUE_NODE_42","url":"https://github.com/acme/widgets/issues/42"}}}}"#,
             "ISSUE_NODE_42\n",
             """
             {"data":{"addProjectV2ItemById":{"item":{"id":"PROJECT_ITEM_42"}}}}
@@ -247,19 +249,78 @@ struct GitHubServiceTests {
             labels: ["bug"],
             assignees: ["octocat"]
         )
-        try await service.addExistingItem(projectId: "PROJECT_1", url: issueURL)
+        let itemID = try await service.addExistingItem(projectId: "PROJECT_1", url: issueURL)
         let calls = await runner.recordedArguments()
+        let input = try #require(await runner.recordedInputs()[2])
+        let request = try #require(JSONSerialization.jsonObject(with: input) as? [String: Any])
+        let variables = try #require(request["variables"] as? [String: Any])
 
         #expect(issueURL == "https://github.com/acme/widgets/issues/42")
-        #expect(calls.count == 3)
-        #expect(calls[0].contains("acme/widgets"))
-        #expect(calls[0].contains("Repair login"))
-        let bodyFlagIndex = try #require(calls[0].firstIndex(of: "--body"))
-        try #require(calls[0].indices.contains(bodyFlagIndex + 1))
-        #expect(calls[0][bodyFlagIndex + 1] == "Login fails after token refresh.")
-        #expect(calls[1].contains("repos/acme/widgets/issues/42"))
-        #expect(calls[2].contains("contentId=ISSUE_NODE_42"))
-        #expect(calls[2].contains("projectId=PROJECT_1"))
+        #expect(itemID == "PROJECT_ITEM_42")
+        #expect(calls.count == 5)
+        #expect(calls[0].contains("owner=acme") && calls[0].contains("name=widgets"))
+        #expect(variables["repositoryId"] as? String == "REPO1")
+        #expect(variables["title"] as? String == "Repair login")
+        #expect(variables["body"] as? String == "Login fails after token refresh.")
+        #expect(variables["labelIds"] as? [String] == ["BUG"])
+        #expect(variables["assigneeIds"] as? [String] == ["USER1"])
+        #expect(calls[3].contains("repos/acme/widgets/issues/42"))
+        #expect(calls[4].contains("contentId=ISSUE_NODE_42"))
+        #expect(calls[4].contains("projectId=PROJECT_1"))
+    }
+
+    @Test func issueCreationReusesLabelsAcrossPagesAndCreatesOnlyMissingNames() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [
+            #"{"data":{"repository":{"id":"REPO1","labels":{"nodes":[{"id":"BUG","name":"Bug"}],"pageInfo":{"hasNextPage":true,"endCursor":"labels-next"}}}}}"#,
+            #"{"data":{"repository":{"id":"REPO1","labels":{"nodes":[{"id":"DOCS","name":"docs"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#,
+            #"{"data":{"createLabel":{"label":{"id":"FEATURE","name":"feature"}}}}"#,
+            #"{"data":{"createIssue":{"issue":{"id":"ISSUE1","url":"https://github.com/acme/app/issues/1"}}}}"#
+        ])
+        _ = try await GitHubService(runner: runner).createIssue(
+            repository: "acme/app", title: "New", body: "",
+            labels: ["bug", "feature", "FEATURE", "docs"]
+        )
+        let calls = await runner.recordedArguments()
+        #expect(calls.count == 4)
+        #expect(calls[1].contains("after=labels-next"))
+        #expect(calls[2].contains("name=feature"))
+        #expect(calls[2].contains("repositoryId=REPO1"))
+        let input = try #require(await runner.recordedInputs()[3])
+        let request = try #require(JSONSerialization.jsonObject(with: input) as? [String: Any])
+        let variables = try #require(request["variables"] as? [String: Any])
+        #expect(variables["labelIds"] as? [String] == ["BUG", "FEATURE", "DOCS"])
+    }
+
+    @Test func projectRepositoriesPaginateIndependentlyOfFields() async throws {
+        let first = #"{"data":{"node":{"title":"Work","number":1,"url":"https://github.com/users/me/projects/1","viewerCanUpdate":true,"repositories":{"nodes":[{"nameWithOwner":"acme/one"}],"pageInfo":{"hasNextPage":true,"endCursor":"repos-next"}},"fields":{"nodes":[{"id":"TEXT","name":"Notes","dataType":"TEXT"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+        let second = first.replacingOccurrences(of: "acme/one", with: "acme/two")
+            .replacingOccurrences(of: #""hasNextPage":true,"endCursor":"repos-next""#,
+                                  with: #""hasNextPage":false,"endCursor":null"#)
+        let runner = FixtureGitHubCommandRunner(responses: [
+            first, second, #"{"data":{"node":{"items":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+        ])
+        let owner = ProjectOwner(id: "OWNER", login: "me", name: nil, kind: .user)
+        let project = try await GitHubService(runner: runner).fetchProjectWithItems(id: "P1", owner: owner)
+        #expect(project.linkedRepositories == ["acme/one", "acme/two"])
+        #expect(project.fields.map(\.id) == ["TEXT"])
+        #expect(await runner.recordedArguments()[1].contains("repositoryAfter=repos-next"))
+    }
+
+    @Test func projectMembershipRequiresReturnedItemIdentity() async throws {
+        let runner = FixtureGitHubCommandRunner(responses: [
+            "ISSUE_NODE_42",
+            #"{"data":{"addProjectV2ItemById":{"item":{}}}}"#
+        ])
+        let service = GitHubService(runner: runner)
+
+        do {
+            _ = try await service.addExistingItem(
+                projectId: "PROJECT_1", url: "https://github.com/acme/widgets/issues/42"
+            )
+            Issue.record("Expected missing project item identity to be rejected")
+        } catch {
+            guard case GitHubError.decodingError = error else { throw error }
+        }
     }
 
     @Test func createdDraftIncludesItsDescription() async throws {

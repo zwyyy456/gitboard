@@ -31,11 +31,21 @@ extension GitHubResponse {
             let url: String
             let viewerCanUpdate: Bool
             let fields: FieldsConnection
+            let repositories: RepositoryConnection
         }
 
         struct FieldsConnection: Decodable {
             let nodes: [FieldNode]
             let pageInfo: PageInfo
+        }
+
+        struct RepositoryConnection: Decodable {
+            let nodes: [Repository]
+            let pageInfo: PageInfo
+        }
+
+        struct Repository: Decodable {
+            let nameWithOwner: String
         }
     }
 
@@ -74,6 +84,62 @@ extension GitHubResponse {
         }
 
         struct ProjectItemResult: Decodable {
+            let id: String
+        }
+    }
+
+    struct IssueRepositoryPayload: Decodable {
+        let repository: Repository?
+
+        struct Repository: Decodable {
+            let id: String
+            let labels: Labels
+        }
+
+        struct Labels: Decodable {
+            let nodes: [IssueLabel]
+            let pageInfo: PageInfo
+        }
+    }
+
+    struct IssueLabel: Decodable {
+        let id: String
+        let name: String
+    }
+
+    struct CreateLabelPayload: Decodable {
+        let createLabel: Result
+        struct Result: Decodable {
+            let label: IssueLabel
+        }
+    }
+
+    struct IssueAssigneePayload: Decodable {
+        let user: User?
+        struct User: Decodable {
+            let id: String
+        }
+    }
+
+    struct CreateIssuePayload: Decodable {
+        let createIssue: Result
+        struct Result: Decodable {
+            let issue: Issue
+        }
+        struct Issue: Decodable {
+            let id: String
+            let url: String
+        }
+    }
+
+    struct AddProjectItemPayload: Decodable {
+        let addProjectV2ItemById: Result
+
+        struct Result: Decodable {
+            let item: Item
+        }
+
+        struct Item: Decodable {
             let id: String
         }
     }

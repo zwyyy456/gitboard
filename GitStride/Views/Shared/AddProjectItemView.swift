@@ -84,18 +84,22 @@ struct AddProjectItemView: View {
             }
             validationMessage = nil
             if draft.repository.isEmpty {
-                draft.repository = store.repositorySuggestions.first ?? ""
+                draft.repository = store.defaultIssueRepository
             }
             updateStatusSelection()
         }
         .onChange(of: store.selectedProjectId) { _, _ in
             guard presentation == .window, issueCreation == nil else { return }
-            draft.repository = store.repositorySuggestions.first ?? ""
+            draft.repository = store.defaultIssueRepository
             draft.status = defaultStatus
             draft.priority = ""
         }
         .onChange(of: statusOptions) { _, _ in
             updateStatusSelection()
+        }
+        .onChange(of: store.defaultIssueRepository) { oldValue, newValue in
+            guard issueCreation == nil, draft.repository.isEmpty || draft.repository == oldValue else { return }
+            draft.repository = newValue
         }
         .onChange(of: mode) { _, _ in
             validationMessage = nil
@@ -150,7 +154,10 @@ struct AddProjectItemView: View {
 
     private var actionBar: some View {
         HStack(spacing: 10) {
-            if mode == .create {
+            if let issueCreation, issueCreation.phase == .unconfirmed,
+               let repositoryURL = URL(string: "https://github.com/\(issueCreation.repository)/issues") {
+                Link("Check Repository", destination: repositoryURL)
+            } else if mode == .create {
                 Button(draft.usesQuickEntry ? "Show Full Form" : "Quick Entry…") {
                     draft.usesQuickEntry.toggle()
                 }
