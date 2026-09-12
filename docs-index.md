@@ -26,6 +26,8 @@
 | --- | --- | --- | --- |
 | `docs/overview.md` | Informational | 需要快速定位代码和执行链路时 | 项目与代码导览，不定义规则 |
 | `docs/testing/validation-reference.md` | Informational Reference | 选择受影响范围的验证方式时 | 按工程风险定位构建和行为检查，不增加独立门禁 |
+| `docs/usage.md` | User Guide | 需要操作说明时 | 项目视图、筛选、自动化和快捷键 |
+| `docs/releasing.md` | Operational Reference | 准备发布安装包时 | 版本、签名、公证、DMG 和 Sparkle 更新源 |
 
 ## 4. 读取原则
 

@@ -1,110 +1,117 @@
 # GitStride
 
-A native macOS menu bar app for GitHub Projects. View your kanban board, filter by status, search issues, and create new ones — all without leaving your workflow.
+A native macOS app for GitHub Projects. Keep your board in the menu bar, organize work in Board or Table, and edit issues without switching to the browser.
 
-![GitStride Menu Bar](https://yogesh.co/gitstride-menubar.webp)
+[Website & download](https://gitstride.zwyyy456.tech) · [GitHub Releases](https://github.com/zwyyy456/GitStride/releases) · [User guide](docs/usage.md)
 
 ## Features
 
-- **Menu bar access** — click the icon, see your board
-- **Status filtering** — switch between Todo, In Progress, Done
-- **Search issues** — by title, number, or @assignee
-- **Quick create** — type `>` to create issues inline
-- **Full kanban window** — drag and drop between columns
-- **Status notifications** — know when issues move
-- **Native issue planning** — view and edit milestones, parent/sub-issues, and dependencies
-- **Pull request automation** — keep closing Issues in matching personal Projects aligned with PR progress
-- **GitHub CLI auth** — no API tokens needed
-
-![GitStride Kanban](https://yogesh.co/gitstride-kanban.webp)
+- **Menu bar and workspace** — browse projects quickly or open a full project window.
+- **Board and Table** — move items between statuses, sort fields, and save local work views.
+- **My Work** — follow projects and filter work across them.
+- **Issue editing** — create issues and manage assignees, labels, milestones, parent/sub-issues, and dependencies.
+- **Monitoring** — follow project changes with configurable refresh intervals and notifications.
+- **Optional PR automation** — update closing Issues in matching personal Projects as pull requests progress, even when GitStride is closed.
+- **GitHub CLI authentication** — reuse your local `gh` login for browsing and editing.
 
 ## Requirements
 
-- macOS 14 (Sonoma) or later
-- [GitHub CLI](https://cli.github.com) installed and authenticated
+- macOS 14 (Sonoma) or later.
+- [GitHub CLI](https://cli.github.com), installed and authenticated with access to your Projects and repositories.
+- A GitHub.com account. Desktop browsing supports personal and organization Projects; PR automation currently targets personal Projects. GitHub Enterprise Server is not a supported configuration.
 
-## Installation
+## Install and connect
 
-1. Download from [yogesh.co/gitstride](https://yogesh.co/gitstride?utm_source=gitstride_repo)
-2. Open the DMG and drag GitStride to your Applications folder
-3. Make sure you're logged in to GitHub CLI (`gh auth login`)
-4. Launch GitStride from Applications
+1. Download GitStride from [gitstride.zwyyy456.tech](https://gitstride.zwyyy456.tech) or [GitHub Releases](https://github.com/zwyyy456/GitStride/releases).
+2. Open the DMG and drag GitStride into Applications.
+3. Install GitHub CLI if needed. With [Homebrew](https://brew.sh):
 
-## Usage
+   ```bash
+   brew install gh
+   ```
 
-### Menu Bar
-Click the GitStride icon in your menu bar to see your projects. Select a project and browse issues by status.
+4. Sign in and grant Project access:
 
-### Search
-Type in the search bar to filter issues by title or number. Use `@username` to filter by assignee.
+   ```bash
+   gh auth login --hostname github.com
+   gh auth refresh --hostname github.com --scopes project
+   ```
 
-### Quick Create
-Type `>` followed by your issue title to quickly create a new issue. Press Enter to create.
+5. Launch GitStride, choose your personal account or organization, and select a Project. Open a board or start following Projects in My Work.
 
-### Project Layouts
-Click "Open Board" or use the keyboard shortcut to open the project window. Switch between **Board** and **Table** in the toolbar; GitStride remembers the layout for each project locally.
+Your GitHub permissions determine what you can view and edit. Organization policies and SSO may require additional authorization. PR automation has its own optional authorization flow; it is not required for desktop browsing or editing.
 
-In Board, drag issues between status columns. Table uses aligned issue IDs, spacious rows, and collapsible status groups. Click a title to open details, or use native row selection and the item context menu. Click a column header to sort; when grouped, sorting applies within each status group.
+## Everyday use
 
-Use **Display Options** to switch between status grouping and an ungrouped table, choose visible fields, or restore **Project Order**. On macOS 14.4 and later, multiple project fields can be shown as independent resizable, sortable columns. macOS 14.0–14.3 supports one selected project field column. Layout, grouping, column settings, and sorting are remembered per project locally.
-
-Search carries across layouts. Hidden board status columns do not filter the table. Both layouts support the existing item context menu and bulk selection actions; layout preferences do not change saved views on GitHub.
-
-### Work Views and Delivery
-
-Use the toolbar’s Filter button for status, assignee, type, and label conditions; More Conditions contains milestone, parent issue, and completion. Display Options separately controls grouping, sorting, and visible fields. The ellipsis menu manages views saved on this Mac. Open in GitHub, My Work, and multiple selection remain direct toolbar actions. Filter by status, issue type, label, milestone, parent issue, or completion. The content area has no permanent view/filter bar. Active conditions appear only while filtering and can be removed individually; Clear All also clears search and reveals hidden board columns. The item count shows the displayed subset of the project's total items.
-
-Saved Views → Save Current View keeps the current filters, Board/Table layout, table sorting and columns, card fields, and hidden board columns. Each saved view has independent display preferences. Filter edits are marked Modified until you choose Update Saved Filters; display preferences are remembered automatically. Search text is temporary. These preferences do not create or modify GitHub saved views.
-
-For a defect view, choose the actual issue type or label your project uses, then save the view with a name such as Bugs. Filtering preserves the current layout and display preferences. Single-select fields use their configured option order when sorting.
-
-Choose Delivery by Milestone or Delivery by Parent Issue to see completed and blocked counts, with All, Unfinished, and Blocked shortcuts. Counts cover only issues present in the current project, including hidden board columns, and ignore other active filters. A milestone remains repository-scoped; a parent can collect children from different repositories. Completion follows GitHub issue state, and blocked counts include only unfinished issues with unresolved dependencies.
-
-Board cards emphasize a two-line title, repository and issue number, assignees, and selected project fields. Unresolved blockers remain visible. Display Options → Show Fields can add milestone, labels, engineering signals, and project fields using their GitHub names and identities. Both layouts keep Filter and Display Options together after the layout switcher.
-
-Selecting an item in Board, Table, or My Work opens the detail page with Back navigation at every window width. You can also open the item in its own window.
-
-### Pull Request Automation
-
-Connect automation once from Settings. Every repository currently available to the GitHub App is included automatically, and closing Issues are updated in every matching personal Project. The selected Project supplies the Status mapping names used across Projects; In Progress and Done are required. For Ready pull requests, choose either `Move to In review` or `Keep in In progress`. The first choice reuses a case-insensitive `In review` match or adds an Orange `In review` only when a matching Project first needs it. The second never changes Project options. Automation never adds Backlog. The hosted Worker runs even when GitStride is closed, and a running app refreshes displayed Project data and Automation connection health when the Worker reports a change.
-
-Automation waits 3 seconds before reading current PR states and updating linked Issue items. All linked closing PRs must be merged for Done; any open Draft keeps the Issue In Progress; otherwise an open Ready uses your review policy. We recommend disabling overlapping built-in Project Status workflows, but this is optional. The delay currently requires a Worker code change and deployment to adjust; it is not editable in GitStride.
-
-
-The Worker temporarily processes GitHub Project Item responses to locate exact item identities. It does not persist or log private Issue content, and the desktop app stores its management token only in Keychain.
-
-### Planning Model
-
-GitStride keeps GitHub's native concepts separate:
-
-- **Project** collects and presents work. Most projects can stay focused on one repository, while a project may still contain issues from several repositories.
-- **Status** is the Project workflow state used by the board, such as Todo, In Progress, and Done. Avoid a second `Phase` field when it represents the same workflow.
-- **Milestone** is a repository-scoped delivery target. GitStride loads milestones from the issue's repository and stores the selected milestone on the issue itself.
-- **Parent/sub-issues and dependencies** express cross-repository delivery structure. Use a parent issue as the cross-repository delivery target, then attach sub-issues and blocking relationships from any repository.
-- **Release** can remain an optional Project custom field when a lightweight grouping across repositories is useful. It is not synchronized with repository milestones.
-
-Project field configuration remains managed on GitHub. If an existing `Phase` field duplicates `Status`, remove or repurpose it in the GitHub Project settings rather than maintaining two workflow fields.
-
-### Keyboard Shortcuts
+Click the menu bar icon for quick access, or use the main window for Board, Table, My Work, and item details. Search by title, issue number, or `@assignee`; type `>` followed by a title for quick creation. Use Filter and Display Options to organize each Project.
 
 | Shortcut | Action |
-|----------|--------|
+| --- | --- |
 | `⌘ R` | Refresh |
-| `⌘ ←` | Previous status tab |
-| `⌘ →` | Next status tab |
+| `⌘ K` | Open command palette |
+| `⌘ ←` / `⌘ →` | Previous / next status tab |
 | `>` | Enter quick create mode |
 | `Esc` | Exit quick create mode |
 
-## Building from Source
+See the [user guide](docs/usage.md) for saved views, table columns, delivery summaries, and planning workflows. Saved views and display preferences stay on this Mac and do not modify GitHub's saved views.
 
-1. Clone the repository
-2. Open `GitStride.xcodeproj` in Xcode
-3. Build and run
+## Optional pull request automation
 
-## License
+Open **Settings → Automation → Set Up Automation** to connect. The hosted service is operated by [zwyyy456](https://github.com/zwyyy456) on Cloudflare Workers. It continues running while GitStride is closed.
 
-MIT License. See [LICENSE](LICENSE) for details.
+The setup uses two separate GitHub authorizations:
 
-## Author
+- A **GitHub App** reads metadata, Issues, and pull requests in the repositories you allow it to access.
+- An **OAuth App** requests `project offline_access` to update your personal Projects and renew authorization. This is separate from your desktop `gh` login.
 
-Built by [zwyyy456](https://github.com/zwyyy456)
+Choose a personal Project as the Status mapping template, with In Progress and Done options. Automation applies the matching field and option names across compatible personal Projects containing the closing Issue; the template is not the only Project it can update. Every repository currently available to the GitHub App is included.
+
+Open Draft PRs keep an Issue In Progress. Ready PRs follow your selected review policy, and a nonempty set of closing PRs must all be merged before the Issue moves to Done. Updates wait at least three seconds before reloading current PR state. With **Move to In review**, automation can add that Status option to a matching Project if needed. See the [full behavior](docs/usage.md#pull-request-automation).
+
+Pause, resume, reauthorize, or delete the connection in Automation settings. Deleting the connection stops future automation processing; it does not undo earlier changes to GitHub Project statuses. To revoke GitHub access completely, also remove the OAuth authorization under [Authorized OAuth Apps](https://github.com/settings/applications) and uninstall the GitHub App under [Installed GitHub Apps](https://github.com/settings/installations).
+
+For deployment on your own Cloudflare account, see [Automation setup and deployment](Automation/README.md). Source builds can use a different service origin or disable Automation with an empty `GITBOARD_AUTOMATION_BASE_URL` build setting.
+
+## Data and privacy
+
+**Desktop app.** GitStride uses your local GitHub CLI authentication for interactive GitHub requests and does not copy that token into its own preferences or cache. Display preferences and a rebuildable project snapshot are stored on your Mac. The snapshot can include private project and issue information; it is a local JSON cache, not an encrypted vault. Quit GitStride before removing its cache at `~/Library/Application Support/GitStride/project-cache-v2.json`; the app reloads it from GitHub on a later connection.
+
+**Automation service.** When you enable Automation, the Worker processes GitHub webhooks and API responses to locate and update matching Project items. It stores account and installation identifiers, repository identities, your mapping and connection settings, encrypted OAuth credentials, and delivery status records. It does not persist or log private Issue titles/bodies or complete webhook payloads. Desktop management tokens stay in macOS Keychain; the service stores their hashes.
+
+Terminal delivery records are eligible for cleanup after 30 days. Expired setup sessions are reclaimed by daily maintenance after one day past expiry. Deleting an automation removes unused credentials and installation/account records; records still referenced by an active setup session remain until that reference is cleared. These are application database retention rules; Cloudflare infrastructure logs and backups have their own retention. See the [Worker documentation](Automation/README.md) for implementation details.
+
+**Updates.** Sparkle checks the update feed in [this repository](https://github.com/zwyyy456/GitStride/blob/main/appcast.xml) and downloads releases from GitHub. Automatic checks can be controlled in Settings. GitHub and Cloudflare receive network request metadata when their services are used.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| GitHub CLI Required | Install `gh` and confirm `gh --version` works. Homebrew's standard Apple Silicon and Intel paths are recognized. |
+| Sign in to GitHub | Run `gh auth login --hostname github.com`, then try again. |
+| Project Access Required | Run `gh auth refresh --hostname github.com --scopes project`. |
+| Organization or private Project unavailable | Confirm access in GitHub, the active `gh` account, and any organization SSO or application restrictions. |
+| Cached data or refresh failure | Check the connection and authentication, then refresh. Cached snapshots may be older than GitHub. |
+| Automation needs authorization | Reauthorize the connection in Settings; desktop CLI authentication does not renew Worker OAuth access. |
+
+Report reproducible problems in [GitHub Issues](https://github.com/zwyyy456/GitStride/issues), including the app version, macOS version, and reproduction steps. Redact tokens and private repository or issue content from diagnostics and screenshots.
+
+## Building from source
+
+The current development toolchain is Xcode 26.5. macOS 14 is the app's deployment target, not the required version of Xcode.
+
+```bash
+git clone https://github.com/zwyyy456/GitStride.git
+cd GitStride
+xcodebuild -project GitStride.xcodeproj -scheme GitStride \
+  -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+```
+
+For running from Xcode, open `GitStride.xcodeproj`, select the GitStride target, and choose your own development team under Signing & Capabilities. Sparkle uses hardened-runtime library validation, so an unsigned compile check does not establish that the app can launch locally.
+
+See [validation commands](docs-index.md#5-常用验证命令), [architecture](architecture.md), and the [release guide](docs/releasing.md). Worker development separately requires Node.js 22 or later; instructions are in [Automation/README.md](Automation/README.md).
+
+## Origin and license
+
+GitStride originated from [yogesharc/GitStride](https://github.com/yogesharc/GitStride) and is now independently maintained and substantially reworked by [zwyyy456](https://github.com/zwyyy456). The original copyright notice is preserved alongside the current maintainer's notice.
+
+Released under the [MIT License](LICENSE). The license is also included in the app bundle. GitStride is not affiliated with GitHub, Inc.
