@@ -13,7 +13,7 @@
 | App composition、scene 或窗口适配 | `architecture.md` | macOS app build；启动受影响 scene，确认依赖共享和窗口入口可达 |
 | `ProjectStore` 状态或选择 | `architecture.md` | macOS app build；检查加载、项目切换、筛选和错误恢复不会产生第二状态真源 |
 | async、轮询或取消 | `architecture.md` | macOS app build；定点检查启动/停止轮询、手动刷新与项目切换，不出现重复任务或过期结果 |
-| GitHub CLI、GraphQL 或解码 | `architecture.md` | 对确定性分页、解码和错误分类运行 `GitStrideTests`；macOS app build；使用已认证 `gh` 验证受影响的只读链路；远程 mutation 仅在任务明确授权且目标安全时执行 |
+| GitHub 认证、HTTP、GraphQL 或解码 | `architecture.md` | 对令牌轮换、会话失效、HTTP 序列化、分页和解码运行 `GitStrideTests`；分别构建两个发行 target；远程 mutation 仅在任务明确授权且目标安全时执行 |
 | 远程 mutation 与乐观更新 | `architecture.md` | macOS app build；在安全目标上检查成功结果，以及可控失败下的回滚和错误反馈 |
 | Models 或 GraphQL selection set | `architecture.md` | macOS app build；用受影响真实响应检查解码边界；若未来已有 model tests，运行对应定点测试 |
 | 通知 | `architecture.md` | macOS app build；按改动风险检查授权、拒绝和状态变化通知，不重复请求或发送 |
@@ -22,7 +22,7 @@
 
 ## 当前自动化边界
 
-- 当前 Xcode 工程包含 `GitStride` app target 和聚焦外部数据边界的 `GitStrideTests` unit test target，没有 UI test target。
+- 当前 Xcode 工程包含 `GitStride` 与 `GitStrideAppStore` app targets 和聚焦外部数据边界的 `GitStrideTests` unit test target，没有 UI test target。
 - 普通改动至少运行与 `docs-index.md` 一致的 macOS app build；仅修改 Markdown 时可用文档一致性检查代替构建，并明确未运行构建。
 - `GitStrideTests` 只为确定性的解析、输入建模、状态转换、远程响应解码和已确认回归提供少量定点测试。
 - 不为了测试数量给简单 accessor、临时 View 结构或系统框架行为补测试。
