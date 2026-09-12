@@ -5,50 +5,37 @@ struct AutomationSettingsView: View {
     @Bindable var setup: AutomationSetupModel
 
     var body: some View {
-        Form {
-            Section {
-                if !setup.automations.isEmpty {
-                    AutomationConnectionList(setup: setup)
-                } else {
-                    switch setup.phase {
-                    case .unavailable:
-                        Text("Automation is not available in this build.")
-                            .foregroundStyle(.secondary)
-                    case .loadingConnection:
-                        ProgressView("Loading connection…")
-                    case .connectionLoadFailed:
-                        Text("The saved connection could not be loaded.")
-                        Button("Retry") { Task { await setup.loadConnection() } }
-                    default:
-                        Text("Keep Issue statuses up to date as linked pull requests change.")
-                        Button("Set Up Automation…", action: startSetup)
-                            .disabled(setup.isPresentingSetup)
-                    }
+        Section {
+            if !setup.automations.isEmpty {
+                AutomationConnectionList(setup: setup)
+            } else {
+                switch setup.phase {
+                case .unavailable:
+                    Text("Automation is not available in this build.")
+                        .foregroundStyle(.secondary)
+                case .loadingConnection:
+                    ProgressView("Loading connection…")
+                case .connectionLoadFailed:
+                    Text("The saved connection could not be loaded.")
+                    Button("Retry") { Task { await setup.loadConnection() } }
+                default:
+                    Text("Keep Issue statuses up to date as linked pull requests change.")
+                    Button("Set Up Automation…", action: startSetup)
+                        .disabled(setup.isPresentingSetup)
                 }
-            } header: {
-                Text("Pull Request Automation")
-            } footer: {
-                Text("Private Issue content is not stored or logged by the automation service.")
             }
             if !setup.isPresentingSetup, let error = setup.errorMessage {
-                Section {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                }
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
             }
-        }
-        .formStyle(.grouped)
-        .sheet(isPresented: Binding(
-            get: { setup.isPresentingSetup },
-            set: { _ in }
-        )) {
-            AutomationSetupSheet(setup: setup)
-        }
-        .task(id: setup.setupSessionID) {
-            await setup.observeSetup()
-        }
-        .task {
-            await setup.loadConnection()
+        } header: {
+            Text("Pull Request Automation")
+        } footer: {
+            VStack(alignment: .leading) {
+                Text("Automation uses its own GitHub connection and continues when GitStride is disconnected.")
+                Text("Private Issue content is not stored or logged by the automation service.")
+            }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -61,7 +48,7 @@ struct AutomationSettingsView: View {
     }
 }
 
-private struct AutomationSetupSheet: View {
+struct AutomationSetupSheet: View {
     @Bindable var setup: AutomationSetupModel
 
     var body: some View {

@@ -562,7 +562,7 @@ final class AutomationSetupModel {
         case "OAUTH_SCOPE_MISSING":
             return "GitHub did not grant access to Projects. Authorize GitStride again."
         case "INSTALLATION_ACCOUNT_MISMATCH":
-            return "Install the GitStride app on the same personal account you authorized."
+            return "Install the GitHub App on the same personal account you authorized."
         case "PROJECT_WRITE_FORBIDDEN":
             return "Your GitHub account cannot update the selected Project."
         case "ACCOUNT_AUTOMATION_ALREADY_CONFIGURED":

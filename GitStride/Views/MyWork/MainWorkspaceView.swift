@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainWorkspaceView: View {
     @Bindable var model: GitStrideModel
+    @Environment(\.openSettings) private var openSettings
     @Binding var requestedItemReference: ItemInspectorReference?
     @Binding var requestsProjectBoard: Bool
     @State private var destination: Destination = .project
@@ -99,7 +100,15 @@ struct MainWorkspaceView: View {
                         if model.projectStore.isLoading == false {
                             if let error = model.projectStore.error {
                                 Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary)
-                                Button("Retry") { Task { await model.projectStore.loadProjects() } }
+                                if let error = error as? GitHubError,
+                                   [.ghCLINotFound, .notAuthenticated, .missingProjectScope, .accountChanged, .insufficientPermissions].contains(error) {
+                                    Button("Open GitHub Settings") {
+                                        UserDefaults.standard.set("github", forKey: "selectedSettingsPane")
+                                        openSettings()
+                                    }
+                                } else {
+                                    Button("Retry") { Task { await model.projectStore.loadProjects() } }
+                                }
                             } else if model.projectStore.projects.isEmpty {
                                 Text("No projects").foregroundStyle(.secondary)
                             }

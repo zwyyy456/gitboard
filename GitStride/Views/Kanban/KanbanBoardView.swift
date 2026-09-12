@@ -3,6 +3,7 @@ import SwiftUI
 struct KanbanBoardView: View {
     @Bindable var store: ProjectStore
     @Bindable var myWorkStore: MyWorkStore
+    @Environment(\.openSettings) private var openSettings
     let toggleFollowing: (Project) async -> Void
     let showItemDetail: (ItemInspectorReference) -> Void
     @Binding var searchText: String
@@ -468,24 +469,40 @@ struct KanbanBoardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    @ViewBuilder
     private func errorView(_ error: Error) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 40))
-                .foregroundStyle(.orange)
-
-            Text(error.localizedDescription)
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 400)
-
-            Button("Try Again") {
-                Task { await store.loadProjects() }
+        if let error = error as? GitHubError,
+           [.ghCLINotFound, .notAuthenticated, .missingProjectScope, .accountChanged, .insufficientPermissions].contains(error) {
+            ContentUnavailableView {
+                Label("Connect to GitHub", systemImage: "person.crop.circle")
+            } description: {
+                Text(error.localizedDescription)
+            } actions: {
+                Button("Open GitHub Settings") {
+                    UserDefaults.standard.set("github", forKey: "selectedSettingsPane")
+                    openSettings()
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
+        } else {
+            VStack(spacing: 16) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.orange)
+
+                Text(error.localizedDescription)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 400)
+
+                Button("Try Again") {
+                    Task { await store.loadProjects() }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyView: some View {

@@ -4,11 +4,19 @@ import Observation
 @MainActor
 @Observable
 final class GitStrideModel {
+    enum ConnectionProgress: Equatable {
+        case connecting
+        case authorizing(GitHubDeviceAuthorizationProgress)
+        case loadingProjects
+        case disconnecting
+    }
+
     private(set) var projectStore: ProjectStore
     private(set) var authenticationMethod: GitHubAuthenticationMethod
     private(set) var connectionID = UUID()
     private(set) var deviceAuthorization: GitHubDeviceAuthorization?
-    private(set) var isConnecting = false
+    private(set) var connectionProgress: ConnectionProgress?
+    var isConnecting: Bool { connectionProgress != nil }
     private(set) var authenticationError: String?
     private var authentication: GitHubAuthentication
     private var authorizationTask: Task<Void, Never>?
@@ -99,12 +107,12 @@ final class GitStrideModel {
 
     func connectGitHub(using method: GitHubAuthenticationMethod) {
         guard !isConnecting else { return }
-        isConnecting = true
+        connectionProgress = .connecting
         authenticationError = nil
         authorizationTask = Task { [weak self] in
             guard let self else { return }
             defer {
-                self.isConnecting = false
+                self.connectionProgress = nil
                 self.deviceAuthorization = nil
                 self.authorizationTask = nil
             }
@@ -113,10 +121,13 @@ final class GitStrideModel {
                 if method == .oauth {
                     let code = try await self.authentication.beginDeviceAuthorization()
                     self.deviceAuthorization = code
-                    try await self.authentication.completeDeviceAuthorization(code)
+                    try await self.authentication.completeDeviceAuthorization(code) { progress in
+                        try await self.updateAuthorizationProgress(progress)
+                    }
                 }
                 try Task.checkCancellation()
                 UserDefaults.standard.set(false, forKey: "githubSignedOut")
+                self.connectionProgress = .loadingProjects
                 await self.projectStore.loadProjects()
                 try Task.checkCancellation()
                 await self.activateMyWork(accountLogin: self.projectStore.currentUserLogin)
@@ -132,10 +143,16 @@ final class GitStrideModel {
         authorizationTask?.cancel()
     }
 
+    private func updateAuthorizationProgress(_ progress: GitHubDeviceAuthorizationProgress) throws {
+        try Task.checkCancellation()
+        connectionProgress = .authorizing(progress)
+        if progress == .verifyingAccount { deviceAuthorization = nil }
+    }
+
     func disconnectGitHub() async {
         guard !isConnecting else { return }
-        isConnecting = true
-        defer { isConnecting = false }
+        connectionProgress = .disconnecting
+        defer { connectionProgress = nil }
         authenticationError = nil
         UserDefaults.standard.set(true, forKey: "githubSignedOut")
         monitorTask?.cancel()
