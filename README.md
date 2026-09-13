@@ -45,7 +45,6 @@ Click the menu bar icon for quick access, or use the main window for Board, Tabl
 | Shortcut | Action |
 | --- | --- |
 | `⌘ R` | Refresh |
-| `⌘ K` | Open command palette |
 | `⌘ ←` / `⌘ →` | Previous / next status tab |
 | `> title` + `Return` | Open a prefilled creation form from project or menu bar search |
 | `Esc` | Cancel quick-create input in search |

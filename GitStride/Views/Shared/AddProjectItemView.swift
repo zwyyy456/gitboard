@@ -367,3 +367,18 @@ private extension String {
         isEmpty ? nil : self
     }
 }
+
+struct QuickAddWindow: View {
+    @Bindable var model: GitStrideModel
+    let quickEntry: String
+
+    var body: some View {
+        AddProjectItemView(store: model.projectStore, presentation: .window,
+                           initialQuickEntry: quickEntry.isEmpty ? nil : quickEntry)
+            .task {
+                if model.projectStore.projects.isEmpty {
+                    await model.projectStore.loadProjects()
+                }
+            }
+    }
+}

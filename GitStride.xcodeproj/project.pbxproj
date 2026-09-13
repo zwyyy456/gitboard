@@ -46,9 +46,7 @@
 		A0000033 /* Monitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000033 /* Monitoring.swift */; };
 		A0000034 /* ProjectMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000034 /* ProjectMonitor.swift */; };
 		A0000035 /* QuickCreate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000035 /* QuickCreate.swift */; };
-		A0000036 /* GlobalHotKeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000036 /* GlobalHotKeyController.swift */; };
 		A0000037 /* EngineeringSignalsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000037 /* EngineeringSignalsView.swift */; };
-		A0000038 /* CommandPaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000038 /* CommandPaletteView.swift */; };
 		A0000039 /* ProjectItemDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000039 /* ProjectItemDetail.swift */; };
 		A0000040 /* ItemDescriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000040 /* ItemDescriptionView.swift */; };
 		A0000041 /* ItemPropertiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000041 /* ItemPropertiesView.swift */; };
@@ -160,9 +158,7 @@
 		A1000033 /* Monitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Monitoring.swift; sourceTree = "<group>"; };
 		A1000034 /* ProjectMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectMonitor.swift; sourceTree = "<group>"; };
 		A1000035 /* QuickCreate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCreate.swift; sourceTree = "<group>"; };
-		A1000036 /* GlobalHotKeyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotKeyController.swift; sourceTree = "<group>"; };
 		A1000037 /* EngineeringSignalsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineeringSignalsView.swift; sourceTree = "<group>"; };
-		A1000038 /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
 		A1000039 /* ProjectItemDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectItemDetail.swift; sourceTree = "<group>"; };
 		A1000040 /* ItemDescriptionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDescriptionView.swift; sourceTree = "<group>"; };
 		A1000041 /* ItemPropertiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemPropertiesView.swift; sourceTree = "<group>"; };
@@ -302,7 +298,6 @@
 				DB0000000000000000000002 /* GitHubCredentialStore.swift */,
 				DB0000000000000000000001 /* GitHubHTTPClient.swift */,
 				A1000052 /* AutomationService.swift */,
-				A1000036 /* GlobalHotKeyController.swift */,
 				A1000022 /* GitHubCommandRunner.swift */,
 				A1000027 /* ProjectCache.swift */,
 				BC0000000000000000000002 /* ProjectDisplayPreferences.swift */,
@@ -383,7 +378,6 @@
 				B53D98D3EDD74DB89F2C48D6 /* AddProjectItemFields.swift */,
 				D749BF94B5164F1385503B20 /* ProjectManagementViews.swift */,
 				A1000025 /* AddProjectItemView.swift */,
-				A1000038 /* CommandPaletteView.swift */,
 				A1000037 /* EngineeringSignalsView.swift */,
 				A1000043 /* GitHubHTMLBodyView.swift */,
 				A1000040 /* ItemDescriptionView.swift */,
@@ -640,7 +634,6 @@
 				A0000004 /* StatusOption.swift in Sources */,
 				A0000005 /* GitHubService.swift in Sources */,
 				A0000022 /* GitHubCommandRunner.swift in Sources */,
-				A0000036 /* GlobalHotKeyController.swift in Sources */,
 				A0000027 /* ProjectCache.swift in Sources */,
 				BC0000000000000000000001 /* ProjectDisplayPreferences.swift in Sources */,
 				A0000028 /* MyWork.swift in Sources */,
@@ -663,7 +656,6 @@
 				A0000031 /* MyWorkView.swift in Sources */,
 				CA461A15C72B4DBDAAB413CC /* ProjectManagementViews.swift in Sources */,
 				A0000025 /* AddProjectItemView.swift in Sources */,
-				A0000038 /* CommandPaletteView.swift in Sources */,
 				A0000037 /* EngineeringSignalsView.swift in Sources */,
 				A0000043 /* GitHubHTMLBodyView.swift in Sources */,
 				A0000040 /* ItemDescriptionView.swift in Sources */,
@@ -747,7 +739,6 @@
 				A0000039 /* ProjectItemDetail.swift in Sources */,
 				A0000004 /* StatusOption.swift in Sources */,
 				A0000005 /* GitHubService.swift in Sources */,
-				A0000036 /* GlobalHotKeyController.swift in Sources */,
 				A0000027 /* ProjectCache.swift in Sources */,
 				BC0000000000000000000001 /* ProjectDisplayPreferences.swift in Sources */,
 				A0000028 /* MyWork.swift in Sources */,
@@ -770,7 +761,6 @@
 				A0000031 /* MyWorkView.swift in Sources */,
 				CA461A15C72B4DBDAAB413CC /* ProjectManagementViews.swift in Sources */,
 				A0000025 /* AddProjectItemView.swift in Sources */,
-				A0000038 /* CommandPaletteView.swift in Sources */,
 				A0000037 /* EngineeringSignalsView.swift in Sources */,
 				A0000043 /* GitHubHTMLBodyView.swift in Sources */,
 				A0000040 /* ItemDescriptionView.swift in Sources */,
