@@ -13,11 +13,16 @@ struct KanbanBoardView: View {
     @State private var selectedViewID: String?
     @State private var showsSaveView = false
     @State private var viewName = ""
-    @State private var showsAddItem = false
+    @State private var addItemPresentation: AddItemPresentation?
     @State private var collapsedTableGroups: Set<ProjectTableRow.ID> = []
     @State private var selectedItemIDs: Set<String> = []
     @State private var isBulkWorking = false
     @State private var operationErrorMessage: String?
+
+    private struct AddItemPresentation: Identifiable {
+        let id = UUID()
+        let quickEntry: String?
+    }
 
     init(store: ProjectStore, myWorkStore: MyWorkStore,
          toggleFollowing: @escaping (Project) async -> Void,
@@ -48,6 +53,9 @@ struct KanbanBoardView: View {
         store.canEditSelectedProject
     }
 
+    private var isQuickCreating: Bool { searchText.hasPrefix(">") }
+    private var itemSearchText: String { isQuickCreating ? "" : searchText }
+
     private var showsProjectEditingActions: Bool {
         switch store.selectedProjectContentState {
         case .content(let project, _, _), .empty(let project, _, _):
@@ -75,8 +83,8 @@ struct KanbanBoardView: View {
                 kanbanToolbar
             }
             .focusedSceneValue(\.workspaceCommandContext, commandContext)
-            .sheet(isPresented: $showsAddItem) {
-                AddProjectItemView(store: store)
+            .sheet(item: $addItemPresentation) { presentation in
+                AddProjectItemView(store: store, initialQuickEntry: presentation.quickEntry)
             }
             .onChange(of: store.selectedProjectId) { _, _ in
                 searchText = ""
@@ -122,6 +130,8 @@ struct KanbanBoardView: View {
             placement: .toolbar,
             prompt: "Search title, #number, or @assignee"
         )
+        .onSubmit(of: .search, submitQuickCreate)
+        .onExitCommand(perform: isQuickCreating ? { searchText = "" } : nil)
     }
 
     private var boardSurface: some View {
@@ -130,6 +140,16 @@ struct KanbanBoardView: View {
                 message: operationErrorMessage ?? store.operationErrorMessage,
                 dismiss: dismissOperationError
             )
+
+            if isQuickCreating {
+                Text(canEditSelectedProject
+                     ? String(localized: "Press Return to review the new item. Press Esc to cancel.")
+                     : String(localized: "This project is read-only."))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
 
             if let project = store.selectedProject {
                 workControls(project)
@@ -287,7 +307,8 @@ struct KanbanBoardView: View {
             matchingCount: filteredItems(for: project.items).count,
             currentUserLogin: store.currentUserLogin,
             savedViews: workPreferences.views.filter { $0.projectID == project.id }, selectedViewID: selectedViewID,
-            filter: $workFilter, searchText: $searchText,
+            filter: $workFilter,
+            searchText: Binding(get: { itemSearchText }, set: { searchText = $0 }),
             selectView: selectWorkView,
             saveView: { viewName = selectedSavedView?.name ?? ""; showsSaveView = true },
             updateView: updateCurrentView, deleteView: deleteCurrentView
@@ -432,7 +453,13 @@ struct KanbanBoardView: View {
     }
 
     private func showAddItem() {
-        showsAddItem = true
+        addItemPresentation = AddItemPresentation(quickEntry: nil)
+    }
+
+    private func submitQuickCreate() {
+        guard isQuickCreating, canEditSelectedProject else { return }
+        addItemPresentation = AddItemPresentation(quickEntry: searchText)
+        searchText = ""
     }
 
     private func toggleSelectionMode() {
@@ -589,14 +616,14 @@ struct KanbanBoardView: View {
 
     private func filteredItems(for items: [ProjectItem]) -> [ProjectItem] {
         workFilter.apply(to: items, currentUserLogin: store.currentUserLogin)
-            .matching(searchText, currentUserLogin: store.currentUserLogin)
+            .matching(itemSearchText, currentUserLogin: store.currentUserLogin)
     }
 
     private func boardContent(_ project: Project) -> some View {
         KanbanColumnsView(
             store: store, project: project, items: filteredItems(for: project.items),
             statuses: visibleStatuses(in: project), preferenceID: tablePreferenceID,
-            emptyMessage: workFilter.isActive || !searchText.isEmpty ? String(localized: "No matching items") : String(localized: "No items"),
+            emptyMessage: workFilter.isActive || !itemSearchText.isEmpty ? String(localized: "No matching items") : String(localized: "No items"),
             isSelecting: isSelecting, selectedItemIDs: $selectedItemIDs,
             showInspector: openItemDetail, reportError: report
         )

@@ -6,7 +6,7 @@ struct NewProjectItemDraftTests {
     @Test func quickEntryResolvesProjectChoicesBeforeReturningToTheForm() {
         var draft = NewProjectItemDraft()
         draft.usesQuickEntry = true
-        draft.quickEntry = "Repair login repo:app status:todo priority:high @me #bug"
+        draft.quickEntry = ">Repair login repo:app status:todo priority:high @me #bug"
         let error = draft.reviewQuickEntry(repositories: ["acme/app"], statuses: ["Todo"], priorities: ["High"])
         #expect(error == nil)
         #expect(!draft.usesQuickEntry)

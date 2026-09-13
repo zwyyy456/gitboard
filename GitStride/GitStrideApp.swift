@@ -116,8 +116,10 @@ struct GitStrideApp: App {
         .defaultSize(width: 980, height: 720)
         .windowResizability(.contentMinSize)
 
-        Window("Add to Project", id: "quick-add") {
-            QuickAddWindow(model: model).id(model.connectionID)
+        WindowGroup("Add to Project", id: "quick-add", for: String.self) { $quickEntry in
+            QuickAddWindow(model: model, quickEntry: quickEntry).id(model.connectionID)
+        } defaultValue: {
+            ""
         }
         .defaultSize(
             width: AddProjectItemView.windowDefaultSize.width,
@@ -251,7 +253,7 @@ private struct GitStrideCommands: Commands {
 
             if let stopFollowing = workspaceCommandContext?.stopFollowing,
                stopFollowing.isEmpty == false {
-                Menu("Following Projects") {
+                Menu("Projects in My Work") {
                     ForEach(stopFollowing) { action in
                         Button(action.title, role: .destructive, action: action.perform)
                             .disabled(action.isEnabled == false)

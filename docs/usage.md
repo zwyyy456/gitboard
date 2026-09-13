@@ -21,7 +21,9 @@ Click the GitStride icon in your menu bar to see your projects. Select a project
 Type in the search bar to filter issues by title or number. Use `@username` to filter by assignee.
 
 ### Quick Create
-Type `>` followed by your issue title to quickly create a new issue. Press Enter to create.
+In the project window (Board or Table) or menu bar search field, type `>` followed by an issue title and press Return. GitStride opens the creation form with your input filled in. Confirm the repository and status, then choose **Create Issue**. Press Esc while typing to cancel quick-create input.
+
+You can include Quick Entry qualifiers, for example `> Fix login repo:owner/repo status:Todo @me #bug`. Both `> Title` and `>Title` are accepted. Entering only `>` and pressing Return opens Quick Entry so you can finish the input there. Options that do not match the project stay in Quick Entry with a validation message.
 
 ### Project Layouts
 Click "Open Board" or use the keyboard shortcut to open the project window. Switch between **Board** and **Table** in the toolbar; GitStride remembers the layout for each project locally.
@@ -76,5 +78,5 @@ Project field configuration remains managed on GitHub. If an existing `Phase` fi
 | `⌘ R` | Refresh |
 | `⌘ ←` | Previous status tab |
 | `⌘ →` | Next status tab |
-| `>` | Enter quick create mode |
-| `Esc` | Exit quick create mode |
+| `> title` + `Return` | Open a prefilled creation form from project or menu bar search |
+| `Esc` | Cancel quick-create input in search |

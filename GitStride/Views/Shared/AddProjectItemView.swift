@@ -15,6 +15,7 @@ struct AddProjectItemView: View {
 
     @Bindable var store: ProjectStore
     let presentation: Presentation
+    let initialQuickEntry: String?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dismissWindow) private var dismissWindow
@@ -27,9 +28,13 @@ struct AddProjectItemView: View {
     @State private var draft = NewProjectItemDraft()
     @State private var search = ExistingItemSearchState()
 
-    init(store: ProjectStore, presentation: Presentation = .sheet) {
+    init(store: ProjectStore, presentation: Presentation = .sheet, initialQuickEntry: String? = nil) {
         self.store = store
         self.presentation = presentation
+        self.initialQuickEntry = initialQuickEntry
+        _draft = State(initialValue: NewProjectItemDraft(
+            quickEntry: initialQuickEntry ?? "", usesQuickEntry: initialQuickEntry != nil
+        ))
     }
 
     private enum Mode {
@@ -87,6 +92,9 @@ struct AddProjectItemView: View {
                 draft.repository = store.defaultIssueRepository
             }
             updateStatusSelection()
+            if draft.usesQuickEntry, !QuickCreateParser.parse(draft.quickEntry).title.isEmpty {
+                applyQuickEntry()
+            }
         }
         .onChange(of: store.selectedProjectId) { _, _ in
             guard presentation == .window, issueCreation == nil else { return }
@@ -343,7 +351,7 @@ struct AddProjectItemView: View {
         case .sheet:
             dismiss()
         case .window:
-            dismissWindow(id: "quick-add")
+            dismissWindow(id: "quick-add", value: initialQuickEntry ?? "")
         }
     }
 

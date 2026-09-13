@@ -16,6 +16,9 @@ struct MenuBarPopoverView: View {
         store.canEditSelectedProject
     }
 
+    private var isQuickCreating: Bool { searchText.hasPrefix(">") }
+    private var itemSearchText: String { isQuickCreating ? "" : searchText }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerView
@@ -182,15 +185,17 @@ struct MenuBarPopoverView: View {
         NSWorkspace.shared.open(url)
     }
 
-    private func openQuickAdd() {
+    private func openQuickAdd(initialQuickEntry: String = "") {
         dismissMenuBar()
-        openWindow(id: "quick-add")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            NSApp.activate(ignoringOtherApps: true)
-            for window in NSApp.windows where window.title == String(localized: "Add to Project") {
-                window.makeKeyAndOrderFront(nil)
-            }
-        }
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow(id: "quick-add", value: initialQuickEntry)
+    }
+
+    private func submitQuickCreate() {
+        guard isQuickCreating, canEditSelectedProject else { return }
+        let input = searchText
+        searchText = ""
+        openQuickAdd(initialQuickEntry: input)
     }
 
     private func openSettings() {
@@ -248,6 +253,15 @@ struct MenuBarPopoverView: View {
         case .content(let project, _, _), .empty(let project, _, _):
             statusFilterTabs(project: project)
             searchBar
+            if isQuickCreating {
+                Text(canEditSelectedProject
+                     ? String(localized: "Press Return to review the new item. Press Esc to cancel.")
+                     : String(localized: "This project is read-only."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
             itemsList(project: project)
         case .failed(let project, let message):
             projectErrorView(project, message: message)
@@ -324,7 +338,7 @@ struct MenuBarPopoverView: View {
 
     private var searchBar: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
+            Image(systemName: isQuickCreating ? "plus" : "magnifyingglass")
                 .font(.system(size: 12))
                 .foregroundStyle(.tertiary)
 
@@ -335,12 +349,8 @@ struct MenuBarPopoverView: View {
             .textFieldStyle(.plain)
             .font(.callout)
             .accessibilityLabel("Search project items")
-            .onChange(of: searchText) { oldValue, newValue in
-                if canEditSelectedProject && newValue == ">" {
-                    searchText = ""
-                    openQuickAdd()
-                }
-            }
+            .onSubmit(submitQuickCreate)
+            .onExitCommand(perform: isQuickCreating ? { searchText = "" } : nil)
 
             if !searchText.isEmpty {
                 Button("Clear search", systemImage: "xmark.circle.fill") {
@@ -367,7 +377,7 @@ struct MenuBarPopoverView: View {
             project.items
         }
 
-        return items.matching(searchText, currentUserLogin: store.currentUserLogin)
+        return items.matching(itemSearchText, currentUserLogin: store.currentUserLogin)
     }
 
     private func itemsList(project: Project) -> some View {
@@ -402,10 +412,10 @@ struct MenuBarPopoverView: View {
 
     private var emptyFilterView: some View {
         VStack(spacing: 12) {
-            Image(systemName: searchText.isEmpty ? "doc.text.magnifyingglass" : "magnifyingglass")
+            Image(systemName: itemSearchText.isEmpty ? "doc.text.magnifyingglass" : "magnifyingglass")
                 .font(.system(size: 24))
                 .foregroundStyle(.tertiary)
-            Text(searchText.isEmpty ? String(localized: "No items") : String(localized: "No results for \"\(searchText)\""))
+            Text(itemSearchText.isEmpty ? String(localized: "No items") : String(localized: "No results for \"\(itemSearchText)\""))
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
         }
