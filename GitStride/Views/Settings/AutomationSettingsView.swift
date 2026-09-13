@@ -11,7 +11,7 @@ struct AutomationSettingsView: View {
             } else {
                 switch setup.phase {
                 case .unavailable:
-                    Text("Automation is not available in this build.")
+                    Text("Choose an automation service below to connect.")
                         .foregroundStyle(.secondary)
                 case .loadingConnection:
                     ProgressView("Loading connection…")
@@ -28,6 +28,7 @@ struct AutomationSettingsView: View {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
             }
+            AutomationServiceSettingsView(currentBaseURL: setup.serviceBaseURL)
         } header: {
             Text("Pull Request Automation")
         } footer: {
@@ -44,6 +45,102 @@ struct AutomationSettingsView: View {
             if let url = await setup.startSetup() {
                 NSWorkspace.shared.open(url)
             }
+        }
+    }
+}
+
+private struct AutomationServiceSettingsView: View {
+    private enum Mode {
+        case defaultService, custom, disabled
+    }
+
+    let currentBaseURL: URL?
+    @AppStorage(AutomationServicePreferences.originKey) private var savedOrigin: String?
+    @State private var mode = Mode.defaultService
+    @State private var customOrigin = ""
+
+    private var customURL: URL? {
+        AutomationServicePreferences.validatedURL(customOrigin)
+    }
+
+    private var draftOrigin: String? {
+        switch mode {
+        case .defaultService: nil
+        case .custom: customURL?.absoluteString
+        case .disabled: ""
+        }
+    }
+
+    private var requiresRestart: Bool {
+        AutomationServicePreferences.baseURL(savedOrigin: savedOrigin) != currentBaseURL
+    }
+
+    var body: some View {
+        DisclosureGroup("Automation service") {
+            LabeledContent("Current service") {
+                if let currentBaseURL {
+                    Text(currentBaseURL.absoluteString)
+                        .textSelection(.enabled)
+                } else {
+                    Text("Disabled")
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+
+            Picker("Service", selection: $mode) {
+                Text("Default service").tag(Mode.defaultService)
+                Text("Custom address").tag(Mode.custom)
+                Text("Disabled").tag(Mode.disabled)
+            }
+            if mode == .custom {
+                TextField("Service address", text: $customOrigin, prompt: Text(verbatim: "https://worker.example.com"))
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                if customURL == nil {
+                    Text("Enter an HTTPS address without a path, query, or fragment.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else if mode == .defaultService {
+                if let defaultURL = AutomationServicePreferences.baseURL(savedOrigin: nil) {
+                    Text(defaultURL.absoluteString)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("No default service is configured.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Button("Save") { savedOrigin = draftOrigin }
+                .disabled((mode == .custom && customURL == nil) || draftOrigin == savedOrigin)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+
+            Text("Save and restart GitStride to apply service changes.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Changing or disabling the service does not stop automation on the previous server. Pause or delete its connection first if needed.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onAppear(perform: loadDraft)
+        .onChange(of: savedOrigin) { _, _ in loadDraft() }
+        if requiresRestart {
+            Label("Service changes saved. Restart GitStride to apply them.", systemImage: "arrow.triangle.2.circlepath")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func loadDraft() {
+        if let savedOrigin {
+            mode = savedOrigin.isEmpty ? .disabled : .custom
+            customOrigin = savedOrigin
+        } else {
+            mode = .defaultService
+            customOrigin = ""
         }
     }
 }

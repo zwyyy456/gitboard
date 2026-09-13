@@ -122,7 +122,7 @@ actor AutomationService {
         let error: String
     }
 
-    private let baseURL: URL
+    nonisolated let baseURL: URL
     private let session: URLSession
     private let decoder: JSONDecoder
     private let encoder = JSONEncoder()
@@ -134,13 +134,10 @@ actor AutomationService {
         decoder.dateDecodingStrategy = .iso8601
     }
 
-    static func configured() -> AutomationService? {
-        guard let value = Bundle.main.object(
-            forInfoDictionaryKey: "GitStrideAutomationBaseURL"
-        ) as? String,
-        let url = URL(string: value),
-        url.host != nil,
-        url.scheme == "https" || url.host == "localhost" else {
+    static func configured(defaults: UserDefaults = .standard) -> AutomationService? {
+        guard let url = AutomationServicePreferences.baseURL(
+            savedOrigin: defaults.string(forKey: AutomationServicePreferences.originKey)
+        ) else {
             return nil
         }
         return AutomationService(baseURL: url)

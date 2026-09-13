@@ -70,11 +70,12 @@
 ## 本地持久化与可重建状态
 
 - `UserDefaults` 只保存明确的轻量用户偏好和稳定选择，例如项目选择、My Work 关注/筛选、监控设置与更新设置。
+- `AutomationServicePreferences` 拥有自动化服务地址偏好和 origin 校验。未保存偏好时使用构建默认地址，空值表示禁用，自定义值只接受 HTTPS origin；无效自定义值不回退到默认服务。配置在 app 启动时装配，保存偏好不替换当前服务、setup session 或 WebSocket。
 - `ProjectCache` 只保存可重建的版本化项目快照，并使用原子写入；确认当前 GitHub 账号后才可恢复匹配稳定 account ID 的缓存。切换或断开连接会失效旧缓存 writer 并删除其快照；缺少稳定账号身份的旧版缓存不恢复。缓存不可用时回到远程加载或显示明确错误。
 - GitHub 项目、条目、assignee、加载状态、错误、更新时间和搜索输入均不成为本地业务真源。缓存内容只能作为启动展示和失败时的只读回退。
 - 启动后若已保存的项目或状态身份不再存在，应用必须回到可操作状态；不得长期保留指向缺失远程实体的半初始化选择。
 - GitHub token、完整 API 响应和私有项目内容不得进入本地偏好存储。
-- Worker management token 只保存在系统 Keychain；Worker 自己的 OAuth access/refresh token 只保存在 Worker 的加密凭据表。桌面 OAuth 凭据保存在独立 Keychain 项，不能传给 Worker，也不能进入 `UserDefaults`、项目缓存、日志或错误文案。
+- Worker management token 只保存在系统 Keychain，按当前服务的规范化 origin（scheme、host、非默认 port）隔离。Worker 自己的 OAuth access/refresh token 只保存在 Worker 的加密凭据表。桌面 OAuth 凭据保存在独立 Keychain 项，不能传给 Worker，也不能进入 `UserDefaults`、项目缓存、日志或错误文案。
 
 ## Automation Worker 边界
 

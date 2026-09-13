@@ -38,7 +38,7 @@ struct AutomationConfigurationForm: View {
             )
             .disabled(setup.selectedStatusFieldID == nil)
             StatusOptionPicker(
-                title: String(localized: "Done"),
+                title: String(localized: "Completed"),
                 selection: $setup.doneOptionID,
                 options: setup.selectedStatusOptions
             )

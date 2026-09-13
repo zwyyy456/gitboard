@@ -67,7 +67,9 @@ Open Draft PRs keep an Issue In Progress. Ready PRs follow your selected review 
 
 Pause, resume, reauthorize, or delete the connection under **Settings → GitHub → Pull Request Automation**. Deleting the connection stops future automation processing; it does not undo earlier changes to GitHub Project statuses. To revoke GitHub access completely, also remove the OAuth authorization under [Authorized OAuth Apps](https://github.com/settings/applications) and uninstall the GitHub App under [Installed GitHub Apps](https://github.com/settings/installations).
 
-For deployment on your own Cloudflare account, see [Automation setup and deployment](Automation/README.md). Source builds can use a different service origin or disable Automation with an empty `GITSTRIDE_AUTOMATION_BASE_URL` build setting.
+For deployment on your own Cloudflare account, see [Automation setup and deployment](Automation/README.md). Under **Settings → GitHub → Pull Request Automation → Automation service**, choose **Custom address**, enter your Worker's HTTPS origin, and save. Restart GitStride to apply it; recompiling is unnecessary. You can also select **Default service** or **Disabled**. Changing or disabling the service only changes this Mac's connection; pause or delete automation on the previous server first if you want it to stop.
+
+Source builds can set the default origin with `GITSTRIDE_AUTOMATION_BASE_URL`; an empty setting leaves the default service unavailable, while a custom address in Settings can still enable it. Management credentials are isolated by service address.
 
 ## Data and privacy
 

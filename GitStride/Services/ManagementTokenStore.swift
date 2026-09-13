@@ -9,7 +9,11 @@ protocol ManagementTokenStoring {
 
 struct ManagementTokenStore: ManagementTokenStoring {
     private let service = "com.gitstride.app.automation"
-    private let account = "management-token"
+    private let account: String
+
+    init(baseURL: URL) {
+        account = "management-token@\(baseURL.absoluteString)"
+    }
 
     static func makeToken() throws -> String {
         var bytes = [UInt8](repeating: 0, count: 32)

@@ -211,10 +211,19 @@ curl --fail --silent --show-error https://WORKER_ORIGIN/health
 ```
 
 The expected health response is `{"status":"ok"}`. Enable the GitHub App
-webhook only after this succeeds. Build the release app with
-`GITSTRIDE_AUTOMATION_BASE_URL` set to the same origin; an empty setting
-deliberately makes Automation unavailable rather than selecting an implicit
-server.
+webhook only after this succeeds. In GitStride, open **Settings → GitHub → Pull
+Request Automation → Automation service**, choose **Custom address**, enter the
+same HTTPS origin, and save. Restart GitStride, then complete automation setup.
+The origin must not contain a path, query, fragment, or embedded credentials.
+No client rebuild is needed. Management credentials are stored separately for
+each origin; a new server requires its own setup. Switching or disabling the
+client service does not stop automation on the previous server. Pause or delete
+that connection before switching if you want its processing to stop.
+
+For source builds, `GITSTRIDE_AUTOMATION_BASE_URL` still supplies **Default
+service**. An empty build setting leaves that default unavailable; users can
+still configure a custom address. **Disabled** explicitly prevents this Mac from
+connecting to an automation service after restart.
 
 Cloudflare's current command references cover
 [D1 resource and migration commands](https://developers.cloudflare.com/d1/wrangler-commands/),
