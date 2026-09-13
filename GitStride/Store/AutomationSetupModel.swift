@@ -33,6 +33,8 @@ final class AutomationSetupModel {
     private(set) var busyAutomationIDs: Set<String> = []
     let projectChangeEvents: AsyncStream<Int>
 
+    var serviceBaseURL: URL? { service?.baseURL }
+
     var selectedProjectID: String?
     var selectedStatusFieldID: String?
     var inProgressOptionID: String?
@@ -40,7 +42,7 @@ final class AutomationSetupModel {
     var reviewStatusPolicy: AutomationService.ReviewStatusPolicy = .ensureInReview
 
     private let service: AutomationService?
-    private let tokenStore: any ManagementTokenStoring
+    private let tokenStore: (any ManagementTokenStoring)?
     private let makeManagementToken: () throws -> String
     private var setupToken: String?
     private var authorizationURL: URL?
@@ -54,7 +56,7 @@ final class AutomationSetupModel {
 
     init(
         service: AutomationService? = AutomationService.configured(),
-        tokenStore: any ManagementTokenStoring = ManagementTokenStore(),
+        tokenStore: (any ManagementTokenStoring)? = nil,
         makeManagementToken: @escaping () throws -> String = ManagementTokenStore.makeToken
     ) {
         let (events, continuation) = AsyncStream.makeStream(
@@ -64,14 +66,14 @@ final class AutomationSetupModel {
         projectChangeEvents = events
         projectChangeContinuation = continuation
         self.service = service
-        self.tokenStore = tokenStore
+        self.tokenStore = tokenStore ?? service.map { ManagementTokenStore(baseURL: $0.baseURL) }
         self.makeManagementToken = makeManagementToken
         guard service != nil else {
             phase = .unavailable
             return
         }
         do {
-            phase = try tokenStore.load() == nil ? .disconnected : .loadingConnection
+            phase = try self.tokenStore?.load() == nil ? .disconnected : .loadingConnection
         } catch {
             phase = .connectionLoadFailed
             errorMessage = String(localized: "GitStride could not access the saved automation connection in Keychain.")
@@ -240,7 +242,7 @@ final class AutomationSetupModel {
     }
 
     func deleteAutomation(id: String) async {
-        guard let service else { return }
+        guard let service, let tokenStore else { return }
         busyAutomationIDs.insert(id)
         errorMessage = nil
         defer { busyAutomationIDs.remove(id) }
@@ -346,6 +348,7 @@ final class AutomationSetupModel {
 
     func completeSetup() async {
         guard let service,
+              let tokenStore,
               let sessionID = setupSessionID,
               let setupToken,
               let project = projects.first(where: { $0.id == selectedProjectID }),
@@ -399,7 +402,7 @@ final class AutomationSetupModel {
     }
 
     func recoverConnection() async {
-        guard let service, let sessionID = setupSessionID, let setupToken else { return }
+        guard let service, let tokenStore, let sessionID = setupSessionID, let setupToken else { return }
         isRecoveringConnection = true
         phase = .saving
         errorMessage = nil
@@ -486,7 +489,7 @@ final class AutomationSetupModel {
     private func handleManagementFailure(_ error: Error) {
         if isManagementAuthFailure(error) {
             stopProjectChangeEvents()
-            try? tokenStore.delete()
+            try? tokenStore?.delete()
             automations = []
             phase = .disconnected
             errorMessage = String(localized: "The saved automation connection is no longer valid. Connect again.")
@@ -504,7 +507,7 @@ final class AutomationSetupModel {
     }
 
     private func requireManagementToken() throws -> String {
-        guard let token = try tokenStore.load() else {
+        guard let token = try tokenStore?.load() else {
             throw AutomationServiceError.server("MANAGEMENT_AUTH_REQUIRED")
         }
         return token

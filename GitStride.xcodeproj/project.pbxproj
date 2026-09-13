@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D10000000000000000000001 /* AutomationServicePreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* AutomationServicePreferences.swift */; };
+		D10000000000000000000003 /* Services/AutomationServicePreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000004 /* Services/AutomationServicePreferencesTests.swift */; };
 		BF0000000000000000000001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = BF0000000000000000000002 /* Localizable.xcstrings */; };
 		BE0000000000000000000001 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000000000000000000002 /* WelcomeView.swift */; };
 		BD0000000000000000000001 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = BD0000000000000000000002 /* LICENSE */; };
@@ -116,6 +118,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		D10000000000000000000002 /* AutomationServicePreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationServicePreferences.swift; sourceTree = "<group>"; };
+		D10000000000000000000004 /* Services/AutomationServicePreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AutomationServicePreferencesTests.swift; sourceTree = "<group>"; };
 		BF0000000000000000000002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		BE0000000000000000000002 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		BD0000000000000000000002 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = SOURCE_ROOT; };
@@ -307,6 +311,7 @@
 				A1000006 /* GraphQLQueries.swift */,
 				A1000007 /* NotificationService.swift */,
 				A1000053 /* ManagementTokenStore.swift */,
+				D10000000000000000000002 /* AutomationServicePreferences.swift */,
 				A1000020 /* UpdateController.swift */,
 			);
 			path = Services;
@@ -440,6 +445,7 @@
 				62F8302DE36A45B8A30CC33A /* Models/IssueRelationKindTests.swift */,
 				A1000023 /* Services/GitHubServiceTests.swift */,
 				A1000059 /* Store/AutomationSetupModelTests.swift */,
+				D10000000000000000000004 /* Services/AutomationServicePreferencesTests.swift */,
 				B9000004 /* Views/ProjectTableTests.swift */,
 			);
 			path = GitStrideTests;
@@ -618,6 +624,7 @@
 				A0000001 /* GitStrideApp.swift in Sources */,
 				A0000052 /* AutomationService.swift in Sources */,
 				A0000053 /* ManagementTokenStore.swift in Sources */,
+				D10000000000000000000001 /* AutomationServicePreferences.swift in Sources */,
 				A0000054 /* AutomationSetupModel.swift in Sources */,
 				A0000055 /* AutomationSettingsView.swift in Sources */,
 				A0000056 /* AutomationConfigurationForm.swift in Sources */,
@@ -689,6 +696,7 @@
 				8BF8F992CB6A45E59C592ECB /* Models/IssueRelationKindTests.swift in Sources */,
 				A0000023 /* Services/GitHubServiceTests.swift in Sources */,
 				A0000059 /* Store/AutomationSetupModelTests.swift in Sources */,
+				D10000000000000000000003 /* Services/AutomationServicePreferencesTests.swift in Sources */,
 				B9000003 /* Views/ProjectTableTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -724,6 +732,7 @@
 				A0000001 /* GitStrideApp.swift in Sources */,
 				A0000052 /* AutomationService.swift in Sources */,
 				A0000053 /* ManagementTokenStore.swift in Sources */,
+				D10000000000000000000001 /* AutomationServicePreferences.swift in Sources */,
 				A0000054 /* AutomationSetupModel.swift in Sources */,
 				A0000055 /* AutomationSettingsView.swift in Sources */,
 				A0000056 /* AutomationConfigurationForm.swift in Sources */,
