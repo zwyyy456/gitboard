@@ -1,5 +1,4 @@
 import SwiftUI
-import Carbon.HIToolbox
 
 // Environment key for dismissing menubar
 private struct DismissMenuBarKey: EnvironmentKey {
@@ -89,15 +88,8 @@ struct GitStrideApp: App {
                         }
                     }
                 }
-                .background(AppHotKeyInstaller())
         }
         .menuBarExtraStyle(.window)
-
-        Window("Command Palette", id: "command-palette") {
-            CommandPaletteView(model: model).id(model.connectionID)
-        }
-        .windowResizability(.contentSize)
-        .commandsRemoved()
 
         WindowGroup("Item Details", id: "item-detail", for: ItemInspectorReference.self) { $reference in
             NavigationStack {
@@ -199,13 +191,6 @@ private struct GitStrideCommands: Commands {
             }
         }
 
-        CommandGroup(after: .toolbar) {
-            Button("Command Palette…") {
-                openWindow(id: "command-palette")
-            }
-            .keyboardShortcut("k", modifiers: .command)
-        }
-
         CommandGroup(after: .newItem) {
             NewProjectButton()
                 .keyboardShortcut("n", modifiers: .command)
@@ -274,26 +259,6 @@ private struct GitStrideCommands: Commands {
                     .disabled(openInGitHub.isEnabled == false)
             }
         }
-    }
-}
-
-private struct AppHotKeyInstaller: View {
-    @Environment(\.openWindow) private var openWindow
-    @State private var controller: GlobalHotKeyController?
-
-    var body: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .onAppear {
-                guard controller == nil else { return }
-                controller = GlobalHotKeyController(
-                    keyCode: UInt32(kVK_ANSI_K),
-                    modifiers: UInt32(cmdKey | optionKey)
-                ) {
-                    openWindow(id: "command-palette")
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-            }
     }
 }
 

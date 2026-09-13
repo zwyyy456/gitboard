@@ -171,11 +171,7 @@ struct GeneralSettingsView: View {
 struct ShortcutsSettingsView: View {
     var body: some View {
         Form {
-            Section("Global") {
-                KeyboardShortcutRow(keys: ["⌥", "⌘", "K"], description: String(localized: "Open Command Palette"))
-            }
             Section("In GitStride") {
-                KeyboardShortcutRow(keys: ["⌘", "K"], description: String(localized: "Open Command Palette"))
                 KeyboardShortcutRow(keys: ["⇧", "⌘", "N"], description: String(localized: "Add to Project"))
                 KeyboardShortcutRow(keys: ["⌘", ","], description: String(localized: "Open Settings"))
                 KeyboardShortcutRow(keys: ["⌘", "R"], description: String(localized: "Refresh"))

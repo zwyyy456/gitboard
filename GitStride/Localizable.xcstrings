@@ -109,22 +109,6 @@
         }
       }
     },
-    "%@ · Project": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ · Project"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ · 项目"
-          }
-        }
-      }
-    },
     "%@#%lld": {
       "shouldTranslate": false
     },
@@ -2098,38 +2082,6 @@
         }
       }
     },
-    "Command Palette": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Command Palette"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "命令面板"
-          }
-        }
-      }
-    },
-    "Command Palette…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Command Palette…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "命令面板…"
-          }
-        }
-      }
-    },
     "Completed": {
       "localizations": {
         "en": {
@@ -2504,22 +2456,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Create or Add Item"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "创建或添加条目"
-          }
-        }
-      }
-    },
-    "Create or add an item": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Create or add an item"
           }
         },
         "zh-Hans": {
@@ -4013,22 +3949,6 @@
     },
     "GitStride · 迹程": {
       "shouldTranslate": false
-    },
-    "Global": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Global"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "全局"
-          }
-        }
-      }
     },
     "Group By": {
       "localizations": {
@@ -5837,22 +5757,6 @@
         }
       }
     },
-    "Open Command Palette": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open Command Palette"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开命令面板"
-          }
-        }
-      }
-    },
     "Open Draft Item": {
       "localizations": {
         "en": {
@@ -7059,22 +6963,6 @@
         }
       }
     },
-    "Reload the current workspace": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reload the current workspace"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新加载当前工作区"
-          }
-        }
-      }
-    },
     "Remove": {
       "localizations": {
         "en": {
@@ -7875,22 +7763,6 @@
         }
       }
     },
-    "Search commands, Projects, issues, and pull requests": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Search commands, Projects, issues, and pull requests"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "搜索命令、项目、Issue 和 PR"
-          }
-        }
-      }
-    },
     "Search in a Repository": {
       "localizations": {
         "en": {
@@ -8335,22 +8207,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "稍后设置"
-          }
-        }
-      }
-    },
-    "Settings": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Settings"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设置"
           }
         }
       }
@@ -10001,22 +9857,6 @@
     },
     "—": {
       "shouldTranslate": false
-    },
-    "↑↓ Navigate   ↩ Open   Esc Close": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "↑↓ Navigate   ↩ Open   Esc Close"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "↑↓ 导航   ↩ 打开   Esc 关闭"
-          }
-        }
-      }
     }
   },
   "version": "1.0"
