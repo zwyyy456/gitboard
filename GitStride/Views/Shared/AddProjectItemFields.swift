@@ -83,6 +83,9 @@ struct LabelTokenField: NSViewRepresentable {
     func makeNSView(context: Context) -> NSTokenField {
         let field = NSTokenField()
         field.delegate = context.coordinator
+        if #available(macOS 15.0, *) {
+            field.suggestionsDelegate = context.coordinator
+        }
         field.placeholderString = "bug, enhancement"
         field.tokenizingCharacterSet = CharacterSet(charactersIn: ",")
         field.setAccessibilityLabel(String(localized: "Labels"))
@@ -136,9 +139,50 @@ struct LabelTokenField: NSViewRepresentable {
 
         func tokenField(_ tokenField: NSTokenField, completionsForSubstring substring: String,
                         indexOfToken tokenIndex: Int, indexOfSelectedItem selectedIndex: UnsafeMutablePointer<Int>?) -> [Any]? {
+            if #available(macOS 15.0, *) { return nil }
             selectedIndex?.pointee = -1
             return suggestions.filter { $0.localizedStandardContains(substring) }
         }
+    }
+}
+
+@available(macOS 15.0, *)
+extension LabelTokenField.Coordinator: NSTextSuggestionsDelegate {
+    typealias SuggestionItemType = String
+
+    func textField(_ textField: NSTextField, provideUpdatedSuggestions responseHandler: @escaping (ItemResponse) -> Void) {
+        guard let editor = textField.currentEditor() as? NSTextView else {
+            responseHandler(ItemResponse())
+            return
+        }
+        // The token field's editor includes spaces within the current label in this range.
+        let range = editor.rangeForUserCompletion
+        guard range.location != NSNotFound, range.length > 0 else {
+            responseHandler(ItemResponse())
+            return
+        }
+        let substring = (editor.string as NSString).substring(with: range)
+        let items = suggestions.filter { $0.localizedStandardContains(substring) }
+            .map { Item(representedValue: $0, title: $0) }
+        var response = ItemResponse(items: items)
+        response.preferredHighlight = .firstSelectableItem
+        responseHandler(response)
+    }
+
+    func textField(_ textField: NSTextField, textCompletionFor item: Item) -> String? {
+        // Whole-field previews would replace the other labels as well.
+        nil
+    }
+
+    func textField(_ textField: NSTextField, didSelect item: Item) {
+        guard let field = textField as? NSTokenField,
+              let editor = field.currentEditor() as? NSTextView else { return }
+        let range = editor.rangeForUserCompletion
+        guard range.location != NSNotFound, range.length > 0 else { return }
+        // Let NSTokenField commit the selected label using its existing comma separator.
+        editor.insertText(item.representedValue + ",", replacementRange: range)
+        field.validateEditing()
+        updateText(from: field)
     }
 }
 
