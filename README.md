@@ -8,9 +8,9 @@ A native macOS app for GitHub Projects. Keep your board in the menu bar, organiz
 
 - **Menu bar and workspace** — browse projects quickly or open a full project window.
 - **Board and Table** — move items between statuses, sort fields, and save local work views.
-- **My Work** — follow projects and filter work across them.
+- **My Work** — add projects to My Work and filter work across them.
 - **Issue editing** — create issues and manage assignees, labels, milestones, parent/sub-issues, and dependencies.
-- **Monitoring** — follow project changes with configurable refresh intervals and notifications.
+- **Project notifications** — when enabled, periodically check projects in My Work while the app is running and notify you of status and assignment changes, upcoming deadlines, and overdue items.
 - **Optional PR automation** — update closing Issues in matching personal Projects as pull requests progress, even when GitStride is closed.
 - **English and Simplified Chinese** — follows the macOS app language. GitHub project names, custom statuses, and user content keep their original text.
 - **GitHub login** — sign in from the app, or reuse an existing `gh` login in the GitHub Release build.

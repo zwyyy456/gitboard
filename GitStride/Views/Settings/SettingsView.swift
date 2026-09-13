@@ -53,7 +53,7 @@ struct GeneralSettingsView: View {
         Form {
             Section {
                 Toggle(
-                    "Monitor followed Projects",
+                    "Monitor Projects in My Work",
                     isOn: Binding(
                         get: { model.monitoringEnabled },
                         set: { enabled in
@@ -63,7 +63,7 @@ struct GeneralSettingsView: View {
                 )
 
                 Picker(
-                    "Refresh interval",
+                    "Check interval",
                     selection: Binding(
                         get: { model.monitoringIntervalMinutes },
                         set: { minutes in

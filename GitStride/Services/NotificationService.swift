@@ -70,7 +70,7 @@ actor NotificationService {
         let projects = Set(changes.map(\.projectTitle))
         let content = UNMutableNotificationContent()
         content.title = String(localized: "GitStride Summary")
-        content.body = String(localized: "\(changes.count) changes across \(projects.count) followed projects.")
+        content.body = String(localized: "\(changes.count) changes across \(projects.count) projects in My Work.")
         content.sound = .default
 
         try await UNUserNotificationCenter.current().add(
