@@ -54,7 +54,7 @@ struct AutomationSetupSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(setup.phase == .existingConnection ? "Connect Existing Automation" : "Set Up Automation")
+                Text(setup.phase == .existingConnection ? String(localized: "Connect Existing Automation") : String(localized: "Set Up Automation"))
                     .font(.headline)
                 Spacer()
             }

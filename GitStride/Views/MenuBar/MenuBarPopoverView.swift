@@ -114,14 +114,14 @@ struct MenuBarPopoverView: View {
             if canEditSelectedProject {
                 HeaderButton(
                     icon: "plus",
-                    help: "Create or Add Item",
+                    help: String(localized: "Create or Add Item"),
                     isProminent: true
                 ) {
                     openQuickAdd()
                 }
             }
 
-            HeaderButton(icon: "rectangle.split.3x1", help: "Open Kanban Board") {
+            HeaderButton(icon: "rectangle.split.3x1", help: String(localized: "Open Kanban Board")) {
                 openKanbanBoard()
             }
 
@@ -187,7 +187,7 @@ struct MenuBarPopoverView: View {
         openWindow(id: "quick-add")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             NSApp.activate(ignoringOtherApps: true)
-            for window in NSApp.windows where window.title == "Add to Project" {
+            for window in NSApp.windows where window.title == String(localized: "Add to Project") {
                 window.makeKeyAndOrderFront(nil)
             }
         }
@@ -292,7 +292,7 @@ struct MenuBarPopoverView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 FilterTab(
-                    title: "All",
+                    title: String(localized: "All"),
                     count: project.items.count,
                     isSelected: store.selectedStatusFilter == nil,
                     color: .secondary
@@ -405,7 +405,7 @@ struct MenuBarPopoverView: View {
             Image(systemName: searchText.isEmpty ? "doc.text.magnifyingglass" : "magnifyingglass")
                 .font(.system(size: 24))
                 .foregroundStyle(.tertiary)
-            Text(searchText.isEmpty ? "No items" : "No results for \"\(searchText)\"")
+            Text(searchText.isEmpty ? String(localized: "No items") : String(localized: "No results for \"\(searchText)\""))
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
         }

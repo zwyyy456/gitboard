@@ -80,7 +80,7 @@ struct GitHubSettingsView: View {
         }
         #endif
 
-        Button(method == .oauth ? "Log In to GitHub…" : "Use GitHub CLI") {
+        Button(method == .oauth ? String(localized: "Log In to GitHub…") : String(localized: "Use GitHub CLI")) {
             model.connectGitHub(using: method)
         }
         .buttonStyle(.borderedProminent)

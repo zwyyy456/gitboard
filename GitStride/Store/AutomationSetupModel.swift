@@ -74,7 +74,7 @@ final class AutomationSetupModel {
             phase = try tokenStore.load() == nil ? .disconnected : .loadingConnection
         } catch {
             phase = .connectionLoadFailed
-            errorMessage = "GitStride could not access the saved automation connection in Keychain."
+            errorMessage = String(localized: "GitStride could not access the saved automation connection in Keychain.")
         }
     }
 
@@ -389,7 +389,7 @@ final class AutomationSetupModel {
             phase = .configuring
         } catch is ManagementTokenStoreError {
             phase = .connectionStorageFailed
-            errorMessage = "GitStride could not save the connection in Keychain."
+            errorMessage = String(localized: "GitStride could not save the connection in Keychain.")
         } catch AutomationServiceError.server("ACCOUNT_AUTOMATION_ALREADY_CONFIGURED") {
             errorMessage = nil
             phase = .existingConnection
@@ -416,7 +416,7 @@ final class AutomationSetupModel {
             phase = .existingConnection
         } catch is ManagementTokenStoreError {
             phase = .connectionStorageFailed
-            errorMessage = "GitStride could not save the connection in Keychain."
+            errorMessage = String(localized: "GitStride could not save the connection in Keychain.")
         } catch {
             fail(error, fallback: .existingConnection)
         }
@@ -489,7 +489,7 @@ final class AutomationSetupModel {
             try? tokenStore.delete()
             automations = []
             phase = .disconnected
-            errorMessage = "The saved automation connection is no longer valid. Connect again."
+            errorMessage = String(localized: "The saved automation connection is no longer valid. Connect again.")
             return
         }
         errorMessage = message(for: error)
@@ -558,23 +558,23 @@ final class AutomationSetupModel {
         }
         switch code {
         case "SETUP_EXPIRED":
-            return "This setup session expired. Start again to continue."
+            return String(localized: "This setup session expired. Start again to continue.")
         case "OAUTH_SCOPE_MISSING":
-            return "GitHub did not grant access to Projects. Authorize GitStride again."
+            return String(localized: "GitHub did not grant access to Projects. Authorize GitStride again.")
         case "INSTALLATION_ACCOUNT_MISMATCH":
-            return "Install the GitHub App on the same personal account you authorized."
+            return String(localized: "Install the GitHub App on the same personal account you authorized.")
         case "PROJECT_WRITE_FORBIDDEN":
-            return "Your GitHub account cannot update the selected Project."
+            return String(localized: "Your GitHub account cannot update the selected Project.")
         case "ACCOUNT_AUTOMATION_ALREADY_CONFIGURED":
-            return "This GitHub account already has an automation connection."
+            return String(localized: "This GitHub account already has an automation connection.")
         case "AUTOMATION_NOT_READY":
-            return "Resolve the connection error before resuming this automation."
+            return String(localized: "Resolve the connection error before resuming this automation.")
         case "OAUTH_ACCOUNT_MISMATCH":
-            return "Authorize the same personal GitHub account used by this automation."
+            return String(localized: "Authorize the same personal GitHub account used by this automation.")
         case "PROJECT_API_INCOMPATIBLE", "INVALID_OAUTH_RESPONSE":
-            return "GitHub returned data that this version of GitStride cannot use."
+            return String(localized: "GitHub returned data that this version of GitStride cannot use.")
         default:
-            return "Automation setup failed (\(code))."
+            return String(localized: "Automation setup failed (\(code)).")
         }
     }
 }

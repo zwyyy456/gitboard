@@ -52,7 +52,7 @@ enum GitHubHTTP {
         case 200..<300: return
         case 401: throw GitHubError.notAuthenticated
         case 403 where response.value(forHTTPHeaderField: "X-GitHub-SSO") != nil:
-            throw GitHubError.organizationAccess("Authorize this connection for your organization’s SSO in GitHub.")
+            throw GitHubError.organizationAccess(String(localized: "Authorize this connection for your organization’s SSO in GitHub."))
         case 429: throw GitHubError.rateLimited(response.value(forHTTPHeaderField: "Retry-After"))
         case 403 where response.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0"
             || response.value(forHTTPHeaderField: "Retry-After") != nil:

@@ -32,13 +32,13 @@ struct AutomationConfigurationForm: View {
             }
 
             StatusOptionPicker(
-                title: "In progress",
+                title: String(localized: "In progress"),
                 selection: $setup.inProgressOptionID,
                 options: setup.selectedStatusOptions
             )
             .disabled(setup.selectedStatusFieldID == nil)
             StatusOptionPicker(
-                title: "Done",
+                title: String(localized: "Done"),
                 selection: $setup.doneOptionID,
                 options: setup.selectedStatusOptions
             )
@@ -67,9 +67,9 @@ struct AutomationConfigurationForm: View {
     private var reviewPolicyDescription: String {
         switch setup.reviewStatusPolicy {
         case .ensureInReview:
-            "Linked Issues move to In review. This status is added to a Project when first needed."
+            String(localized: "Linked Issues move to In review. This status is added to a Project when first needed.")
         case .useInProgress:
-            "Linked Issues stay in the selected In progress status. No review status is added."
+            String(localized: "Linked Issues stay in the selected In progress status. No review status is added.")
         }
     }
 }

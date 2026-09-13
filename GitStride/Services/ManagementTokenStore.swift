@@ -77,6 +77,6 @@ enum ManagementTokenStoreError: LocalizedError {
     case keychain(OSStatus)
 
     var errorDescription: String? {
-        "GitStride could not save the automation connection in Keychain."
+        String(localized: "GitStride could not save the automation connection in Keychain.")
     }
 }

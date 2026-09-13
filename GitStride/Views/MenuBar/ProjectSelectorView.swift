@@ -24,8 +24,8 @@ struct ProjectSelectorView: View {
                     ownerLabel
                 }
                 .menuIndicator(compact ? .hidden : .visible)
-                .help(store.selectedOwner?.login ?? "Select owner")
-                .accessibilityLabel("Select owner, current owner \(store.selectedOwner?.login ?? "none")")
+                .help(store.selectedOwner?.login ?? String(localized: "Select owner"))
+                .accessibilityLabel("Select owner, current owner \(store.selectedOwner?.login ?? String(localized: "None"))")
             }
 
             Menu {
@@ -50,11 +50,11 @@ struct ProjectSelectorView: View {
                     }
                 }
             } label: {
-                Text(store.selectedProject?.title ?? "Select Project")
+                Text(store.selectedProject?.title ?? String(localized: "Select Project"))
                     .lineLimit(1)
             }
             .help("Select project")
-            .accessibilityLabel("Select project, current project \(store.selectedProject?.title ?? "none")")
+            .accessibilityLabel("Select project, current project \(store.selectedProject?.title ?? String(localized: "None"))")
 
             if store.selectedProject?.viewerCanUpdate == false,
                store.isShowingCachedData == false {
@@ -70,7 +70,7 @@ struct ProjectSelectorView: View {
 
     @ViewBuilder
     private var ownerLabel: some View {
-        let title = store.selectedOwner?.login ?? "Owner"
+        let title = store.selectedOwner?.login ?? String(localized: "Owner")
         let icon = store.selectedOwner?.kind == .organization ? "building.2" : "person"
         if compact {
             Label(title, systemImage: icon)

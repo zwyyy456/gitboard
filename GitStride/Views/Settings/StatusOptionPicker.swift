@@ -4,7 +4,7 @@ struct StatusOptionPicker: View {
     let title: String
     @Binding var selection: String?
     let options: [AutomationService.StatusOption]
-    var emptySelectionTitle = "Choose a status"
+    var emptySelectionTitle = String(localized: "Choose a status")
 
     var body: some View {
         Picker(title, selection: $selection) {

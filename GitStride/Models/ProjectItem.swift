@@ -135,6 +135,10 @@ struct ProjectItem: Identifiable, Codable, Hashable {
         self.engineeringSignals = engineeringSignals
     }
 
+    var displayTitle: String {
+        contentType == .redacted ? String(localized: "Unavailable item") : title
+    }
+
     var signals: EngineeringSignals {
         engineeringSignals ?? EngineeringSignals()
     }

@@ -36,7 +36,7 @@ struct MyWorkView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if items.isEmpty {
                 ContentUnavailableView(
-                    "Nothing in \(filter.rawValue)",
+                    "Nothing in \(filter.title)",
                     systemImage: filter.icon,
                     description: Text("This view is derived locally from your followed Projects.")
                 )
@@ -57,11 +57,11 @@ struct MyWorkView: View {
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 HStack(spacing: 6) {
-                    Label(filter.rawValue, systemImage: filter.icon)
+                    Label(filter.title, systemImage: filter.icon)
                     Text("\(items.count)")
                         .foregroundStyle(.secondary)
                 }
-                .help("\(items.count) items in \(filter.rawValue)")
+                .help("\(items.count) items in \(filter.title)")
             }
 
             ToolbarItemGroup(placement: .primaryAction) {
@@ -99,14 +99,14 @@ struct MyWorkView: View {
         WorkspaceCommandContext(
             refresh: .init(
                 id: "refresh-my-work",
-                title: "Refresh My Work",
+                title: String(localized: "Refresh My Work"),
                 isEnabled: model.projectStore.isLoadingFollowedProjects == false,
                 perform: refresh
             ),
             stopFollowing: model.myWorkStore.followedProjects.map { reference in
                 .init(
                     id: "stop-following-\(reference.id)",
-                    title: "Remove \(followedProjectTitle(reference)) from My Work",
+                    title: String(localized: "Remove \(followedProjectTitle(reference)) from My Work"),
                     perform: { stopFollowing(reference) }
                 )
             }
@@ -166,7 +166,7 @@ private struct MyWorkRow: View {
                     .frame(width: 18)
 
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(workItem.item.title)
+                    Text(workItem.item.displayTitle)
                         .font(.body.weight(.medium))
                         .lineLimit(2)
 

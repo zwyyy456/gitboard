@@ -27,7 +27,7 @@ struct GitHubServiceTests {
 
     @Test func itemURLPreviewReportsMissingItem() async throws {
         let runner = FixtureGitHubHTTPClient(responses: [#"{"data":{"resource":null}}"#])
-        await #expect(throws: GitHubError.graphQLError("Item not found or no longer accessible.")) {
+        await #expect(throws: GitHubError.graphQLError(String(localized: "Item not found or no longer accessible."))) {
             try await GitHubService(http: runner).resolveItem(url: "https://github.com/octocat/example/issues/42")
         }
     }

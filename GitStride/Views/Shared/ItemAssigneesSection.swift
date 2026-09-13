@@ -14,7 +14,7 @@ struct ItemAssigneesSection: View {
     @State private var showsAssigneePicker = false
 
     var body: some View {
-        ItemPropertySection("Assignees") {
+        ItemPropertySection(String(localized: "Assignees")) {
             if item.assignees.isEmpty {
                 Text("No assignees").font(.callout).foregroundStyle(.secondary)
             } else {
@@ -97,7 +97,7 @@ struct ItemAssigneesSection: View {
                     .frame(maxWidth: .infinity)
                     .accessibilityLabel("Searching GitHub users")
             } else if userResults.isEmpty {
-                Text(hasSearchedUsers ? "No matching users" : "Enter a GitHub login or name.")
+                Text(hasSearchedUsers ? String(localized: "No matching users") : String(localized: "Enter a GitHub login or name."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {

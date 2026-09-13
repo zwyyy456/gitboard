@@ -18,7 +18,7 @@ struct GitHubHTMLBodyView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.underPageBackgroundColor = .clear
-        webView.setAccessibilityLabel("GitHub Markdown description")
+        webView.setAccessibilityLabel(String(localized: "GitHub Markdown description"))
         context.coordinator.render(html, in: webView)
         return webView
     }

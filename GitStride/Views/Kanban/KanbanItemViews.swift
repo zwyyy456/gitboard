@@ -18,7 +18,7 @@ struct KanbanColumn: View {
     @State private var isTargeted = false
 
     var statusName: String {
-        status?.name ?? "No Status"
+        status?.name ?? String(localized: "No Status")
     }
 
     var statusColor: Color {
@@ -187,7 +187,7 @@ struct KanbanCard: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityValue(accessibilityValue)
-            .accessibilityHint(isSelecting ? "Toggles selection" : "Shows details")
+            .accessibilityHint(isSelecting ? String(localized: "Toggles selection") : String(localized: "Shows details"))
         .contextMenu {
             KanbanCardContextMenu(
                 projectID: projectID,
@@ -248,26 +248,26 @@ struct KanbanCard: View {
 
     private var accessibilityValue: String {
         guard isSelecting else { return "" }
-        return isSelected ? "Selected" : "Not selected"
+        return isSelected ? String(localized: "Selected") : String(localized: "Not selected")
     }
 
     private var removalConfirmationTitle: String {
-        "Remove \"\(item.title)\" from the project?"
+        String(localized: "Remove \"\(item.displayTitle)\" from the project?")
     }
 
     private var accessibilityLabel: String {
-        var parts = [item.title]
+        var parts = [item.displayTitle]
         if let number = item.number {
-            parts.append("Number \(number)")
+            parts.append(String(localized: "Number \(number)"))
         }
         if let status = item.status {
-            parts.append("Status \(status)")
+            parts.append(String(localized: "Status \(status)"))
         }
         if let repository = item.repositoryName { parts.append(repository) }
         if !item.isWorkComplete && item.signals.blockedByCount > 0 {
-            parts.append("Blocked by \(item.signals.blockedByCount) issues")
+            parts.append(String(localized: "Blocked by \(item.signals.blockedByCount) issues"))
         }
-        if !item.assignees.isEmpty { parts.append("Assigned to " + item.assignees.map(\.login).joined(separator: ", ")) }
+        if !item.assignees.isEmpty { parts.append(String(localized: "Assigned to \(item.assignees.map(\.login).joined(separator: ", "))")) }
         return parts.joined(separator: ", ")
     }
 
@@ -292,7 +292,7 @@ struct KanbanCardPreview: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
 
-            Text(item.title)
+            Text(item.displayTitle)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
 

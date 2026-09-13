@@ -111,9 +111,9 @@ struct AddProjectItemView: View {
 
     private var sheetTitle: String {
         if let project = store.project(id: issueCreation?.projectID ?? store.selectedProjectId ?? "") {
-            return "Add Item to “\(project.title)”"
+            return String(localized: "Add Item to “\(project.title)”")
         }
-        return "Add Item to Project"
+        return String(localized: "Add Item to Project")
     }
 
     private var header: some View {
@@ -158,7 +158,7 @@ struct AddProjectItemView: View {
                let repositoryURL = URL(string: "https://github.com/\(issueCreation.repository)/issues") {
                 Link("Check Repository", destination: repositoryURL)
             } else if mode == .create {
-                Button(draft.usesQuickEntry ? "Show Full Form" : "Quick Entry…") {
+                Button(draft.usesQuickEntry ? String(localized: "Show Full Form") : String(localized: "Quick Entry…")) {
                     draft.usesQuickEntry.toggle()
                 }
                 .disabled(isWorking || issueCreation != nil)
@@ -223,17 +223,17 @@ struct AddProjectItemView: View {
     }
 
     private var createActionTitle: String {
-        if isWorking { return "Creating…" }
+        if isWorking { return String(localized: "Creating…") }
         if let issueCreation {
             switch issueCreation.phase {
-            case .addingToProject: return "Retry Adding to Project"
-            case .applyingFields: return "Retry Project Fields"
-            case .refreshingProject: return "Retry Refresh"
-            case .unconfirmed: return "Create Issue"
+            case .addingToProject: return String(localized: "Retry Adding to Project")
+            case .applyingFields: return String(localized: "Retry Project Fields")
+            case .refreshingProject: return String(localized: "Retry Refresh")
+            case .unconfirmed: return String(localized: "Create Issue")
             case .ready, .completed: break
             }
         }
-        return draft.itemType == .issue ? "Create Issue" : "Create Draft"
+        return draft.itemType == .issue ? String(localized: "Create Issue") : String(localized: "Create Draft")
     }
 
     private var createActionIsDisabled: Bool {
@@ -298,7 +298,7 @@ struct AddProjectItemView: View {
             } catch {
                 if (error as? GitHubError) == .invalidRepository {
                     issueCreation = nil
-                    draft.repositoryValidationMessage = "Use owner/repository, for example octocat/hello-world."
+                    draft.repositoryValidationMessage = String(localized: "Use owner/repository, for example octocat/hello-world.")
                 } else if let issueCreation {
                     validationMessage = issueCreation.errorMessage ?? error.localizedDescription
                     if issueCreation.phase == .ready { self.issueCreation = nil }

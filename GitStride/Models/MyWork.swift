@@ -46,6 +46,19 @@ enum MyWorkFilter: String, CaseIterable, Codable, Identifiable {
     case recent = "Recently Updated"
     case stale = "Stale"
 
+    var title: String {
+        switch self {
+        case .assigned: String(localized: "Assigned to Me")
+        case .reviewRequested: String(localized: "Review Requested")
+        case .readyToMerge: String(localized: "Ready to Merge")
+        case .ciFailed: String(localized: "CI Failed")
+        case .due: String(localized: "Due Soon")
+        case .blocked: String(localized: "Blocked")
+        case .recent: String(localized: "Recently Updated")
+        case .stale: String(localized: "Stale")
+        }
+    }
+
     var id: Self { self }
 
     var icon: String {

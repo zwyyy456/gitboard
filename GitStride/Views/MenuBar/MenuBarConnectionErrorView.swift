@@ -11,9 +11,9 @@ struct MenuBarConnectionErrorView: View {
         VStack(spacing: 16) {
             if let error = error as? GitHubError,
                [.ghCLINotFound, .notAuthenticated, .missingProjectScope, .accountChanged, .insufficientPermissions].contains(error) {
-                onboardingView(icon: "person.crop.circle", title: "Connect to GitHub",
+                onboardingView(icon: "person.crop.circle", title: String(localized: "Connect to GitHub"),
                                message: error.localizedDescription,
-                               buttonTitle: "Open GitHub Settings") {
+                               buttonTitle: String(localized: "Open GitHub Settings")) {
                     UserDefaults.standard.set("github", forKey: "selectedSettingsPane")
                     dismissMenuBar()
                     NSApp.activate(ignoringOtherApps: true)

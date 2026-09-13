@@ -30,19 +30,19 @@ enum ProjectStoreError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .repositoryOwnerMismatch:
-            "Choose a repository owned by the same account as the project."
+            String(localized: "Choose a repository owned by the same account as the project.")
         case .noProjectSelected:
-            "No project is selected."
+            String(localized: "No project is selected.")
         case .readOnlyProject:
-            "This project is read-only."
+            String(localized: "This project is read-only.")
         case .operationInProgress:
-            "Another change to this item is still in progress."
+            String(localized: "Another change to this item is still in progress.")
         case .itemUnavailable:
-            "This item is no longer available."
+            String(localized: "This item is no longer available.")
         case .missingFieldOption(let field, let option):
-            "\(field) has no option named \(option)."
+            String(localized: "\(field) has no option named \(option).")
         case .projectRefreshIncomplete:
-            "GitStride could not finish refreshing the project."
+            String(localized: "GitStride could not finish refreshing the project.")
         }
     }
 }
@@ -305,7 +305,7 @@ final class ProjectStore {
 
     func itemDetailState(for item: ProjectItem) -> ItemDetailState {
         guard let contentID = item.contentId else {
-            return .failed("Details are unavailable for this item.")
+            return .failed(String(localized: "Details are unavailable for this item."))
         }
         guard let entry = itemDetailEntries[contentID],
               entry.sourceUpdatedAt == item.updatedAt else { return .idle }
@@ -674,7 +674,7 @@ final class ProjectStore {
             guard generation == catalogGeneration else { return }
             if isShowingCachedData {
                 self.error = nil
-                operationErrorMessage = "Showing cached data because GitHub owners could not refresh: \(error.localizedDescription)"
+                operationErrorMessage = String(localized: "Showing cached data because GitHub owners could not refresh: \(error.localizedDescription)")
             } else {
                 self.error = error
             }
@@ -852,7 +852,7 @@ final class ProjectStore {
         do {
             try await projectCache.removeProject(id: id)
         } catch {
-            operationErrorMessage = "Project deleted, but its local cache could not be removed: \(error.localizedDescription)"
+            operationErrorMessage = String(localized: "Project deleted, but its local cache could not be removed: \(error.localizedDescription)")
         }
     }
 
@@ -893,7 +893,7 @@ final class ProjectStore {
             replaceCatalog(with: [project] + mergingCatalog(catalog.filter { $0.id != project.id }))
         } catch {
             guard generation == catalogGeneration else { return }
-            operationErrorMessage = "Project created, but the project list could not refresh: \(error.localizedDescription)"
+            operationErrorMessage = String(localized: "Project created, but the project list could not refresh: \(error.localizedDescription)")
         }
         guard generation == catalogGeneration else { return }
         isLoading = false
@@ -950,9 +950,9 @@ final class ProjectStore {
             guard generation == catalogGeneration else { return }
             if isShowingCachedData {
                 self.error = nil
-                operationErrorMessage = "Showing cached data because the project list could not refresh: \(error.localizedDescription)"
+                operationErrorMessage = String(localized: "Showing cached data because the project list could not refresh: \(error.localizedDescription)")
             } else if projects.contains(where: { $0.owner.id == owner.id }) {
-                operationErrorMessage = "The project list could not refresh: \(error.localizedDescription)"
+                operationErrorMessage = String(localized: "The project list could not refresh: \(error.localizedDescription)")
             } else {
                 replaceCatalog(with: [])
                 selectedProjectId = nil
@@ -1010,7 +1010,7 @@ final class ProjectStore {
             )
             cachedAccountLogin = account.login
         } catch {
-            operationErrorMessage = "Project loaded, but the local cache could not be updated: \(error.localizedDescription)"
+            operationErrorMessage = String(localized: "Project loaded, but the local cache could not be updated: \(error.localizedDescription)")
         }
     }
 
@@ -1154,8 +1154,8 @@ final class ProjectStore {
     }
 
     private func cachedDataMessage(for state: GitHubSessionState) -> String {
-        let reason = sessionError(for: state)?.localizedDescription ?? "GitHub is unavailable."
-        return "Showing cached data. \(reason)"
+        let reason = sessionError(for: state)?.localizedDescription ?? String(localized: "GitHub is unavailable.")
+        return String(localized: "Showing cached data. \(reason)")
     }
 
     private func cancelProjectLoad() {
@@ -1422,11 +1422,11 @@ final class ProjectStore {
             let context: String
             switch creation.phase {
             case .addingToProject(let url):
-                context = "The issue was created at \(url). Retry to add it to the original project. "
+                context = String(localized: "The issue was created at \(url). Retry to add it to the original project. ")
             case .applyingFields(let url, _):
-                context = "The issue at \(url) was added. Retry to finish its Project fields. "
+                context = String(localized: "The issue at \(url) was added. Retry to finish its Project fields. ")
             case .refreshingProject:
-                context = "The issue and its Project fields were saved. Retry to refresh the project. "
+                context = String(localized: "The issue and its Project fields were saved. Retry to refresh the project. ")
             case .unconfirmed:
                 context = GitHubError.issueCreationUnconfirmed.localizedDescription + " "
             case .ready, .completed:

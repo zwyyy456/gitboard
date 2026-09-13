@@ -21,6 +21,15 @@ enum ProjectWorkCompletion: String, Codable, CaseIterable, Identifiable {
     case all = "All"
     case unfinished = "Unfinished"
     case blocked = "Blocked"
+
+    var title: String {
+        switch self {
+        case .all: String(localized: "All")
+        case .unfinished: String(localized: "Unfinished")
+        case .blocked: String(localized: "Blocked")
+        }
+    }
+
     var id: Self { self }
 }
 

@@ -25,43 +25,43 @@ enum GitHubError: Error, LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .invalidResponse: return "GitHub returned an invalid response."
-        case .httpError(let status): return "GitHub request failed (HTTP \(status))."
-        case .insufficientPermissions: return "This connection does not have permission for this operation. Check GitHub access in Settings."
-        case .credentialStorage: return "GitStride could not access its GitHub credentials in Keychain."
-        case .oauthUnavailable: return "GitHub login is unavailable. Check the connection and try again."
-        case .authorizationDenied: return "GitHub authorization was declined."
-        case .authorizationExpired: return "The login code expired. Start GitHub login again."
-        case .accountChanged: return "The GitHub account changed. Reconnect in Settings before continuing."
+        case .invalidResponse: return String(localized: "GitHub returned an invalid response.")
+        case .httpError(let status): return String(localized: "GitHub request failed (HTTP \(status)).")
+        case .insufficientPermissions: return String(localized: "This connection does not have permission for this operation. Check GitHub access in Settings.")
+        case .credentialStorage: return String(localized: "GitStride could not access its GitHub credentials in Keychain.")
+        case .oauthUnavailable: return String(localized: "GitHub login is unavailable. Check the connection and try again.")
+        case .authorizationDenied: return String(localized: "GitHub authorization was declined.")
+        case .authorizationExpired: return String(localized: "The login code expired. Start GitHub login again.")
+        case .accountChanged: return String(localized: "The GitHub account changed. Reconnect in Settings before continuing.")
         case .ghCLINotFound:
-            return "GitHub CLI (gh) not found. Please install it from https://cli.github.com"
+            return String(localized: "GitHub CLI (gh) not found. Please install it from https://cli.github.com")
         case .notAuthenticated:
-            return "Connect to GitHub in Settings to continue."
+            return String(localized: "Connect to GitHub in Settings to continue.")
         case .missingProjectScope:
-            return "This connection needs GitHub Projects access. Open GitHub settings in GitStride to reconnect."
+            return String(localized: "This connection needs GitHub Projects access. Open GitHub settings in GitStride to reconnect.")
         case .organizationAccess(let message):
             return message
         case .rateLimited(let resetDescription):
             if let resetDescription {
-                return "GitHub rate limit reached. Try again \(resetDescription)."
+                return String(localized: "GitHub rate limit reached. Try again \(resetDescription).")
             }
-            return "GitHub rate limit reached. Try again later."
+            return String(localized: "GitHub rate limit reached. Try again later.")
         case .invalidRepository:
-            return "Enter a repository as owner/name."
+            return String(localized: "Enter a repository as owner/name.")
         case .invalidItemURL:
-            return "Enter a GitHub issue or pull request URL."
+            return String(localized: "Enter a GitHub issue or pull request URL.")
         case .itemUnavailable:
-            return "This item is unavailable or no longer accessible."
+            return String(localized: "This item is unavailable or no longer accessible.")
         case .issueCreationUnconfirmed:
-            return "GitHub did not confirm the issue’s identity. Check the repository before creating another issue."
+            return String(localized: "GitHub did not confirm the issue’s identity. Check the repository before creating another issue.")
         case .issueCreationNotStarted(let message):
-            return "The issue was not created. \(message)"
+            return String(localized: "The issue was not created. \(message)")
         case .graphQLError(let message):
-            return "GitHub API error: \(message)"
+            return String(localized: "GitHub API error: \(message)")
         case .decodingError(let message):
-            return "Failed to parse GitHub response: \(message)"
+            return String(localized: "Failed to parse GitHub response: \(message)")
         case .connectionError(let message):
-            return "GitHub connection failed: \(message)"
+            return String(localized: "GitHub connection failed: \(message)")
         }
     }
 }
@@ -155,7 +155,7 @@ actor GitHubService {
         } while after != nil
 
         guard let userOwner else {
-            throw GitHubError.decodingError("The authenticated GitHub user is missing.")
+            throw GitHubError.decodingError(String(localized: "The authenticated GitHub user is missing."))
         }
         return [userOwner] + organizations
     }
@@ -196,7 +196,7 @@ actor GitHubService {
                 as: GitHubResponse.OwnerRepositoriesPayload.self
             )
             guard let connection = payload.repositoryOwner?.repositories else {
-                throw GitHubError.graphQLError("Repositories are not accessible for this owner.")
+                throw GitHubError.graphQLError(String(localized: "Repositories are not accessible for this owner."))
             }
             repositories += connection.nodes.map {
                 ProjectRepository(id: $0.id, nameWithOwner: $0.nameWithOwner, ownerID: owner.id)
@@ -235,7 +235,7 @@ actor GitHubService {
             )
             guard let remoteOwner = payload.owner else {
                 throw GitHubError.organizationAccess(
-                    "GitHub did not return projects for \(owner.login). Check organization or SSO access."
+                    String(localized: "GitHub did not return projects for \(owner.login). Check organization or SSO access.")
                 )
             }
 
@@ -304,7 +304,7 @@ actor GitHubService {
         let issueMetadata: IssueMetadata?
         if node.typename == "Issue" {
             guard let repository = node.repository?.nameWithOwner else {
-                throw GitHubError.decodingError("GitHub returned an issue without a repository.")
+                throw GitHubError.decodingError(String(localized: "GitHub returned an issue without a repository."))
             }
             issueMetadata = IssueMetadata(
                 repository: repository,
@@ -379,7 +379,7 @@ actor GitHubService {
                 as: GitHubResponse.RepositoryMilestonesPayload.self
             )
             guard let connection = payload.repository?.milestones else {
-                throw GitHubError.graphQLError("Repository not found or no longer accessible.")
+                throw GitHubError.graphQLError(String(localized: "Repository not found or no longer accessible."))
             }
             milestones.append(contentsOf: connection.nodes.compactMap(makeMilestone))
             after = try nextCursor(from: connection.pageInfo)
@@ -607,7 +607,7 @@ actor GitHubService {
                     as: GitHubResponse.IssueRepositoryPayload.self
                 )
                 guard let remoteRepository = payload.repository else {
-                    throw GitHubError.graphQLError("Repository not found or no longer accessible.")
+                    throw GitHubError.graphQLError(String(localized: "Repository not found or no longer accessible."))
                 }
                 resolvedRepositoryID = remoteRepository.id
                 existingLabels += remoteRepository.labels.nodes
@@ -623,7 +623,7 @@ actor GitHubService {
                     as: GitHubResponse.IssueAssigneePayload.self
                 )
                 guard let user = payload.user else {
-                    throw GitHubError.graphQLError("Assignee @\(login) was not found.")
+                    throw GitHubError.graphQLError(String(localized: "Assignee @\(login) was not found."))
                 }
                 assigneeIDs.append(user.id)
             }
@@ -700,7 +700,7 @@ actor GitHubService {
             as: GitHubItemResourcePayload.self
         )
         guard let candidate = payload.resource else {
-            throw GitHubError.graphQLError("Item not found or no longer accessible.")
+            throw GitHubError.graphQLError(String(localized: "Item not found or no longer accessible."))
         }
         return candidate
     }
@@ -715,7 +715,7 @@ actor GitHubService {
         let data = try await send(url: endpoint, method: "GET", body: nil, allowsAuthenticationRetry: true)
         struct IssueIdentity: Decodable { let node_id: String }
         guard let identity = try? decoder.decode(IssueIdentity.self, from: data), !identity.node_id.isEmpty else {
-            throw GitHubError.decodingError("GitHub returned no item identifier.")
+            throw GitHubError.decodingError(String(localized: "GitHub returned no item identifier."))
         }
         let contentId = identity.node_id
         return try await addExistingItem(projectId: projectId, contentId: contentId)
@@ -752,7 +752,7 @@ actor GitHubService {
                 as: GitHubResponse.ProjectFieldsPayload.self
             )
             guard let node = payload.node else {
-                throw GitHubError.graphQLError("Project not found or no longer accessible.")
+                throw GitHubError.graphQLError(String(localized: "Project not found or no longer accessible."))
             }
             if metadata == nil || after != nil {
                 fields.append(contentsOf: node.fields.nodes)
@@ -766,7 +766,7 @@ actor GitHubService {
         } while after != nil || repositoryAfter != nil
 
         guard let metadata else {
-            throw GitHubError.decodingError("Project metadata is missing.")
+            throw GitHubError.decodingError(String(localized: "Project metadata is missing."))
         }
         return ProjectFieldsResult(
             title: metadata.title,
@@ -792,7 +792,7 @@ actor GitHubService {
                 as: GitHubResponse.ProjectItemsPayload.self
             )
             guard let node = payload.node else {
-                throw GitHubError.graphQLError("Project not found or no longer accessible.")
+                throw GitHubError.graphQLError(String(localized: "Project not found or no longer accessible."))
             }
             items.append(contentsOf: node.items.nodes)
             after = try nextCursor(from: node.items.pageInfo)
@@ -963,7 +963,7 @@ actor GitHubService {
             guard let payload = envelope.data else { throw GitHubError.invalidResponse }
             return payload
         } catch let error as GitHubError { throw error }
-        catch { throw GitHubError.decodingError("GitHub returned an unexpected response format.") }
+        catch { throw GitHubError.decodingError(String(localized: "GitHub returned an unexpected response format.")) }
     }
 
     private func send(url: URL, method: String, body: Data?, allowsAuthenticationRetry: Bool) async throws -> Data {
@@ -994,7 +994,7 @@ actor GitHubService {
         }
         if lowercased.contains("saml") || lowercased.contains("sso") {
             return .organizationAccess(
-                "GitHub organization access requires additional SSO authorization."
+                String(localized: "GitHub organization access requires additional SSO authorization.")
             )
         }
         return .graphQLError(String(message.prefix(500)))
@@ -1003,7 +1003,7 @@ actor GitHubService {
     private func nextCursor(from pageInfo: GitHubResponse.PageInfo) throws -> String? {
         guard pageInfo.hasNextPage else { return nil }
         guard let endCursor = pageInfo.endCursor else {
-            throw GitHubError.decodingError("GitHub pagination cursor is missing.")
+            throw GitHubError.decodingError(String(localized: "GitHub pagination cursor is missing."))
         }
         return endCursor
     }

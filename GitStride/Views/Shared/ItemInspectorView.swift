@@ -55,7 +55,7 @@ struct ItemDetailView: View {
             minWidth: allowsOpeningNewWindow ? nil : 560,
             minHeight: 520
         )
-        .navigationTitle(item?.title ?? "Item")
+        .navigationTitle(item?.displayTitle ?? String(localized: "Item"))
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 if isRefreshing {
@@ -111,12 +111,12 @@ struct ItemDetailView: View {
 
             ToolbarItem(placement: .primaryAction) {
                 Button(
-                    isInspectorPresented ? "Hide Inspector" : "Show Inspector",
+                    isInspectorPresented ? String(localized: "Hide Inspector") : String(localized: "Show Inspector"),
                     systemImage: "sidebar.right",
                     action: toggleInspector
                 )
                 .labelStyle(.iconOnly)
-                .help(isInspectorPresented ? "Hide Inspector" : "Show Inspector")
+                .help(isInspectorPresented ? String(localized: "Hide Inspector") : String(localized: "Show Inspector"))
             }
         }
         .inspector(isPresented: $isInspectorPresented) {
@@ -153,31 +153,31 @@ struct ItemDetailView: View {
 
     private var openInGitHubTitle: String {
         switch item?.contentType {
-        case .issue: "Open Issue"
-        case .pullRequest: "Open Pull Request"
-        case .draftIssue: "Open Draft Item"
-        case .redacted, .none: "Open in GitHub"
+        case .issue: String(localized: "Open Issue")
+        case .pullRequest: String(localized: "Open Pull Request")
+        case .draftIssue: String(localized: "Open Draft Item")
+        case .redacted, .none: String(localized: "Open in GitHub")
         }
     }
 
     private var openInGitHubHelp: String {
         if let number = item?.number {
-            return "\(openInGitHubTitle) #\(number) in GitHub"
+            return String(localized: "\(openInGitHubTitle) #\(number) in GitHub")
         }
-        return "\(openInGitHubTitle) in GitHub"
+        return String(localized: "\(openInGitHubTitle) in GitHub")
     }
 
     private var commandContext: WorkspaceCommandContext {
         WorkspaceCommandContext(
             refresh: .init(
                 id: "refresh-item",
-                title: "Refresh Item",
+                title: String(localized: "Refresh Item"),
                 isEnabled: isRefreshing == false && isArchiving == false,
                 perform: refreshItem
             ),
             toggleInspector: .init(
                 id: "toggle-item-inspector",
-                title: isInspectorPresented ? "Hide Inspector" : "Show Inspector",
+                title: isInspectorPresented ? String(localized: "Hide Inspector") : String(localized: "Show Inspector"),
                 perform: toggleInspector
             ),
             openInGitHub: itemURL.map { _ in
@@ -207,7 +207,7 @@ struct ItemDetailView: View {
             } catch is CancellationError {
                 return
             } catch {
-                operationErrorMessage = "Item refresh failed: \(error.localizedDescription)"
+                operationErrorMessage = String(localized: "Item refresh failed: \(error.localizedDescription)")
             }
         }
     }
