@@ -29,7 +29,7 @@ struct MyWorkView: View {
                 ContentUnavailableView(
                     "No Projects in My Work",
                     systemImage: "briefcase",
-                    description: Text("Open a Project Board and choose Add to My Work from the Project Actions menu.")
+                    description: Text("Open a Project and click Add to My Work in the toolbar.")
                 )
             } else if model.projectStore.isLoadingFollowedProjects && model.myWorkProjects.isEmpty {
                 ProgressView("Loading My Work…")
@@ -38,7 +38,7 @@ struct MyWorkView: View {
                 ContentUnavailableView(
                     "Nothing in \(filter.title)",
                     systemImage: filter.icon,
-                    description: Text("This view is derived locally from your followed Projects.")
+                    description: Text("No items in My Work match this filter.")
                 )
             } else {
                 List(items) { workItem in

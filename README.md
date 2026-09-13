@@ -1,5 +1,7 @@
 # GitStride · 迹程
 
+English · [简体中文](README.zh-CN.md)
+
 A native macOS app for GitHub Projects. Keep your board in the menu bar, organize work in Board or Table, and edit issues without switching to the browser.
 
 [Website & download](https://gitstride.zwyyy456.tech) · [GitHub Releases](https://github.com/zwyyy456/GitStride/releases) · [User guide](docs/usage.md)
@@ -8,9 +10,9 @@ A native macOS app for GitHub Projects. Keep your board in the menu bar, organiz
 
 - **Menu bar and workspace** — browse projects quickly or open a full project window.
 - **Board and Table** — move items between statuses, sort fields, and save local work views.
-- **My Work** — follow projects and filter work across them.
+- **My Work** — add projects to My Work and filter work across them.
 - **Issue editing** — create issues and manage assignees, labels, milestones, parent/sub-issues, and dependencies.
-- **Monitoring** — follow project changes with configurable refresh intervals and notifications.
+- **Project notifications** — when enabled, periodically check projects in My Work while the app is running and notify you of status and assignment changes, upcoming deadlines, and overdue items.
 - **Optional PR automation** — update closing Issues in matching personal Projects as pull requests progress, even when GitStride is closed.
 - **English and Simplified Chinese** — follows the macOS app language. GitHub project names, custom statuses, and user content keep their original text.
 - **GitHub login** — sign in from the app, or reuse an existing `gh` login in the GitHub Release build.
@@ -113,6 +115,6 @@ See [validation commands](docs-index.md#5-常用验证命令), [architecture](ar
 
 ## Origin and license
 
-GitStride originated from [yogesharc/GitStride](https://github.com/yogesharc/GitStride) and is now independently maintained and substantially reworked by [zwyyy456](https://github.com/zwyyy456). The original copyright notice is preserved alongside the current maintainer's notice.
+GitStride originated from [yogesharc/GitBoard](https://github.com/yogesharc/GitBoard) and is now independently maintained and substantially reworked by [zwyyy456](https://github.com/zwyyy456). The original copyright notice is preserved alongside the current maintainer's notice.
 
 Released under the [MIT License](LICENSE). The license is also included in the app bundle. GitStride is not affiliated with GitHub, Inc.

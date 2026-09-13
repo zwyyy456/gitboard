@@ -242,12 +242,12 @@
         }
       }
     },
-    "%lld changes across %lld followed projects.": {
+    "%lld changes across %lld projects in My Work.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%#@changes@ across %#@projects@."
+            "value": "%#@changes@ across %#@projects@ in My Work."
           },
           "substitutions": {
             "changes": {
@@ -278,13 +278,13 @@
                   "one": {
                     "stringUnit": {
                       "state": "translated",
-                      "value": "%arg followed project"
+                      "value": "%arg project"
                     }
                   },
                   "other": {
                     "stringUnit": {
                       "state": "translated",
-                      "value": "%arg followed projects"
+                      "value": "%arg projects"
                     }
                   }
                 }
@@ -295,7 +295,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关注的 %2$lld 个项目中有 %1$lld 项变更。"
+            "value": "“我的工作”中 %2$lld 个项目共有 %1$lld 项变更。"
           }
         }
       }
@@ -710,6 +710,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加标签…"
+          }
+        }
+      }
+    },
+    "Add a Project to My Work to start monitoring.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a Project to My Work to start monitoring."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将项目添加到“我的工作”后，即可开始监控。"
           }
         }
       }
@@ -1322,6 +1338,22 @@
         }
       }
     },
+    "Automation service": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automation service"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动化服务"
+          }
+        }
+      }
+    },
     "Automation setup failed (%@).": {
       "localizations": {
         "en": {
@@ -1734,6 +1766,22 @@
         }
       }
     },
+    "Changing or disabling the service does not stop automation on the previous server. Pause or delete its connection first if needed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changing or disabling the service does not stop automation on the previous server. Pause or delete its connection first if needed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换或禁用服务不会停止旧服务器上的自动化。如需停止，请先暂停或删除原连接。"
+          }
+        }
+      }
+    },
     "Check Repository": {
       "localizations": {
         "en": {
@@ -1762,6 +1810,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "检查更新…"
+          }
+        }
+      }
+    },
+    "Check interval": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check interval"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查间隔"
+          }
+        }
+      }
+    },
+    "Check your account connection in GitHub settings to start monitoring.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check your account connection in GitHub settings to start monitoring."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监控尚未启动，请到“GitHub”设置检查账号连接。"
           }
         }
       }
@@ -1874,6 +1954,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择状态"
+          }
+        }
+      }
+    },
+    "Choose an automation service below to connect.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose an automation service below to connect."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在下方选择自动化服务以连接。"
           }
         }
       }
@@ -2466,6 +2562,38 @@
         }
       }
     },
+    "Current service": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current service"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前服务"
+          }
+        }
+      }
+    },
+    "Custom address": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom address"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义地址"
+          }
+        }
+      }
+    },
     "Date": {
       "localizations": {
         "en": {
@@ -2478,6 +2606,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "日期"
+          }
+        }
+      }
+    },
+    "Default service": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default service"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认服务"
           }
         }
       }
@@ -2718,6 +2862,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "设备授权码"
+          }
+        }
+      }
+    },
+    "Disabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disabled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "禁用"
           }
         }
       }
@@ -3090,6 +3250,22 @@
         }
       }
     },
+    "Enter an HTTPS address without a path, query, or fragment.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter an HTTPS address without a path, query, or fragment."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入 HTTPS 地址，不包含路径、查询参数或片段。"
+          }
+        }
+      }
+    },
     "Example: Fix login @me #bug": {
       "localizations": {
         "en": {
@@ -3230,38 +3406,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "请在浏览器中完成授权，然后返回 GitStride。"
-          }
-        }
-      }
-    },
-    "Follow a Project to start monitoring.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Follow a Project to start monitoring."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关注一个项目以开始监控。"
-          }
-        }
-      }
-    },
-    "Following Projects": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Following Projects"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关注的项目"
           }
         }
       }
@@ -4753,18 +4897,18 @@
         }
       }
     },
-    "Monitor followed Projects": {
+    "Monitor Projects in My Work": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Monitor followed Projects"
+            "value": "Monitor Projects in My Work"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "监控关注的项目"
+            "value": "监控“我的工作”中的项目"
           }
         }
       }
@@ -5245,6 +5389,22 @@
         }
       }
     },
+    "No default service is configured.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No default service is configured."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未配置默认服务。"
+          }
+        }
+      }
+    },
     "No filters": {
       "localizations": {
         "en": {
@@ -5273,6 +5433,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂无条目"
+          }
+        }
+      }
+    },
+    "No items in My Work match this filter.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No items in My Work match this filter."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“我的工作”中没有符合此筛选条件的条目。"
           }
         }
       }
@@ -5805,18 +5981,18 @@
         }
       }
     },
-    "Open a Project Board and choose Add to My Work from the Project Actions menu.": {
+    "Open a Project and click Add to My Work in the toolbar.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open a Project Board and choose Add to My Work from the Project Actions menu."
+            "value": "Open a Project and click Add to My Work in the toolbar."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开项目看板，在项目操作菜单中选择“添加到我的工作”。"
+            "value": "打开一个项目，点击工具栏中的“添加到我的工作”。"
           }
         }
       }
@@ -6095,6 +6271,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在准备设置…"
+          }
+        }
+      }
+    },
+    "Press Return to review the new item. Press Esc to cancel.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press Return to review the new item. Press Esc to cancel."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按回车确认新条目的信息，按 Esc 取消。"
           }
         }
       }
@@ -6399,6 +6591,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "项目 %lld"
+          }
+        }
+      }
+    },
+    "Projects in My Work": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projects in My Work"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“我的工作”中的项目"
           }
         }
       }
@@ -6751,22 +6959,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "刷新项目 — 更新于%@"
-          }
-        }
-      }
-    },
-    "Refresh interval": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Refresh interval"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "刷新间隔"
           }
         }
       }
@@ -7507,6 +7699,22 @@
         }
       }
     },
+    "Save and restart GitStride to apply service changes.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save and restart GitStride to apply service changes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存并重启 GitStride 后，服务设置才会生效。"
+          }
+        }
+      }
+    },
     "Save the connection to Keychain to continue.": {
       "localizations": {
         "en": {
@@ -8031,6 +8239,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "用英文逗号分隔用户名，使用 @me 表示自己。"
+          }
+        }
+      }
+    },
+    "Service": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Service"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务"
+          }
+        }
+      }
+    },
+    "Service address": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Service address"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务地址"
+          }
+        }
+      }
+    },
+    "Service changes saved. Restart GitStride to apply them.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Service changes saved. Restart GitStride to apply them."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务设置已保存，重启 GitStride 后生效。"
           }
         }
       }
@@ -9055,22 +9311,6 @@
         }
       }
     },
-    "This view is derived locally from your followed Projects.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This view is derived locally from your followed Projects."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此视图根据你关注的项目在本地生成。"
-          }
-        }
-      }
-    },
     "Title": {
       "localizations": {
         "en": {
@@ -9547,22 +9787,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "视图名称"
-          }
-        }
-      }
-    },
-    "Waiting for GitHub authentication.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Waiting for GitHub authentication."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在等待 GitHub 授权。"
           }
         }
       }
