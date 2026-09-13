@@ -40,15 +40,15 @@ Your GitHub permissions determine what you can view and edit. Organization polic
 
 ## Everyday use
 
-Click the menu bar icon for quick access, or use the main window for Board, Table, My Work, and item details. Search by title, issue number, or `@assignee`; type `>` followed by a title for quick creation. Use Filter and Display Options to organize each Project.
+Click the menu bar icon for quick access, or use the main window for Board, Table, My Work, and item details. Search by title, issue number, or `@assignee`. In the project or menu bar search field, type `>` followed by a title and press Return to open the creation form with your input filled in; confirm the repository and status, then choose **Create Issue**. Use Filter and Display Options to organize each Project.
 
 | Shortcut | Action |
 | --- | --- |
 | `⌘ R` | Refresh |
 | `⌘ K` | Open command palette |
 | `⌘ ←` / `⌘ →` | Previous / next status tab |
-| `>` | Enter quick create mode |
-| `Esc` | Exit quick create mode |
+| `> title` + `Return` | Open a prefilled creation form from project or menu bar search |
+| `Esc` | Cancel quick-create input in search |
 
 See the [user guide](docs/usage.md) for saved views, table columns, delivery summaries, and planning workflows. Saved views and display preferences stay on this Mac and do not modify GitHub's saved views.
 

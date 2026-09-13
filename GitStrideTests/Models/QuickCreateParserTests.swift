@@ -3,9 +3,10 @@ import Testing
 @testable import GitStride
 
 struct QuickCreateParserTests {
-    @Test func parsesTriageQualifiersWithoutIncludingThemInTheTitle() {
+    @Test(arguments: ["> ", ">", ""])
+    func parsesTriageQualifiersWithoutIncludingThemInTheTitle(_ prefix: String) {
         let request = QuickCreateParser.parse(
-            "> Repair login flow repo:acme/app status:Todo priority:High @me @octocat #bug"
+            "\(prefix)Repair login flow repo:acme/app status:Todo priority:High @me @octocat #bug"
         )
 
         #expect(request.title == "Repair login flow")
@@ -14,5 +15,10 @@ struct QuickCreateParserTests {
         #expect(request.priority == "High")
         #expect(request.assignees == ["me", "octocat"])
         #expect(request.labels == ["bug"])
+    }
+
+    @Test func preservesGreaterThanInsideTheTitle() {
+        let request = QuickCreateParser.parse("> Fix width > 400")
+        #expect(request.title == "Fix width > 400")
     }
 }

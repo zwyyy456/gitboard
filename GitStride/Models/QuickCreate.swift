@@ -11,6 +11,8 @@ struct QuickCreateRequest: Equatable, Sendable {
 
 enum QuickCreateParser {
     static func parse(_ input: String) -> QuickCreateRequest {
+        let input = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let content = input.hasPrefix(">") ? input.dropFirst() : input[...]
         var title: [Substring] = []
         var repository: String?
         var status: String?
@@ -18,7 +20,7 @@ enum QuickCreateParser {
         var labels: [String] = []
         var assignees: [String] = []
 
-        for token in input.split(whereSeparator: \Character.isWhitespace) {
+        for token in content.split(whereSeparator: \Character.isWhitespace) {
             let value = String(token)
             if value.hasPrefix("repo:"), value.count > 5 {
                 repository = String(value.dropFirst(5))
@@ -30,7 +32,7 @@ enum QuickCreateParser {
                 labels.append(String(value.dropFirst()))
             } else if value.hasPrefix("@"), value.count > 1 {
                 assignees.append(String(value.dropFirst()))
-            } else if value != ">" {
+            } else {
                 title.append(token)
             }
         }
