@@ -126,6 +126,6 @@ extension ProjectStoreTests {
     }
 
     static func itemDetailResponse(body: String) -> String {
-        #"{"data":{"node":{"__typename":"Issue","id":"CONTENT1","bodyHTML":"\#(body)","createdAt":null,"updatedAt":"2026-08-01T00:00:00Z","author":null,"viewerCanUpdate":false,"viewerCanSetMilestone":false,"repository":{"nameWithOwner":"acme/repo"},"milestone":null,"parent":null,"subIssues":{"nodes":[]},"subIssuesSummary":{"completed":0,"total":0},"blockedBy":{"nodes":[]},"blocking":{"nodes":[]}}}}"#
+        #"{"data":{"node":{"__typename":"Issue","id":"CONTENT1","title":"Item","body":"\#(body)","bodyHTML":"\#(body)","createdAt":null,"updatedAt":"2026-08-01T00:00:00Z","author":null,"viewerCanUpdate":false,"viewerCanSetMilestone":false,"repository":{"nameWithOwner":"acme/repo"},"milestone":null,"parent":null,"subIssues":{"nodes":[]},"subIssuesSummary":{"completed":0,"total":0},"blockedBy":{"nodes":[]},"blocking":{"nodes":[]}}}}"#
     }
 }

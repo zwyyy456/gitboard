@@ -10,6 +10,7 @@ struct WorkspaceCommandContext {
 
     let refresh: Action
     var addItem: Action? = nil
+    var editItem: Action? = nil
     var toggleSelection: Action? = nil
     var toggleFollowing: Action? = nil
     var toggleInspector: Action? = nil

@@ -3,6 +3,20 @@ import Testing
 @testable import GitStride
 
 struct GitHubServiceTests {
+    @Test func contentEditingRejectsMissingMarkdownAndUnconfirmedUpdates() async throws {
+        let runner = FixtureGitHubHTTPClient(responses: [
+            #"{"data":{"node":{"__typename":"PullRequest","id":"CONTENT","title":"Title","bodyHTML":"<p>Body</p>"}}}"#,
+            #"{"data":{"update":{"content":null}}}"#
+        ])
+        let service = GitHubService(http: runner)
+        await #expect(throws: GitHubError.invalidResponse) {
+            _ = try await service.fetchItemDetail(contentID: "CONTENT")
+        }
+        await #expect(throws: GitHubError.invalidResponse) {
+            try await service.updateItemContent(contentID: "CONTENT", contentType: .issue, title: "Title", body: "Body")
+        }
+    }
+
     @Test(arguments: ["Issue", "PullRequest"])
     func previewsItemURLWithoutAddingIt(_ typename: String) async throws {
         let path = typename == "Issue" ? "issues" : "pull"
@@ -339,10 +353,13 @@ struct GitHubServiceTests {
     @Test func itemDetailDecodesIssuePullRequestAndDraftAuthors() async throws {
         let fixtures: [(response: String, expected: ProjectItemDetail)] = [
             (
-                #"{"data":{"node":{"__typename":"Issue","id":"ISSUE1","bodyHTML":"<p>Issue body</p>","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-02T00:00:00Z","author":{"login":"octocat","avatarUrl":"https://example.invalid/octocat"},"viewerCanUpdate":true,"viewerCanSetMilestone":true,"repository":{"nameWithOwner":"acme/app"},"milestone":{"id":"M1","number":2,"title":"Version 2","dueOn":"2026-09-01T00:00:00Z","state":"OPEN","progressPercentage":50},"parent":{"id":"P1","number":10,"title":"Release 2","url":"https://github.com/acme/planning/issues/10","state":"OPEN","repository":{"nameWithOwner":"acme/planning"}},"subIssues":{"nodes":[{"id":"S1","number":11,"title":"Ship API","url":"https://github.com/acme/api/issues/11","state":"CLOSED","repository":{"nameWithOwner":"acme/api"}}]},"subIssuesSummary":{"completed":1,"total":1},"blockedBy":{"nodes":[{"id":"B1","number":12,"title":"Approve schema","url":"https://github.com/acme/schema/issues/12","state":"OPEN","repository":{"nameWithOwner":"acme/schema"}}]},"blocking":{"nodes":[]}}}}"#,
+                #"{"data":{"node":{"__typename":"Issue","id":"ISSUE1","title":"Issue title","body":"**Issue body**","bodyHTML":"<p>Issue body</p>","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-02T00:00:00Z","author":{"login":"octocat","avatarUrl":"https://example.invalid/octocat"},"viewerCanUpdate":true,"viewerCanSetMilestone":true,"repository":{"nameWithOwner":"acme/app"},"milestone":{"id":"M1","number":2,"title":"Version 2","dueOn":"2026-09-01T00:00:00Z","state":"OPEN","progressPercentage":50},"parent":{"id":"P1","number":10,"title":"Release 2","url":"https://github.com/acme/planning/issues/10","state":"OPEN","repository":{"nameWithOwner":"acme/planning"}},"subIssues":{"nodes":[{"id":"S1","number":11,"title":"Ship API","url":"https://github.com/acme/api/issues/11","state":"CLOSED","repository":{"nameWithOwner":"acme/api"}}]},"subIssuesSummary":{"completed":1,"total":1},"blockedBy":{"nodes":[{"id":"B1","number":12,"title":"Approve schema","url":"https://github.com/acme/schema/issues/12","state":"OPEN","repository":{"nameWithOwner":"acme/schema"}}]},"blocking":{"nodes":[]}}}}"#,
                 ProjectItemDetail(
                     id: "ISSUE1",
+                    title: "Issue title",
+                    body: "**Issue body**",
                     bodyHTML: "<p>Issue body</p>",
+                    viewerCanUpdate: true,
                     author: ItemAuthor(
                         login: "octocat",
                         avatarURL: "https://example.invalid/octocat"
@@ -395,10 +412,13 @@ struct GitHubServiceTests {
                 )
             ),
             (
-                #"{"data":{"node":{"__typename":"PullRequest","id":"PR1","bodyHTML":"<p>PR body</p>","createdAt":null,"updatedAt":"2026-08-03T00:00:00Z","author":null}}}"#,
+                #"{"data":{"node":{"__typename":"PullRequest","id":"PR1","viewerCanUpdate":true,"title":"PR title","body":"PR body","bodyHTML":"<p>PR body</p>","createdAt":null,"updatedAt":"2026-08-03T00:00:00Z","author":null}}}"#,
                 ProjectItemDetail(
                     id: "PR1",
+                    title: "PR title",
+                    body: "PR body",
                     bodyHTML: "<p>PR body</p>",
+                    viewerCanUpdate: true,
                     author: nil,
                     createdAt: nil,
                     updatedAt: "2026-08-03T00:00:00Z",
@@ -406,10 +426,13 @@ struct GitHubServiceTests {
                 )
             ),
             (
-                #"{"data":{"node":{"__typename":"DraftIssue","id":"DRAFT1","bodyHTML":"","createdAt":"2026-08-04T00:00:00Z","updatedAt":null,"creator":{"login":"hubot","avatarUrl":null}}}}"#,
+                #"{"data":{"node":{"__typename":"DraftIssue","id":"DRAFT1","title":"Draft title","body":"","bodyHTML":"","createdAt":"2026-08-04T00:00:00Z","updatedAt":null,"creator":{"login":"hubot","avatarUrl":null}}}}"#,
                 ProjectItemDetail(
                     id: "DRAFT1",
+                    title: "Draft title",
+                    body: "",
                     bodyHTML: "",
+                    viewerCanUpdate: false,
                     author: ItemAuthor(login: "hubot", avatarURL: nil),
                     createdAt: "2026-08-04T00:00:00Z",
                     updatedAt: nil,

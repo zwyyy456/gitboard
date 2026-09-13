@@ -211,6 +211,11 @@ private struct GitStrideCommands: Commands {
                     .disabled(addItem.isEnabled == false)
             }
 
+            if let editItem = workspaceCommandContext?.editItem {
+                Button(editItem.title, action: editItem.perform)
+                    .disabled(editItem.isEnabled == false)
+            }
+
             if let toggleSelection = workspaceCommandContext?.toggleSelection {
                 Button(toggleSelection.title, action: toggleSelection.perform)
                     .disabled(toggleSelection.isEnabled == false)

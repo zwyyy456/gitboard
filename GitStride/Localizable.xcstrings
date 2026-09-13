@@ -1750,6 +1750,23 @@
         }
       }
     },
+    "Changes were saved to GitHub, but refreshing the project failed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes were saved to GitHub, but refreshing the project failed: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更改已保存到 GitHub，但刷新项目失败：%@"
+          }
+        }
+      }
+    },
     "Changing or disabling the service does not stop automation on the previous server. Pause or delete its connection first if needed.": {
       "localizations": {
         "en": {
@@ -3074,6 +3091,57 @@
         }
       }
     },
+    "Edit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑"
+          }
+        }
+      }
+    },
+    "Edit Item…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit Item…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑条目…"
+          }
+        }
+      }
+    },
+    "Edit title and description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit title and description"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑标题和描述"
+          }
+        }
+      }
+    },
     "Enable Automation": {
       "localizations": {
         "en": {
@@ -3182,6 +3250,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "请按 owner/name 格式输入仓库。"
+          }
+        }
+      }
+    },
+    "Enter a title.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a title."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入标题。"
           }
         }
       }
@@ -4733,6 +4818,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "管理我的工作项目"
+          }
+        }
+      }
+    },
+    "Markdown supported": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown supported"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支持 Markdown"
           }
         }
       }
@@ -7663,6 +7765,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在保存连接…"
+          }
+        }
+      }
+    },
+    "Saving…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在保存…"
           }
         }
       }

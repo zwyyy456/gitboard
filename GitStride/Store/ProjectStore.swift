@@ -24,6 +24,9 @@ enum ProjectStoreError: LocalizedError {
     case readOnlyProject
     case itemUnavailable
     case operationInProgress
+    case emptyItemTitle
+    case itemDetailsFailed(String)
+    case itemContentSavedRefreshFailed(String)
     case missingFieldOption(field: String, option: String)
     case projectRefreshIncomplete
 
@@ -37,6 +40,12 @@ enum ProjectStoreError: LocalizedError {
             String(localized: "This project is read-only.")
         case .operationInProgress:
             String(localized: "Another change to this item is still in progress.")
+        case .emptyItemTitle:
+            String(localized: "Enter a title.")
+        case .itemDetailsFailed(let message):
+            message
+        case .itemContentSavedRefreshFailed(let message):
+            String(localized: "Changes were saved to GitHub, but refreshing the project failed: \(message)")
         case .itemUnavailable:
             String(localized: "This item is no longer available.")
         case .missingFieldOption(let field, let option):
@@ -314,6 +323,57 @@ final class ProjectStore {
 
     func isRefreshingItem(_ reference: ItemInspectorReference) -> Bool {
         refreshingItemReferences.contains(reference)
+    }
+
+    func canEditItemContent(_ reference: ItemInspectorReference) -> Bool {
+        guard isActive, let item = item(for: reference), item.contentId != nil,
+              case .loaded(let detail) = itemDetailState(for: item) else { return false }
+        switch item.contentType {
+        case .issue, .pullRequest: return detail.viewerCanUpdate
+        case .draftIssue: return canEditProject(id: reference.projectID)
+        case .redacted: return false
+        }
+    }
+
+    func updateItemContent(_ reference: ItemInspectorReference, contentID: String, title: String, body: String) async throws {
+        guard isActive else { throw CancellationError() }
+        guard let item = item(for: reference), item.contentId == contentID else {
+            throw ProjectStoreError.itemUnavailable
+        }
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { throw ProjectStoreError.emptyItemTitle }
+        guard pendingContentMutations[contentID] == nil else { throw ProjectStoreError.operationInProgress }
+
+        // A failed or concurrent content mutation may have invalidated the permission snapshot.
+        await loadItemDetail(for: item)
+        try Task.checkCancellation()
+        guard isActive else { throw CancellationError() }
+        guard self.item(for: reference)?.contentId == contentID else { throw ProjectStoreError.itemUnavailable }
+        switch itemDetailState(for: item) {
+        case .loaded: break
+        case .failed(let message): throw ProjectStoreError.itemDetailsFailed(message)
+        case .idle, .loading: throw ProjectStoreError.operationInProgress
+        }
+        guard canEditItemContent(reference) else { throw GitHubError.insufficientPermissions }
+
+        var saved = false
+        do {
+            try await performContentMutation([contentID], synchronization: .reloadProjects, reloadingDetailFor: item) {
+                try await self.gitHubService.updateItemContent(
+                    contentID: contentID, contentType: item.contentType, title: title, body: body
+                )
+                saved = true
+            }
+        } catch {
+            // Restore the description and permissions after mutation invalidation, including on failure.
+            if isActive, let currentItem = self.item(for: reference) {
+                await loadItemDetail(for: currentItem, forceRefresh: true)
+            }
+            if saved, !(error is CancellationError) {
+                throw ProjectStoreError.itemContentSavedRefreshFailed(error.localizedDescription)
+            }
+            throw error
+        }
     }
 
     func refreshItem(_ reference: ItemInspectorReference) async throws {

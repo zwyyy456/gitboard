@@ -7,6 +7,8 @@ extension GitHubResponse {
         struct Node: Decodable {
             let typename: String
             let id: String?
+            let title: String?
+            let body: String?
             let bodyHTML: String?
             let createdAt: String?
             let updatedAt: String?
@@ -25,6 +27,8 @@ extension GitHubResponse {
             enum CodingKeys: String, CodingKey {
                 case typename = "__typename"
                 case id
+                case title
+                case body
                 case bodyHTML
                 case createdAt
                 case updatedAt
@@ -76,6 +80,18 @@ extension GitHubResponse {
         struct SubIssuesSummary: Decodable {
             let completed: Int
             let total: Int
+        }
+    }
+
+    struct UpdateItemContentPayload: Decodable {
+        let update: Update?
+
+        struct Update: Decodable {
+            let content: Content?
+        }
+
+        struct Content: Decodable {
+            let id: String
         }
     }
 

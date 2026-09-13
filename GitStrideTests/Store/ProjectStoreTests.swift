@@ -305,7 +305,10 @@ struct ProjectStoreTests {
         #expect(store.itemDetailState(for: item) == .loaded(
             ProjectItemDetail(
                 id: "CONTENT1",
+                title: "Item",
+                body: "Shared",
                 bodyHTML: "Shared",
+                viewerCanUpdate: false,
                 author: nil,
                 createdAt: nil,
                 updatedAt: "2026-08-01T00:00:00Z",

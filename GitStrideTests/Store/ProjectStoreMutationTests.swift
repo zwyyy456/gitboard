@@ -3,6 +3,92 @@ import Testing
 @testable import GitStride
 
 extension ProjectStoreTests {
+    @Test(arguments: [
+        ("Issue", false, true, true),
+        ("PullRequest", true, false, false),
+        ("DraftIssue", true, false, true),
+        ("DraftIssue", false, false, false)
+    ])
+    func contentEditingUsesTheContentPermissionExceptForDrafts(
+        _ typename: String, _ projectPermission: Bool, _ contentPermission: Bool, _ expected: Bool
+    ) async throws {
+        let responses = Self.mutationProjectResponses.map {
+            $0.replacingOccurrences(of: #""viewerCanUpdate":true"#, with: #""viewerCanUpdate":\#(projectPermission)"#)
+                .replacingOccurrences(of: #""__typename":"Issue""#, with: #""__typename":"\#(typename)""#)
+        }
+        let detail = Self.itemDetailResponse(body: "Original")
+            .replacingOccurrences(of: #""__typename":"Issue""#, with: #""__typename":"\#(typename)""#)
+            .replacingOccurrences(of: #""viewerCanUpdate":false"#, with: #""viewerCanUpdate":\#(contentPermission)"#)
+        let runner = FixtureGitHubHTTPClient(responses: responses + [detail])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let reference = ItemInspectorReference(projectID: "P1", itemID: "ITEM1")
+        let item = try #require(store.item(for: reference))
+        await store.loadItemDetail(for: item)
+        #expect(store.canEditItemContent(reference) == expected)
+        if !expected {
+            let count = await runner.recordedRequests().count
+            await #expect(throws: GitHubError.insufficientPermissions) {
+                try await store.updateItemContent(reference, contentID: "CONTENT1", title: "Changed", body: "")
+            }
+            #expect(await runner.recordedRequests().count == count)
+        }
+    }
+
+    @Test func failedContentSavePreservesTheSnapshotAndCanBeRetried() async throws {
+        let detail = Self.itemDetailResponse(body: "Original")
+            .replacingOccurrences(of: #""viewerCanUpdate":false"#, with: #""viewerCanUpdate":true"#)
+        let updatedItems = Self.mutationItemsResponse.replacingOccurrences(of: #""title":"Item""#, with: #""title":"Changed""#)
+        let runner = FixtureGitHubHTTPClient(responses: Self.mutationProjectResponses + [
+            detail, Self.graphQLFailureResponse, detail,
+            #"{"data":{"update":{"content":{"id":"CONTENT1"}}}}"#,
+            Self.mutationFieldsResponse, updatedItems,
+            detail.replacingOccurrences(of: #""title":"Item""#, with: #""title":"Changed""#)
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let reference = ItemInspectorReference(projectID: "P1", itemID: "ITEM1")
+        let item = try #require(store.item(for: reference))
+        await store.loadItemDetail(for: item)
+        await #expect(throws: GitHubError.graphQLError("Status failed")) {
+            try await store.updateItemContent(reference, contentID: "CONTENT1", title: "Changed", body: "Original")
+        }
+        #expect(store.item(for: reference)?.title == "Item")
+        #expect(store.canEditItemContent(reference))
+        try await store.updateItemContent(reference, contentID: "CONTENT1", title: "Changed", body: "Original")
+        #expect(store.item(for: reference)?.title == "Changed")
+    }
+
+    @Test func confirmedContentSaveReportsARefreshFailureWithoutRepeatingTheMutation() async throws {
+        let detail = Self.itemDetailResponse(body: "Original")
+            .replacingOccurrences(of: #""viewerCanUpdate":false"#, with: #""viewerCanUpdate":true"#)
+        let updatedDetail = detail.replacingOccurrences(of: #""title":"Item""#, with: #""title":"Changed""#)
+        let runner = FixtureGitHubHTTPClient(responses: Self.mutationProjectResponses + [
+            detail, #"{"data":{"update":{"content":{"id":"CONTENT1"}}}}"#,
+            Self.graphQLFailureResponse, updatedDetail
+        ])
+        let (store, cleanup) = makeStore(runner: runner)
+        defer { cleanup() }
+        await store.loadProjects()
+        let reference = ItemInspectorReference(projectID: "P1", itemID: "ITEM1")
+        let item = try #require(store.item(for: reference))
+        await store.loadItemDetail(for: item)
+        do {
+            try await store.updateItemContent(reference, contentID: "CONTENT1", title: "Changed", body: "Original")
+            Issue.record("Expected the project refresh failure to be reported")
+        } catch ProjectStoreError.itemContentSavedRefreshFailed {
+        }
+        let mutations = await runner.recordedRequests().filter { $0.graphQLQuery == GraphQLQueries.updateIssueContent }
+        #expect(mutations.count == 1)
+        guard case .loaded(let currentDetail) = store.itemDetailState(for: item) else {
+            Issue.record("Expected the description to recover even though the project refresh failed")
+            return
+        }
+        #expect(currentDetail.title == "Changed")
+    }
+
     @Test func itemRejectsASecondStatusMoveWhileOneIsPending() async throws {
         let runner = SuspendingGitHubHTTPClient(steps:
             Self.mutationProjectResponses.map { .response($0) } + [

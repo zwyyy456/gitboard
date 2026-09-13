@@ -48,6 +48,8 @@ Board cards emphasize a two-line title, repository and issue number, assignees, 
 
 Selecting an item in Board, Table, or My Work opens the detail page with Back navigation at every window width. You can also open the item in its own window.
 
+Choose **Edit** in the detail toolbar (or **Workspace → Edit Item…**) to change the title and Markdown description, then **Save** (⌘ Return) or **Cancel**. The editing sheet can be resized for longer descriptions. Issue and PR edits update the original GitHub content in every project that references it; draft edits update the project draft. Editing becomes available after details load when you have permission to edit that content. Failed saves keep your input so you can retry.
+
 ### Pull Request Automation
 
 Under **Automation service**, choose **Default service**, **Custom address**, or **Disabled**, then save and restart GitStride. A custom address must be an HTTPS origin without a path, query, fragment, or embedded credentials. The current service remains active until restart. Switching servers requires that server's own automation connection and does not stop processing on the previous server; pause or delete its connection first if needed.

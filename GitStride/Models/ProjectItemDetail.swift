@@ -2,7 +2,10 @@ import Foundation
 
 struct ProjectItemDetail: Identifiable, Hashable, Sendable {
     let id: String
+    let title: String
+    let body: String
     let bodyHTML: String
+    let viewerCanUpdate: Bool
     let author: ItemAuthor?
     let createdAt: String?
     let updatedAt: String?

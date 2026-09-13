@@ -333,6 +333,8 @@ enum GraphQLQueries {
                 __typename
                 ... on Issue {
                     id
+                    title
+                    body
                     bodyHTML
                     createdAt
                     updatedAt
@@ -389,7 +391,10 @@ enum GraphQLQueries {
                     }
                 }
                 ... on PullRequest {
+                    viewerCanUpdate
                     id
+                    title
+                    body
                     bodyHTML
                     createdAt
                     updatedAt
@@ -397,11 +402,37 @@ enum GraphQLQueries {
                 }
                 ... on DraftIssue {
                     id
+                    title
+                    body
                     bodyHTML
                     createdAt
                     updatedAt
                     creator { login avatarUrl }
                 }
+            }
+        }
+        """
+
+    static let updateIssueContent = """
+        mutation($id: ID!, $title: String!, $body: String!) {
+            update: updateIssue(input: { id: $id, title: $title, body: $body }) {
+                content: issue { id }
+            }
+        }
+        """
+
+    static let updatePullRequestContent = """
+        mutation($id: ID!, $title: String!, $body: String!) {
+            update: updatePullRequest(input: { pullRequestId: $id, title: $title, body: $body }) {
+                content: pullRequest { id }
+            }
+        }
+        """
+
+    static let updateDraftIssueContent = """
+        mutation($id: ID!, $title: String!, $body: String!) {
+            update: updateProjectV2DraftIssue(input: { draftIssueId: $id, title: $title, body: $body }) {
+                content: draftIssue { id }
             }
         }
         """

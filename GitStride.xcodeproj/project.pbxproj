@@ -49,6 +49,7 @@
 		A0000037 /* EngineeringSignalsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000037 /* EngineeringSignalsView.swift */; };
 		A0000039 /* ProjectItemDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000039 /* ProjectItemDetail.swift */; };
 		A0000040 /* ItemDescriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000040 /* ItemDescriptionView.swift */; };
+		2DD77887FA1449C58FA45800 /* ItemContentEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92917782F0194B5FA178787A /* ItemContentEditorView.swift */; };
 		A0000041 /* ItemPropertiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000041 /* ItemPropertiesView.swift */; };
 		A0000042 /* ProjectFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000042 /* ProjectFieldEditor.swift */; };
 		A0000043 /* GitHubHTMLBodyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000043 /* GitHubHTMLBodyView.swift */; };
@@ -161,6 +162,7 @@
 		A1000037 /* EngineeringSignalsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineeringSignalsView.swift; sourceTree = "<group>"; };
 		A1000039 /* ProjectItemDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectItemDetail.swift; sourceTree = "<group>"; };
 		A1000040 /* ItemDescriptionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDescriptionView.swift; sourceTree = "<group>"; };
+		92917782F0194B5FA178787A /* ItemContentEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemContentEditorView.swift; sourceTree = "<group>"; };
 		A1000041 /* ItemPropertiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemPropertiesView.swift; sourceTree = "<group>"; };
 		A1000042 /* ProjectFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFieldEditor.swift; sourceTree = "<group>"; };
 		A1000043 /* GitHubHTMLBodyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubHTMLBodyView.swift; sourceTree = "<group>"; };
@@ -381,6 +383,7 @@
 				A1000037 /* EngineeringSignalsView.swift */,
 				A1000043 /* GitHubHTMLBodyView.swift */,
 				A1000040 /* ItemDescriptionView.swift */,
+				92917782F0194B5FA178787A /* ItemContentEditorView.swift */,
 				A1000026 /* ItemInspectorView.swift */,
 				A1000041 /* ItemPropertiesView.swift */,
 				A1000051 /* IssueRelationEditorView.swift */,
@@ -659,6 +662,7 @@
 				A0000037 /* EngineeringSignalsView.swift in Sources */,
 				A0000043 /* GitHubHTMLBodyView.swift in Sources */,
 				A0000040 /* ItemDescriptionView.swift in Sources */,
+				2DD77887FA1449C58FA45800 /* ItemContentEditorView.swift in Sources */,
 				A0000026 /* ItemInspectorView.swift in Sources */,
 				A0000041 /* ItemPropertiesView.swift in Sources */,
 				A0000051 /* IssueRelationEditorView.swift in Sources */,
@@ -764,6 +768,7 @@
 				A0000037 /* EngineeringSignalsView.swift in Sources */,
 				A0000043 /* GitHubHTMLBodyView.swift in Sources */,
 				A0000040 /* ItemDescriptionView.swift in Sources */,
+				2DD77887FA1449C58FA45800 /* ItemContentEditorView.swift in Sources */,
 				A0000026 /* ItemInspectorView.swift in Sources */,
 				A0000041 /* ItemPropertiesView.swift in Sources */,
 				A0000051 /* IssueRelationEditorView.swift in Sources */,

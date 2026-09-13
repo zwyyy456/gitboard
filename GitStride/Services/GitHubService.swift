@@ -299,6 +299,9 @@ actor GitHubService {
               let id = node.id else {
             throw GitHubError.itemUnavailable
         }
+        guard let title = node.title, let body = node.body else {
+            throw GitHubError.invalidResponse
+        }
 
         let author = node.typename == "DraftIssue" ? node.creator : node.author
         let issueMetadata: IssueMetadata?
@@ -327,12 +330,31 @@ actor GitHubService {
 
         return ProjectItemDetail(
             id: id,
+            title: title,
+            body: body,
             bodyHTML: node.bodyHTML ?? "",
+            viewerCanUpdate: node.viewerCanUpdate ?? false,
             author: author.map { ItemAuthor(login: $0.login, avatarURL: $0.avatarUrl) },
             createdAt: node.createdAt,
             updatedAt: node.updatedAt,
             issueMetadata: issueMetadata
         )
+    }
+
+    func updateItemContent(contentID: String, contentType: ItemContentType, title: String, body: String) async throws {
+        let query: String
+        switch contentType {
+        case .issue: query = GraphQLQueries.updateIssueContent
+        case .pullRequest: query = GraphQLQueries.updatePullRequestContent
+        case .draftIssue: query = GraphQLQueries.updateDraftIssueContent
+        case .redacted: throw GitHubError.itemUnavailable
+        }
+        let payload: GitHubResponse.UpdateItemContentPayload = try await request(
+            query,
+            variables: ["id": contentID, "title": title, "body": body],
+            as: GitHubResponse.UpdateItemContentPayload.self
+        )
+        guard payload.update?.content?.id == contentID else { throw GitHubError.invalidResponse }
     }
 
     private func makeIssueReference(_ node: GitHubResponse.ItemDetailPayload.IssueNode) -> IssueReference? {

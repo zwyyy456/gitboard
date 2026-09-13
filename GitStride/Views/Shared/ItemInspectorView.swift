@@ -11,12 +11,16 @@ struct ItemDetailView: View {
     @State private var pendingInspectorWidthUpdate: Task<Void, Never>?
     @State private var isArchiving = false
     @State private var operationErrorMessage: String?
+    @State private var editingDetail: ProjectItemDetail?
 
     private static let inspectorMinimumWidth: CGFloat = 260
     private static let inspectorMaximumWidth: CGFloat = 360
 
     private var item: ProjectItem? { store.item(for: reference) }
     private var isRefreshing: Bool { store.isRefreshingItem(reference) }
+    private var canEdit: Bool {
+        store.canEditItemContent(reference) && !isRefreshing && !isArchiving && editingDetail == nil
+    }
     private var canArchive: Bool {
         item != nil && store.canEditProject(id: reference.projectID)
     }
@@ -91,6 +95,17 @@ struct ItemDetailView: View {
                     .labelStyle(.iconOnly)
                     .help("Open in New Window")
                 }
+            }
+
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+            }
+
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button("Edit", systemImage: "pencil", action: editItem)
+                    .labelStyle(.iconOnly)
+                    .disabled(!canEdit)
+                    .help("Edit title and description")
 
                 if canArchive {
                     if isArchiving {
@@ -109,6 +124,10 @@ struct ItemDetailView: View {
                 }
             }
 
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.flexible, placement: .primaryAction)
+            }
+
             ToolbarItem(placement: .primaryAction) {
                 Button(
                     isInspectorPresented ? String(localized: "Hide Inspector") : String(localized: "Show Inspector"),
@@ -117,6 +136,14 @@ struct ItemDetailView: View {
                 )
                 .labelStyle(.iconOnly)
                 .help(isInspectorPresented ? String(localized: "Hide Inspector") : String(localized: "Show Inspector"))
+            }
+        }
+        .sheet(item: $editingDetail) { detail in
+            let editor = ItemContentEditorView(store: store, reference: reference, detail: detail)
+            if #available(macOS 15.0, *) {
+                editor.presentationSizing(.fitted)
+            } else {
+                editor
             }
         }
         .inspector(isPresented: $isInspectorPresented) {
@@ -175,6 +202,12 @@ struct ItemDetailView: View {
                 isEnabled: isRefreshing == false && isArchiving == false,
                 perform: refreshItem
             ),
+            editItem: .init(
+                id: "edit-item",
+                title: String(localized: "Edit Item…"),
+                isEnabled: canEdit,
+                perform: editItem
+            ),
             toggleInspector: .init(
                 id: "toggle-item-inspector",
                 title: isInspectorPresented ? String(localized: "Hide Inspector") : String(localized: "Show Inspector"),
@@ -197,6 +230,12 @@ struct ItemDetailView: View {
 
     private func openInNewWindow() {
         openWindow(id: "item-detail", value: reference)
+    }
+
+    private func editItem() {
+        guard canEdit, let item,
+              case .loaded(let detail) = store.itemDetailState(for: item) else { return }
+        editingDetail = detail
     }
 
     private func refreshItem() {
