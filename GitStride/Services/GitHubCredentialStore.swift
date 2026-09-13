@@ -19,7 +19,7 @@ protocol GitHubCredentialStoring: Sendable {
 struct GitHubCredentialStore: GitHubCredentialStoring {
     private var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: "tech.hyperseek.gboard.github-oauth",
+         kSecAttrService as String: "com.gitstride.app.github-oauth",
          kSecAttrAccount as String: "github.com"]
     }
 

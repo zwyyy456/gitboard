@@ -61,7 +61,7 @@ final class GitStrideModel {
         authenticationMethod = initialMethod
         let http = URLSession.gitHubSession()
         let authentication = GitHubAuthentication(method: initialMethod, http: http,
-                                                    restoringSession: !defaults.bool(forKey: "githubSignedOut"))
+                                                    initialState: defaults.bool(forKey: "githubSignedOut") ? .signedOut : .restoringSession)
         self.authentication = authentication
         projectStore = ProjectStore(gitHubService: GitHubService(http: http, credentials: authentication))
         monitoringEnabled = defaults.bool(forKey: "monitoringEnabled")
@@ -173,10 +173,9 @@ final class GitStrideModel {
         await projectMonitor.stop()
         myWorkStore.activate(accountLogin: nil)
         try await projectStore.invalidateSession()
-        try await authentication.deleteCredential()
         try Task.checkCancellation()
         let http = URLSession.gitHubSession()
-        authentication = GitHubAuthentication(method: method, http: http)
+        authentication = GitHubAuthentication(method: method, http: http, initialState: .signingIn)
         projectStore = ProjectStore(gitHubService: GitHubService(http: http, credentials: authentication))
         authenticationMethod = method
         connectionID = UUID()
@@ -364,12 +363,12 @@ final class GitStrideModel {
 
         guard monitoringEnabled else { return }
         guard let login = projectStore.currentUserLogin else {
-            monitoringStatus = String(localized: "Waiting for GitHub authentication.")
+            monitoringStatus = String(localized: "Check your account connection in GitHub settings to start monitoring.")
             return
         }
         let projects = myWorkStore.followedProjects
         guard projects.isEmpty == false else {
-            monitoringStatus = String(localized: "Follow a Project to start monitoring.")
+            monitoringStatus = String(localized: "Add a Project to My Work to start monitoring.")
             return
         }
 

@@ -42,6 +42,12 @@ protocol GitHubAuthenticating: Sendable {
 }
 
 actor GitHubAuthentication: GitHubAuthenticating {
+    enum InitialState: Equatable {
+        case restoringSession
+        case signingIn
+        case signedOut
+    }
+
     static let clientID = Bundle.main.object(forInfoDictionaryKey: "GitStrideOAuthClientID") as? String ?? ""
     static let scopes = "repo project read:org offline_access"
     nonisolated let method: GitHubAuthenticationMethod
@@ -50,7 +56,7 @@ actor GitHubAuthentication: GitHubAuthenticating {
     private let keychain: any GitHubCredentialStoring
     private var active: Bool
     private var credential: GitHubOAuthCredential?
-    private var didLoadCredential = false
+    private var shouldLoadStoredCredential: Bool
     private var rejectedToken: String?
     private var refreshTask: Task<GitHubOAuthCredential, Error>?
     #if !APP_STORE
@@ -61,8 +67,9 @@ actor GitHubAuthentication: GitHubAuthenticating {
 
     init(method: GitHubAuthenticationMethod, http: any GitHubHTTPClient,
          clientID: String = GitHubAuthentication.clientID,
-         keychain: any GitHubCredentialStoring = GitHubCredentialStore(), restoringSession: Bool = true) {
-        self.active = restoringSession
+         keychain: any GitHubCredentialStoring = GitHubCredentialStore(), initialState: InitialState = .restoringSession) {
+        self.active = initialState != .signedOut
+        self.shouldLoadStoredCredential = initialState == .restoringSession
         self.method = method
         self.http = http
         self.clientID = clientID
@@ -103,9 +110,9 @@ actor GitHubAuthentication: GitHubAuthenticating {
         #if !APP_STORE
         if method == .cli { return try await loadCLIToken() }
         #endif
-        if !didLoadCredential {
+        if shouldLoadStoredCredential {
             credential = try keychain.load()
-            didLoadCredential = true
+            shouldLoadStoredCredential = false
         }
         guard let credential, credential.clientID == clientID else { throw GitHubError.notAuthenticated }
         if credential.expiresAt > Date().addingTimeInterval(60), rejectedToken != credential.accessToken {
@@ -206,7 +213,7 @@ actor GitHubAuthentication: GitHubAuthenticating {
         try checkActive()
         try keychain.save(value)
         credential = value
-        didLoadCredential = true
+        shouldLoadStoredCredential = false
         rejectedToken = nil
     }
 

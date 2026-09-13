@@ -65,9 +65,42 @@ struct GitHubAuthenticationTests {
     func disconnectedLaunchDoesNotRestoreAnyCredential(_ method: GitHubAuthenticationMethod) async throws {
         let http = FixtureGitHubHTTPClient(responses: [])
         let auth = GitHubAuthentication(method: method, http: http, clientID: "public-client",
-                                        keychain: MemoryGitHubCredentials(expiredCredential()), restoringSession: false)
+                                        keychain: MemoryGitHubCredentials(expiredCredential()), initialState: .signedOut)
         await #expect(throws: CancellationError.self) { try await auth.accessToken() }
         #expect(await http.recordedRequests().isEmpty)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func signingInIgnoresStoredCredentialsUntilAuthorizationSucceeds() async throws {
+        let keychain = MemoryGitHubCredentials(expiredCredential())
+        let http = FixtureGitHubHTTPClient(responses: [Self.refreshed, Self.identity], headers: Self.headers)
+        let auth = GitHubAuthentication(method: .oauth, http: http, clientID: "public-client",
+                                        keychain: keychain, initialState: .signingIn)
+
+        await #expect(throws: GitHubError.notAuthenticated) { try await auth.accessToken() }
+        #expect(await http.recordedRequests().isEmpty)
+        #expect(keychain.load()?.accessToken == "old-access")
+
+        try await auth.completeDeviceAuthorization(deviceAuthorization()) { _ in }
+
+        #expect(try await auth.accessToken() == "new-access")
+        #expect(keychain.load()?.refreshToken == "new-refresh")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func deniedSignInPreservesStoredCredentialsWithoutUsingThem() async throws {
+        let keychain = MemoryGitHubCredentials(expiredCredential())
+        let http = FixtureGitHubHTTPClient(responses: [#"{"error":"access_denied"}"#])
+        let auth = GitHubAuthentication(method: .oauth, http: http, clientID: "public-client",
+                                        keychain: keychain, initialState: .signingIn)
+
+        await #expect(throws: GitHubError.authorizationDenied) {
+            try await auth.completeDeviceAuthorization(deviceAuthorization()) { _ in }
+        }
+
+        #expect(keychain.load()?.accessToken == "old-access")
+        await #expect(throws: GitHubError.notAuthenticated) { try await auth.accessToken() }
+        #expect(await http.recordedRequests().count == 1)
     }
 
     @Test func concurrentRequestsShareRefreshAndPersistTheRotatedPair() async throws {

@@ -10,7 +10,7 @@
 
 - 英文产品名和 macOS 应用名使用 `GitStride`；README 标题、中文介绍和关于页使用 `GitStride · 迹程`。中文名只用于展示，不进入工程、Swift 模块或安装包文件名。
 - 工程与 Swift 类型名前缀使用 `GitStride`，新命名的仓库、命令和包名前缀使用 `gitstride`，客户端专属构建变量使用 `GITSTRIDE_`。既有仓库和 Automation 包名随对应组件迁移调整；描述平台或业务职责的类型名不加品牌前缀。
-- 品牌改名保留既有 Bundle ID、Keychain service、`Application Support/GitStride/` 缓存目录及 Sparkle 公钥和 `gitstride` 签名账户，以延续安装身份、凭据、缓存和更新签名。线上仓库、官网和 Automation 资源地址独立于客户端品牌，只随实际资源迁移调整。
+- 品牌改名保留既有 Bundle ID、`Application Support/GitStride/` 缓存目录及 Sparkle 公钥和 `gitstride` 签名账户，以延续安装身份、缓存和更新签名。桌面 OAuth 凭据只使用 Keychain service `com.gitstride.app.github-oauth`，不读取、迁移或回退到旧 `tech.hyperseek.gboard.github-oauth` 条目。线上仓库、官网和 Automation 资源地址独立于客户端品牌，只随实际资源迁移调整。
 
 ## App、Scene 与依赖方向
 
@@ -52,6 +52,7 @@
 - `GitHubAuthentication` 区分 OAuth 与 CLI 凭据来源。OAuth Device Flow 及刷新只使用公开 Client ID；桌面 OAuth App 与 Worker OAuth App 分开注册。OAuth access/refresh token 仅由 `GitHubCredentialStore` 存入 Keychain。
 - Release 构建的 CLI 来源通过 `gh auth token` 读取 github.com 账号凭据，只在内存使用；首次确认身份后固定账号，不能随终端活动账号静默切换。GitStride 断开连接不执行 `gh auth logout`；显式退出状态跨启动保留，窗口加载和监控不能隐式恢复凭据。
 - 每个 `GitHubService` 固定绑定一次连接的认证 owner。失效连接会取消 HTTP 请求并拒绝迟到响应及后续请求；不能把旧操作转移到新账号的凭据上。刷新请求按连接合并，写入新凭据前再次检查连接有效性和账号身份。
+- 重新登录先失效旧连接，不预先删除已保存的 OAuth 凭据。新 OAuth 登录会话在设备授权成功、账号验证及凭据保存完成前不得读取旧凭据；保存时更新已有条目，不存在时新增。授权失败或取消后保持退出状态，删除凭据只由显式退出登录触发。
 - `GraphQLQueries` 集中保存查询与 mutation 文本。Models 负责已知响应结构；Views 和 Store 不解析原始 JSON 字典。CLI 子进程只服务认证，使用明确 executable URL 与 arguments 数组。
 - HTTP 状态、GraphQL errors、权限、SSO、限流和取消分别处理；凭据及完整响应不进入错误文案或日志。只读请求遇到 401 可以刷新凭据后重试一次，mutation 不自动重发。
 - `GitStride` target 包含 CLI 来源与 Sparkle；`GitStrideAppStore` target 使用 `APP_STORE` 编译条件、沙盒及网络 client entitlement，不编译 CLI runner 和 updater，不链接 Sparkle。业务源码由两个 target 共用。
