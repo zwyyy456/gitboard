@@ -27,11 +27,11 @@ struct TableDisplayOptions: View {
     var body: some View {
         Menu("Display Options", systemImage: "slider.horizontal.3") {
             Menu("Show Fields") {
-                columnToggle("Status", id: "status", defaultVisible: !groupsByStatus)
-                columnToggle("Assignees", id: "assignees")
-                columnToggle("Updated", id: "updated")
-                columnToggle("Repository", id: "repository", defaultVisible: false)
-                columnToggle("Labels", id: "labels", defaultVisible: false)
+                columnToggle(String(localized: "Status"), id: "status", defaultVisible: !groupsByStatus)
+                columnToggle(String(localized: "Assignees"), id: "assignees")
+                columnToggle(String(localized: "Updated"), id: "updated")
+                columnToggle(String(localized: "Repository"), id: "repository", defaultVisible: false)
+                columnToggle(String(localized: "Labels"), id: "labels", defaultVisible: false)
                 if !availableFields.isEmpty {
                     Divider()
                     if #available(macOS 14.4, *) {
@@ -55,12 +55,12 @@ struct TableDisplayOptions: View {
             }
             Divider()
             Menu("Sort By") {
-                sortOption("Project Order", id: "")
+                sortOption(String(localized: "Project Order"), id: "")
                 sortOption("ID", id: "number")
-                sortOption("Title", id: "title")
-                sortOption("Status", id: "status")
-                sortOption("Assignees", id: "assignees")
-                sortOption("Updated", id: "updated")
+                sortOption(String(localized: "Title"), id: "title")
+                sortOption(String(localized: "Status"), id: "status")
+                sortOption(String(localized: "Assignees"), id: "assignees")
+                sortOption(String(localized: "Updated"), id: "updated")
                 Divider()
                 Toggle("Ascending", isOn: $sortAscending).disabled(sortColumn.isEmpty)
             }

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import GitStride
 
@@ -22,7 +23,11 @@ struct NewProjectItemDraftTests {
         draft.usesQuickEntry = true
         draft.quickEntry = "Repair login repo:app status:Missing priority:Unknown"
         let error = draft.reviewQuickEntry(repositories: ["acme/app", "other/app"], statuses: ["Todo"], priorities: ["High"])
-        #expect(error == "Unavailable project option: status Missing, priority Unknown.")
+        let choices = [
+            String(localized: "status \("Missing")"),
+            String(localized: "priority \("Unknown")")
+        ].joined(separator: ", ")
+        #expect(error == String(localized: "Unavailable project option: \(choices)."))
         #expect(draft.usesQuickEntry)
         #expect(draft.repository == "app")
         #expect(draft.status.isEmpty)

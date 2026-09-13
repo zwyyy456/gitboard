@@ -68,7 +68,7 @@ struct CreateProjectView: View {
                 if store.isLoading {
                     ProgressView("Loading accounts…")
                 } else {
-                    Text(store.error?.localizedDescription ?? "Load your GitHub accounts to create a project.")
+                    Text(store.error?.localizedDescription ?? String(localized: "Load your GitHub accounts to create a project."))
                         .foregroundStyle(.secondary)
                     Button("Try Again") {
                         Task { await store.loadProjects() }
@@ -139,8 +139,8 @@ struct RepositorySelectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker(optional ? "Repository (optional)" : "Repository", selection: $selection) {
-                Text(optional ? "None" : "Select a repository").tag(String?.none)
+            Picker(optional ? String(localized: "Repository (optional)") : String(localized: "Repository"), selection: $selection) {
+                Text(optional ? String(localized: "None") : String(localized: "Select a repository")).tag(String?.none)
                 ForEach(store.repositoryListState(ownerID: owner.id).repositories) { repository in
                     Text(repository.nameWithOwner).tag(Optional(repository.id))
                 }
@@ -245,7 +245,7 @@ struct ProjectManagementMenu: View {
             if let url = URL(string: project.url) {
                 Link("Open in GitHub", destination: url)
             }
-            Button(model.myWorkStore.isFollowing(project.id) ? "Remove from My Work" : "Add to My Work") {
+            Button(model.myWorkStore.isFollowing(project.id) ? String(localized: "Remove from My Work") : String(localized: "Add to My Work")) {
                 Task { await model.toggleFollowing(project) }
             }
             .disabled(model.projectStore.deletingProjectIDs.contains(project.id))

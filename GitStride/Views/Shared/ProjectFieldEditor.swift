@@ -78,14 +78,14 @@ struct ProjectFieldEditor: View {
             }
 
         case .unsupported:
-            Text(displayValue.isEmpty ? "Not supported" : displayValue)
+            Text(displayValue.isEmpty ? String(localized: "Not supported") : displayValue)
                 .foregroundStyle(.secondary)
         }
     }
 
     private var valueLabel: some View {
         HStack(spacing: 6) {
-            Text(displayValue.isEmpty ? "None" : displayValue)
+            Text(displayValue.isEmpty ? String(localized: "None") : displayValue)
             Image(systemName: "chevron.down")
                 .font(.caption2)
         }

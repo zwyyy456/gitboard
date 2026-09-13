@@ -11,7 +11,7 @@ struct ItemRelationshipsSection: View {
         Group {
             if case .loaded(let detail) = store.itemDetailState(for: item),
                let metadata = detail.issueMetadata {
-                ItemPropertySection("Relationships") {
+                ItemPropertySection(String(localized: "Relationships")) {
                     if let parent = metadata.parent {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Parent issue")
@@ -39,7 +39,7 @@ struct ItemRelationshipsSection: View {
 
                     if metadata.blockedBy.isEmpty == false {
                         relationshipGroup(
-                            "Blocked by",
+                            String(localized: "Blocked by"),
                             issues: metadata.blockedBy,
                             kind: .blockedBy,
                             item: item,
@@ -49,7 +49,7 @@ struct ItemRelationshipsSection: View {
 
                     if metadata.blocking.isEmpty == false {
                         relationshipGroup(
-                            "Blocking",
+                            String(localized: "Blocking"),
                             issues: metadata.blocking,
                             kind: .blocking,
                             item: item,
@@ -151,30 +151,35 @@ struct ItemRelationshipsSection: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(issue.repository) issue \(issue.number), \(issue.title), \(issue.state == .closed ? "closed" : "open")")
+        .accessibilityLabel("\(issue.repository) issue \(issue.number), \(issue.title), \(issue.state == .closed ? String(localized: "Closed") : String(localized: "item.state.open", defaultValue: "Open", comment: "An issue or pull request that is still open, not the action to open a window."))")
     }
 
     private func subIssueTitle(_ metadata: IssueMetadata) -> String {
         guard let progress = metadata.subIssueProgress else {
-            return "Sub-issues \(metadata.subIssues.count)"
+            return String(localized: "Sub-issues \(metadata.subIssues.count)")
         }
-        return "Sub-issues \(progress.completed)/\(progress.total)"
+        return String(localized: "Sub-issues \(progress.completed)/\(progress.total)")
     }
 
     private func relationTitle(_ kind: IssueRelationKind) -> String {
         switch kind {
-        case .parent: "Parent"
-        case .subIssue: "Sub-issue"
-        case .blockedBy: "Blocked by"
-        case .blocking: "Blocking"
+        case .parent: String(localized: "Parent")
+        case .subIssue: String(localized: "Sub-issue")
+        case .blockedBy: String(localized: "Blocked by")
+        case .blocking: String(localized: "Blocking")
         }
     }
 
     private func relationActionTitle(_ kind: IssueRelationKind, hasParent: Bool) -> String {
         if kind == .parent, hasParent {
-            return "Change parent"
+            return String(localized: "Change parent")
         }
-        return "Add \(relationTitle(kind).lowercased())"
+        return switch kind {
+        case .parent: String(localized: "Add parent issue")
+        case .subIssue: String(localized: "Add sub-issue")
+        case .blockedBy: String(localized: "Add blocking prerequisite")
+        case .blocking: String(localized: "Add issue this blocks")
+        }
     }
 
     private func removeRelation(

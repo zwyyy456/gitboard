@@ -20,7 +20,7 @@ struct KanbanCardContent: View {
             HStack(alignment: .top, spacing: 8) {
                 itemTypeIcon
 
-                Text(item.title)
+                Text(item.displayTitle)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)

@@ -107,10 +107,10 @@ struct IssueRelationEditorView: View {
 
     private var title: String {
         switch kind {
-        case .parent: metadata.parent == nil ? "Add parent issue" : "Change parent issue"
-        case .subIssue: "Add sub-issue"
-        case .blockedBy: "Add blocking prerequisite"
-        case .blocking: "Add issue this blocks"
+        case .parent: metadata.parent == nil ? String(localized: "Add parent issue") : String(localized: "Change parent issue")
+        case .subIssue: String(localized: "Add sub-issue")
+        case .blockedBy: String(localized: "Add blocking prerequisite")
+        case .blocking: String(localized: "Add issue this blocks")
         }
     }
 

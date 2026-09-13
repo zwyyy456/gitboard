@@ -14,13 +14,13 @@ enum GitHubCommandError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .executableNotFound:
-            return "GitHub CLI (gh) was not found."
+            return String(localized: "GitHub CLI (gh) was not found.")
         case .launchFailed(let message):
-            return "GitHub CLI could not be launched: \(message)"
+            return String(localized: "GitHub CLI could not be launched: \(message)")
         case .failed(_, let message, _):
-            return message.isEmpty ? "GitHub CLI command failed." : message
+            return message.isEmpty ? String(localized: "GitHub CLI command failed.") : message
         case .timedOut:
-            return "GitHub CLI command timed out."
+            return String(localized: "GitHub CLI command timed out.")
         }
     }
 }
@@ -159,7 +159,7 @@ actor ProcessGitHubCommandRunner: GitHubCommandRunning {
                         try inputPipe.fileHandleForWriting.write(contentsOf: input)
                     } catch {
                         if process.isRunning { process.terminate() }
-                        throw GitHubCommandError.launchFailed("Could not write the request to GitHub CLI.")
+                        throw GitHubCommandError.launchFailed(String(localized: "Could not write the request to GitHub CLI."))
                     }
                 }
                 return nil

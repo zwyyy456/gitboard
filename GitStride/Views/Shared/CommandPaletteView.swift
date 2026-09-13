@@ -28,15 +28,15 @@ struct CommandPaletteView: View {
 
     private var entries: [Entry] {
         var entries = [
-            Entry(id: "action:add", title: "Add to Project", subtitle: "Create or add an item", icon: "plus", target: .quickAdd),
-            Entry(id: "action:refresh", title: "Refresh", subtitle: "Reload the current workspace", icon: "arrow.clockwise", target: .refresh),
-            Entry(id: "action:settings", title: "Settings", subtitle: nil, icon: "gearshape", target: .settings)
+            Entry(id: "action:add", title: String(localized: "Add to Project"), subtitle: String(localized: "Create or add an item"), icon: "plus", target: .quickAdd),
+            Entry(id: "action:refresh", title: String(localized: "Refresh"), subtitle: String(localized: "Reload the current workspace"), icon: "arrow.clockwise", target: .refresh),
+            Entry(id: "action:settings", title: String(localized: "Settings"), subtitle: nil, icon: "gearshape", target: .settings)
         ]
         entries += paletteProjects.map {
             Entry(
                 id: "project:\($0.id)",
                 title: $0.title,
-                subtitle: "\($0.owner.login) · Project",
+                subtitle: String(localized: "\($0.owner.login) · Project"),
                 icon: "rectangle.split.3x1",
                 target: .project($0.id)
             )
@@ -47,7 +47,7 @@ struct CommandPaletteView: View {
         entries += workItems.map {
             Entry(
                 id: "item:\($0.id)",
-                title: $0.item.title,
+                title: $0.item.displayTitle,
                 subtitle: "\($0.project.owner.login)/\($0.project.title)\($0.item.number.map { " #\($0)" } ?? "")",
                 icon: $0.item.contentType == .pullRequest ? "arrow.triangle.pull" : "record.circle",
                 target: .item($0.id)

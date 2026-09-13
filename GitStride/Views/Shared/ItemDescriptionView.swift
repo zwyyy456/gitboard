@@ -27,14 +27,14 @@ struct ItemDescriptionView: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(item.title)
+                    Text(item.displayTitle)
                         .font(.title2.bold())
                         .lineLimit(2)
                         .textSelection(.enabled)
 
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            let repository = item.repositoryName ?? "Draft item"
+                            let repository = item.repositoryName ?? String(localized: "Draft item")
                             let identifier = item.number.map { "\(repository) #\($0)" } ?? repository
 
                             if let urlString = item.url, let url = URL(string: urlString) {
@@ -106,7 +106,7 @@ struct ItemDescriptionView: View {
             values.append("@\(author.login)")
         }
         if let updated = detail.updatedAt.flatMap(formattedDate) {
-            values.append("Updated \(updated)")
+            values.append(String(localized: "Updated \(updated)"))
         }
         return values.isEmpty ? nil : values.joined(separator: " · ")
     }
@@ -114,18 +114,18 @@ struct ItemDescriptionView: View {
     private func stateTitle(for item: ProjectItem) -> String {
         switch item.contentType {
         case .issue:
-            return item.issueState == .closed ? "Closed" : "Open"
+            return item.issueState == .closed ? String(localized: "Closed") : String(localized: "item.state.open", defaultValue: "Open", comment: "An issue or pull request that is still open, not the action to open a window.")
         case .pullRequest:
-            if item.engineeringSignals?.isDraft == true { return "Draft pull request" }
+            if item.engineeringSignals?.isDraft == true { return String(localized: "Draft pull request") }
             switch item.prState {
-            case .merged: return "Merged"
-            case .closed: return "Closed"
-            case .open, .none: return "Open"
+            case .merged: return String(localized: "Merged")
+            case .closed: return String(localized: "Closed")
+            case .open, .none: return String(localized: "item.state.open", defaultValue: "Open", comment: "An issue or pull request that is still open, not the action to open a window.")
             }
         case .draftIssue:
-            return "Draft item"
+            return String(localized: "Draft item")
         case .redacted:
-            return "Unavailable"
+            return String(localized: "Unavailable")
         }
     }
 

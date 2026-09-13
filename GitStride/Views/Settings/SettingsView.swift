@@ -124,7 +124,7 @@ struct GeneralSettingsView: View {
                 }
 
                 if model.mutedProjectCount > 0 {
-                    Button("Clear \(model.mutedProjectCount) Muted Project\(model.mutedProjectCount == 1 ? "" : "s")") {
+                    Button("Clear \(model.mutedProjectCount) Muted Projects") {
                         model.clearMutedProjects()
                     }
                 }
@@ -172,19 +172,19 @@ struct ShortcutsSettingsView: View {
     var body: some View {
         Form {
             Section("Global") {
-                KeyboardShortcutRow(keys: ["⌥", "⌘", "K"], description: "Open Command Palette")
+                KeyboardShortcutRow(keys: ["⌥", "⌘", "K"], description: String(localized: "Open Command Palette"))
             }
             Section("In GitStride") {
-                KeyboardShortcutRow(keys: ["⌘", "K"], description: "Open Command Palette")
-                KeyboardShortcutRow(keys: ["⇧", "⌘", "N"], description: "Add to Project")
-                KeyboardShortcutRow(keys: ["⌘", ","], description: "Open Settings")
-                KeyboardShortcutRow(keys: ["⌘", "R"], description: "Refresh")
-                KeyboardShortcutRow(keys: ["⌥", "⌘", "I"], description: "Show or hide inspector")
+                KeyboardShortcutRow(keys: ["⌘", "K"], description: String(localized: "Open Command Palette"))
+                KeyboardShortcutRow(keys: ["⇧", "⌘", "N"], description: String(localized: "Add to Project"))
+                KeyboardShortcutRow(keys: ["⌘", ","], description: String(localized: "Open Settings"))
+                KeyboardShortcutRow(keys: ["⌘", "R"], description: String(localized: "Refresh"))
+                KeyboardShortcutRow(keys: ["⌥", "⌘", "I"], description: String(localized: "Show or hide inspector"))
             }
             Section {
-                KeyboardShortcutRow(keys: ["⌘", "←"], description: "Previous status tab")
-                KeyboardShortcutRow(keys: ["⌘", "→"], description: "Next status tab")
-                KeyboardShortcutRow(keys: [">"], description: "Add to Project from search")
+                KeyboardShortcutRow(keys: ["⌘", "←"], description: String(localized: "Previous status tab"))
+                KeyboardShortcutRow(keys: ["⌘", "→"], description: String(localized: "Next status tab"))
+                KeyboardShortcutRow(keys: [">"], description: String(localized: "Add to Project from search"))
             } header: {
                 Text("In the Menu Bar Popover")
             } footer: {

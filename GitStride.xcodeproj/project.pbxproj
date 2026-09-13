@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BF0000000000000000000001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = BF0000000000000000000002 /* Localizable.xcstrings */; };
 		BE0000000000000000000001 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000000000000000000002 /* WelcomeView.swift */; };
 		BD0000000000000000000001 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = BD0000000000000000000002 /* LICENSE */; };
 		BC0000000000000000000001 /* ProjectDisplayPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0000000000000000000002 /* ProjectDisplayPreferences.swift */; };
@@ -115,6 +116,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		BF0000000000000000000002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		BE0000000000000000000002 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		BD0000000000000000000002 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = SOURCE_ROOT; };
 		BC0000000000000000000002 /* ProjectDisplayPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDisplayPreferences.swift; sourceTree = "<group>"; };
@@ -256,6 +258,7 @@
 			children = (
 				BD0000000000000000000002 /* LICENSE */,
 				A1000001 /* GitStrideApp.swift */,
+				BF0000000000000000000002 /* Localizable.xcstrings */,
 				A1000044 /* WorkspaceCommandContext.swift */,
 				A3000002 /* Models */,
 				A3000003 /* Services */,
@@ -536,6 +539,7 @@
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hans",
 			);
 			mainGroup = A3000000;
 			packageReferences = (
@@ -559,6 +563,7 @@
 			files = (
 				A0000047 /* AppIcon.icon in Resources */,
 				BD0000000000000000000001 /* LICENSE in Resources */,
+				BF0000000000000000000001 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -575,6 +580,7 @@
 			files = (
 				A0000047 /* AppIcon.icon in Resources */,
 				BD0000000000000000000001 /* LICENSE in Resources */,
+				BF0000000000000000000001 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -9,31 +9,31 @@ struct EngineeringSignalsView: View {
         var badges: [EngineeringSignalBadge] = []
 
         if signals.isReadyToMerge {
-            badges.append(.init(id: "ready", title: "Ready", icon: "checkmark.circle.fill", color: .green))
+            badges.append(.init(id: "ready", title: String(localized: "Ready"), icon: "checkmark.circle.fill", color: .green))
         } else {
             if signals.isDraft {
-                badges.append(.init(id: "draft", title: "Draft", icon: "pencil.circle", color: .secondary))
+                badges.append(.init(id: "draft", title: String(localized: "Draft"), icon: "pencil.circle", color: .secondary))
             }
             if signals.mergeability == .conflicting {
-                badges.append(.init(id: "conflict", title: "Conflict", icon: "exclamationmark.triangle.fill", color: .orange))
+                badges.append(.init(id: "conflict", title: String(localized: "Conflict"), icon: "exclamationmark.triangle.fill", color: .orange))
             }
             switch signals.checkStatus {
             case .failure, .error:
-                badges.append(.init(id: "ci-failed", title: "CI Failed", icon: "xmark.circle.fill", color: .red))
+                badges.append(.init(id: "ci-failed", title: String(localized: "CI Failed"), icon: "xmark.circle.fill", color: .red))
             case .pending, .expected:
-                badges.append(.init(id: "ci-pending", title: "CI Pending", icon: "clock.fill", color: .yellow))
+                badges.append(.init(id: "ci-pending", title: String(localized: "CI Pending"), icon: "clock.fill", color: .yellow))
             case .success:
-                badges.append(.init(id: "ci-passed", title: "CI Passed", icon: "checkmark.circle.fill", color: .green))
+                badges.append(.init(id: "ci-passed", title: String(localized: "CI Passed"), icon: "checkmark.circle.fill", color: .green))
             case nil:
                 break
             }
             switch signals.reviewDecision {
             case .approved:
-                badges.append(.init(id: "approved", title: "Approved", icon: "hand.thumbsup.fill", color: .green))
+                badges.append(.init(id: "approved", title: String(localized: "Approved"), icon: "hand.thumbsup.fill", color: .green))
             case .changesRequested:
-                badges.append(.init(id: "changes", title: "Changes", icon: "arrow.uturn.backward.circle.fill", color: .orange))
+                badges.append(.init(id: "changes", title: String(localized: "Changes"), icon: "arrow.uturn.backward.circle.fill", color: .orange))
             case .reviewRequired:
-                badges.append(.init(id: "review", title: "Review", icon: "person.crop.circle.badge.questionmark", color: .blue))
+                badges.append(.init(id: "review", title: String(localized: "Review"), icon: "person.crop.circle.badge.questionmark", color: .blue))
             case nil:
                 break
             }
@@ -50,7 +50,7 @@ struct EngineeringSignalsView: View {
         if signals.blockedByCount > 0 {
             badges.append(.init(
                 id: "blocked",
-                title: "Blocked \(signals.blockedByCount)",
+                title: String(localized: "Blocked \(signals.blockedByCount)"),
                 icon: "exclamationmark.octagon.fill",
                 color: .red
             ))
@@ -58,7 +58,7 @@ struct EngineeringSignalsView: View {
         if signals.blockingCount > 0 {
             badges.append(.init(
                 id: "blocking",
-                title: "Blocking \(signals.blockingCount)",
+                title: String(localized: "Blocking \(signals.blockingCount)"),
                 icon: "arrow.triangle.branch",
                 color: .orange
             ))

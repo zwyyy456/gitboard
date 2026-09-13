@@ -42,9 +42,9 @@ enum ProjectCacheError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .applicationSupportUnavailable:
-            "The Application Support directory is unavailable."
+            String(localized: "The Application Support directory is unavailable.")
         case .unsupportedVersion:
-            "The project cache was created by an unsupported version of GitStride."
+            String(localized: "The project cache was created by an unsupported version of GitStride.")
         }
     }
 }

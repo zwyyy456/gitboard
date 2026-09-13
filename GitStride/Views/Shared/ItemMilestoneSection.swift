@@ -8,7 +8,7 @@ struct ItemMilestoneSection: View {
 
     @ViewBuilder
     var body: some View {
-        ItemPropertySection("Issue Details") {
+        ItemPropertySection(String(localized: "Issue Details")) {
             switch store.itemDetailState(for: item) {
             case .idle, .loading:
                 ProgressView()
@@ -24,7 +24,7 @@ struct ItemMilestoneSection: View {
                         if metadata.viewerCanSetMilestone {
                             milestoneEditor(metadata: metadata, item: item)
                         } else {
-                            Text(metadata.milestone?.title ?? "No milestone")
+                            Text(metadata.milestone?.title ?? String(localized: "No milestone"))
                         }
 
                         milestoneProgress(metadata.milestone)
@@ -76,7 +76,7 @@ struct ItemMilestoneSection: View {
                 }
             } label: {
                 HStack {
-                    Text(metadata.milestone?.title ?? "No milestone")
+                    Text(metadata.milestone?.title ?? String(localized: "No milestone"))
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down")
                         .foregroundStyle(.secondary)
@@ -88,7 +88,7 @@ struct ItemMilestoneSection: View {
 
         case .failed(let message):
             VStack(alignment: .leading, spacing: 4) {
-                Text(metadata.milestone?.title ?? "No milestone")
+                Text(metadata.milestone?.title ?? String(localized: "No milestone"))
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)

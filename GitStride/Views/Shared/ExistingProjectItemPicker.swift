@@ -81,7 +81,7 @@ struct ExistingProjectItemPicker: View {
                 case .idle:
                     repositorySearchSuggestions
                 case .searching:
-                    ProgressView(isItemURL ? "Loading item…" : "Searching…")
+                    ProgressView(isItemURL ? String(localized: "Loading item…") : String(localized: "Searching…"))
                         .controlSize(.small)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case .finished(let searchedQuery):

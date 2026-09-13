@@ -8,9 +8,9 @@ enum GitHubAuthenticationMethod: String, Codable, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .oauth: "GitHub Login"
+        case .oauth: String(localized: "GitHub Login")
         #if !APP_STORE
-        case .cli: "GitHub CLI"
+        case .cli: String(localized: "GitHub CLI")
         #endif
         }
     }

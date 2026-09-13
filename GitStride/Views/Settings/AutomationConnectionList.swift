@@ -15,7 +15,7 @@ struct AutomationConnectionList: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     Button(
-                        automation.enabled ? "Pause" : "Resume",
+                        automation.enabled ? String(localized: "Pause") : String(localized: "Resume"),
                         action: { setEnabled(automation) }
                     )
                     .disabled(!automation.enabled && !canResume(automation))
@@ -36,7 +36,7 @@ struct AutomationConnectionList: View {
 
                 VStack(spacing: 4) {
                     LabeledContent("Repositories", value: "\(automation.repositoryCount)")
-                    LabeledContent("Status template", value: "Project #\(automation.mappingProjectNumber)")
+                    LabeledContent("Status template", value: String(localized: "Project #\(automation.mappingProjectNumber)"))
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -80,12 +80,12 @@ struct AutomationConnectionList: View {
 
     private func statusTitle(for automation: AutomationService.Automation) -> String {
         switch automation.healthState {
-        case "ACTIVE": return automation.enabled ? "Healthy" : "Paused"
+        case "ACTIVE": return automation.enabled ? String(localized: "Healthy") : String(localized: "Paused")
         case "CONTENT_VISIBILITY_UNVERIFIED": return automation.enabled
-            ? "Awaiting first match"
-            : "Paused"
-        case "OAUTH_REAUTH_REQUIRED", "OAUTH_SCOPE_MISSING": return "Authorization required"
-        default: return automation.enabled ? "Needs attention" : "Paused with error"
+            ? String(localized: "Awaiting first match")
+            : String(localized: "Paused")
+        case "OAUTH_REAUTH_REQUIRED", "OAUTH_SCOPE_MISSING": return String(localized: "Authorization required")
+        default: return automation.enabled ? String(localized: "Needs attention") : String(localized: "Paused with error")
         }
     }
 
@@ -115,6 +115,16 @@ struct AutomationConnectionList: View {
     private func lastDeliveryText(_ delivery: AutomationService.DeliveryStatus) -> String {
         let date = delivery.receivedAt?.formatted(date: .abbreviated, time: .shortened)
         let error = delivery.errorCode.map { " · \($0)" } ?? ""
-        return "Last delivery: \(delivery.state)\(error)\(date.map { " · \($0)" } ?? "")"
+        let state: String = switch delivery.state {
+        case "RECEIVED": String(localized: "Received")
+        case "QUEUED": String(localized: "Queued")
+        case "PROCESSING": String(localized: "Processing")
+        case "RETRYING": String(localized: "Retrying")
+        case "COMPLETED": String(localized: "Completed")
+        case "FAILED": String(localized: "Failed")
+        case "IGNORED": String(localized: "Ignored")
+        default: delivery.state
+        }
+        return String(localized: "Last delivery: \(state)\(error)\(date.map { " · \($0)" } ?? "")")
     }
 }

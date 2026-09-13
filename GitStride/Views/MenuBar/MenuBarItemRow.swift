@@ -18,7 +18,7 @@ struct ItemRow: View {
                 itemTypeIcon.frame(width: 16)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(item.title)
+                    Text(item.displayTitle)
                         .font(.callout.weight(.medium))
                         .lineLimit(1)
 
@@ -54,7 +54,7 @@ struct ItemRow: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(item.number.map { "\(item.title), number \($0)" } ?? item.title)
+        .accessibilityLabel(item.number.map { String(localized: "\(item.displayTitle), number \($0)") } ?? item.displayTitle)
         .accessibilityHint("Show item details")
         .onHover { isHovered = $0 }
         .onContinuousHover { phase in

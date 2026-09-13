@@ -261,7 +261,7 @@ private struct GitStrideCommands: Commands {
 
             Divider()
 
-            Button(workspaceCommandContext?.refresh.title ?? "Refresh") {
+            Button(workspaceCommandContext?.refresh.title ?? String(localized: "Refresh")) {
                 workspaceCommandContext?.refresh.perform()
             }
             .keyboardShortcut("r", modifiers: .command)

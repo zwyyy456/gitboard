@@ -373,7 +373,7 @@ enum AutomationServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
-            return "The automation service returned an invalid response."
+            return String(localized: "The automation service returned an invalid response.")
         case .server(let code):
             return code
         }

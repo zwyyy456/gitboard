@@ -139,7 +139,7 @@ struct MainWorkspaceView: View {
 
                     Section {
                         ForEach(model.myWorkStore.filters) { filter in
-                            Label(filter.rawValue, systemImage: filter.icon)
+                            Label(filter.title, systemImage: filter.icon)
                                 .tag(SidebarSelection.myWork(filter))
                                 .contextMenu {
                                     Button("Move Up", systemImage: "arrow.up") {
@@ -262,7 +262,7 @@ struct MainWorkspaceView: View {
     private var filterVisibilityControls: some View {
         ForEach(MyWorkFilter.allCases) { filter in
             Toggle(
-                filter.rawValue,
+                filter.title,
                 isOn: Binding(
                     get: { model.myWorkStore.filters.contains(filter) },
                     set: { setFilterVisible(filter, visible: $0) }

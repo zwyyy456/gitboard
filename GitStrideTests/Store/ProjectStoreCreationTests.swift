@@ -333,7 +333,7 @@ extension ProjectStoreTests {
         } catch {
             #expect(operation.phase == .unconfirmed)
             #expect(!operation.canResume)
-            #expect(operation.errorMessage?.contains("Check the repository") == true)
+            #expect(operation.errorMessage?.contains(GitHubError.issueCreationUnconfirmed.localizedDescription) == true)
         }
         await runner.waitUntilSuspended("reconcile")
         let release = Task { await runner.release("reconcile") }

@@ -110,7 +110,7 @@ struct ProjectTableView: View {
                 }
             }
             .confirmationDialog(
-                "Remove \"\(itemToRemove?.title ?? "")\" from the project?",
+                "Remove \"\(itemToRemove?.displayTitle ?? "")\" from the project?",
                 isPresented: Binding(get: { itemToRemove != nil }, set: { if !$0 { itemToRemove = nil } }),
                 titleVisibility: .visible, presenting: itemToRemove
             ) { item in
@@ -219,7 +219,7 @@ struct ProjectTableView: View {
             if let item = row.item {
                 HStack(spacing: 7) {
                     Circle().fill(status(for: item)?.swiftUIColor ?? .secondary).frame(width: 7, height: 7)
-                    Text(item.status ?? "No Status").foregroundStyle(.secondary).lineLimit(1)
+                    Text(item.status ?? String(localized: "No Status")).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
         }
@@ -272,7 +272,7 @@ struct ProjectTableView: View {
     }
 
     private var legacyFieldColumn: some TableColumnContent<ProjectTableRow, ProjectTableSort> {
-        TableColumn(availableFields.first { $0.id == fieldID }?.name ?? "Project Field",
+        TableColumn(availableFields.first { $0.id == fieldID }?.name ?? String(localized: "Project Field"),
                     sortUsing: ProjectTableSort(column: "field", fieldID: fieldID)) { (row: ProjectTableRow) in
             if let item = row.item { secondaryCell(ProjectTableSort.fieldText(item.fieldValues[fieldID])) }
         }
@@ -284,14 +284,14 @@ struct ProjectTableView: View {
     @ViewBuilder
     private func titleCell(_ row: ProjectTableRow) -> some View {
         if let item = row.item {
-            Text(item.title)
+            Text(item.displayTitle)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
-                .help(item.title)
+                .help(item.displayTitle)
         } else {
             HStack(spacing: 8) {
                 Circle().fill(row.status?.swiftUIColor ?? .secondary).frame(width: 8, height: 8)
-                Text(row.status?.name ?? "No Status").fontWeight(.semibold)
+                Text(row.status?.name ?? String(localized: "No Status")).fontWeight(.semibold)
                 Text(row.count.formatted()).foregroundStyle(.secondary).monospacedDigit()
             }
             .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
@@ -318,7 +318,7 @@ struct ProjectTableView: View {
             }
         }
         .foregroundStyle(.secondary)
-        .help(item.assignees.isEmpty ? "Unassigned" : ProjectTableSort.assignees(item))
+        .help(item.assignees.isEmpty ? String(localized: "Unassigned") : ProjectTableSort.assignees(item))
     }
 
     @ViewBuilder

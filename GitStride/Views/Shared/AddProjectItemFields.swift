@@ -12,8 +12,8 @@ struct ItemSearchField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSSearchField {
         let field = FocusedSearchField()
-        field.placeholderString = "GitHub URL or search query"
-        field.setAccessibilityLabel("GitHub URL or search issues and pull requests")
+        field.placeholderString = String(localized: "GitHub URL or search query")
+        field.setAccessibilityLabel(String(localized: "GitHub URL or search issues and pull requests"))
         field.sendsWholeSearchString = true
         field.maximumRecents = 0
         field.delegate = context.coordinator
@@ -85,8 +85,8 @@ struct LabelTokenField: NSViewRepresentable {
         field.delegate = context.coordinator
         field.placeholderString = "bug, enhancement"
         field.tokenizingCharacterSet = CharacterSet(charactersIn: ",")
-        field.setAccessibilityLabel("Labels")
-        field.setAccessibilityHelp("Type a label, then press comma or Return. Missing labels will be created in the repository when you submit.")
+        field.setAccessibilityLabel(String(localized: "Labels"))
+        field.setAccessibilityHelp(String(localized: "Type a label, then press comma or Return. Missing labels will be created in the repository when you submit."))
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return field
@@ -161,8 +161,8 @@ struct RepositoryComboBox: NSViewRepresentable {
         comboBox.font = .systemFont(ofSize: NSFont.systemFontSize)
         comboBox.setContentHuggingPriority(.defaultLow, for: .horizontal)
         comboBox.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        comboBox.setAccessibilityLabel("Repository, required")
-        comboBox.toolTip = "Choose a repository linked to or used in this project, or type owner/repository."
+        comboBox.setAccessibilityLabel(String(localized: "Repository, required"))
+        comboBox.toolTip = String(localized: "Choose a repository linked to or used in this project, or type owner/repository.")
         return comboBox
     }
 

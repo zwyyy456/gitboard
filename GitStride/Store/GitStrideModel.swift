@@ -98,7 +98,7 @@ final class GitStrideModel {
             guard await notificationService.checkPermission() else {
                 monitoringEnabled = false
                 UserDefaults.standard.set(false, forKey: "monitoringEnabled")
-                monitoringStatus = "Notifications are disabled in System Settings."
+                monitoringStatus = String(localized: "Notifications are disabled in System Settings.")
                 return
             }
             await restartMonitoring()
@@ -159,7 +159,7 @@ final class GitStrideModel {
         monitorTask = nil
         await projectMonitor.stop()
         do { try await projectStore.invalidateSession() }
-        catch { authenticationError = "Could not remove the previous account’s project cache." }
+        catch { authenticationError = String(localized: "Could not remove the previous account’s project cache.") }
         myWorkStore.activate(accountLogin: nil)
         connectionID = UUID()
         do { try await authentication.deleteCredential() }
@@ -205,7 +205,7 @@ final class GitStrideModel {
         if enabled {
             guard await notificationService.requestPermission() else {
                 monitoringEnabled = false
-                monitoringStatus = "Notification permission was not granted."
+                monitoringStatus = String(localized: "Notification permission was not granted.")
                 UserDefaults.standard.set(false, forKey: "monitoringEnabled")
                 return
             }
@@ -222,7 +222,7 @@ final class GitStrideModel {
             monitorTask?.cancel()
             monitorTask = nil
             await projectMonitor.stop()
-            monitoringStatus = "Monitoring is off."
+            monitoringStatus = String(localized: "Monitoring is off.")
         }
     }
 
@@ -327,7 +327,7 @@ final class GitStrideModel {
         case .moveToDone:
             guard let fieldID = action.statusFieldID,
                   let optionID = action.doneOptionID else {
-                monitoringStatus = "This Project has no recognizable Done status."
+                monitoringStatus = String(localized: "This Project has no recognizable Done status.")
                 return nil
             }
             do {
@@ -364,12 +364,12 @@ final class GitStrideModel {
 
         guard monitoringEnabled else { return }
         guard let login = projectStore.currentUserLogin else {
-            monitoringStatus = "Waiting for GitHub authentication."
+            monitoringStatus = String(localized: "Waiting for GitHub authentication.")
             return
         }
         let projects = myWorkStore.followedProjects
         guard projects.isEmpty == false else {
-            monitoringStatus = "Follow a Project to start monitoring."
+            monitoringStatus = String(localized: "Follow a Project to start monitoring.")
             return
         }
 
@@ -385,7 +385,7 @@ final class GitStrideModel {
                 try await projectStore.refreshMonitoredProjects(projects)
             }
         )
-        monitoringStatus = "Monitoring \(projects.count) Project\(projects.count == 1 ? "" : "s")."
+        monitoringStatus = String(localized: "Monitoring \(projects.count) projects.")
         monitorTask = Task { [weak self] in
             for await event in events {
                 guard Task.isCancelled == false else { return }
@@ -405,13 +405,13 @@ final class GitStrideModel {
                 try await notificationService.sendDigest(changes)
             case .rateLimited(let resetDescription):
                 monitoringStatus = resetDescription.map {
-                    "Monitoring paused by GitHub rate limit. Try again \($0)."
-                } ?? "Monitoring paused by GitHub rate limit."
+                    String(localized: "Monitoring paused by GitHub rate limit. Try again \($0).")
+                } ?? String(localized: "Monitoring paused by GitHub rate limit.")
             case .failed(let message):
-                monitoringStatus = "Monitoring error: \(message)"
+                monitoringStatus = String(localized: "Monitoring error: \(message)")
             }
         } catch {
-            monitoringStatus = "Notification delivery failed: \(error.localizedDescription)"
+            monitoringStatus = String(localized: "Notification delivery failed: \(error.localizedDescription)")
         }
     }
 

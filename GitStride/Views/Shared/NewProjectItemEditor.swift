@@ -4,6 +4,14 @@ struct NewProjectItemDraft {
     enum ItemType: String, CaseIterable, Identifiable {
         case issue = "Issue"
         case draft = "Draft"
+
+        var title: String {
+            switch self {
+            case .issue: String(localized: "Issue")
+            case .draft: String(localized: "Draft")
+            }
+        }
+
         var id: Self { self }
     }
 
@@ -48,7 +56,7 @@ struct NewProjectItemDraft {
     mutating func reviewQuickEntry(repositories: [String], statuses: [String], priorities: [String]) -> String? {
         let request = QuickCreateParser.parse(quickEntry)
         guard request.title.isEmpty == false else {
-            return "Quick Entry needs a title."
+            return String(localized: "Quick Entry needs a title.")
         }
 
         title = request.title
@@ -66,17 +74,17 @@ struct NewProjectItemDraft {
 
         var unavailableOptions: [String] = []
         if let requestedStatus = request.status, matchedStatus == nil {
-            unavailableOptions.append("status \(requestedStatus)")
+            unavailableOptions.append(String(localized: "status \(requestedStatus)"))
         }
         if let requestedPriority = request.priority, matchedPriority == nil {
-            unavailableOptions.append("priority \(requestedPriority)")
+            unavailableOptions.append(String(localized: "priority \(requestedPriority)"))
         }
 
         if unavailableOptions.isEmpty {
             usesQuickEntry = false
             return nil
         } else {
-            return "Unavailable project option: \(unavailableOptions.joined(separator: ", "))."
+            return String(localized: "Unavailable project option: \(unavailableOptions.joined(separator: ", ")).")
         }
     }
 
@@ -146,7 +154,7 @@ struct NewProjectItemEditor: View {
         Grid(alignment: .leading, horizontalSpacing: Self.fieldSpacing, verticalSpacing: 14) {
             if draft.itemType == .issue {
                 GridRow(alignment: .firstTextBaseline) {
-                    fieldLabel("Repository")
+                    fieldLabel(String(localized: "Repository"))
                     VStack(alignment: .leading, spacing: 6) {
                         RepositoryComboBox(
                             text: $draft.repository,
@@ -160,11 +168,11 @@ struct NewProjectItemEditor: View {
             }
 
             GridRow(alignment: .firstTextBaseline) {
-                fieldLabel("Type")
+                fieldLabel(String(localized: "Type"))
                 HStack(alignment: .firstTextBaseline, spacing: 24) {
                     Picker("Type", selection: $draft.itemType) {
                         ForEach(NewProjectItemDraft.ItemType.allCases) { type in
-                            Text(type.rawValue).tag(type)
+                            Text(type.title).tag(type)
                         }
                     }
                     .labelsHidden()
@@ -182,15 +190,15 @@ struct NewProjectItemEditor: View {
             }
 
             GridRow(alignment: .firstTextBaseline) {
-                fieldLabel("Title")
-                TextField(draft.itemType == .issue ? "Issue title" : "Draft title", text: $draft.title)
+                fieldLabel(String(localized: "Title"))
+                TextField(draft.itemType == .issue ? String(localized: "Issue title") : String(localized: "Draft title"), text: $draft.title)
                     .accessibilityLabel("Title, required")
                     .focused($focusedField, equals: .title)
             }
 
             GridRow(alignment: .top) {
                 VStack(alignment: .trailing, spacing: 2) {
-                    fieldLabel("Description")
+                    fieldLabel(String(localized: "Description"))
                     Text("Optional")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -202,12 +210,12 @@ struct NewProjectItemEditor: View {
 
             if draft.itemType == .issue {
                 GridRow(alignment: .firstTextBaseline) {
-                    fieldLabel("Labels")
+                    fieldLabel(String(localized: "Labels"))
                     LabelTokenField(text: $draft.labels, suggestions: labelSuggestions)
                 }
 
                 GridRow(alignment: .firstTextBaseline) {
-                    fieldLabel("Assignees")
+                    fieldLabel(String(localized: "Assignees"))
                     HStack(alignment: .firstTextBaseline, spacing: Self.fieldSpacing) {
                         TextField("\(store.currentUserLogin ?? "username"), @me", text: $draft.assignees)
                             .accessibilityLabel("Assignees")
@@ -226,7 +234,7 @@ struct NewProjectItemEditor: View {
 
                 if priorityOptions.isEmpty == false {
                     GridRow(alignment: .firstTextBaseline) {
-                        fieldLabel("Priority")
+                        fieldLabel(String(localized: "Priority"))
                         priorityPicker.labelsHidden()
                     }
                 }
@@ -251,7 +259,7 @@ struct NewProjectItemEditor: View {
         }
         .labelsHidden()
         .accessibilityLabel("Status, required")
-        .help(draft.status.isEmpty ? "Choose Status" : draft.status)
+        .help(draft.status.isEmpty ? String(localized: "Choose Status") : draft.status)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

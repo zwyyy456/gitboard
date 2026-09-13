@@ -26,26 +26,26 @@ struct ProjectWorkControls: View {
                 HStack(spacing: 12) {
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
-                            if filter.assignedToMe { chip("Assignee: Me") { filter.assignedToMe = false } }
+                            if filter.assignedToMe { chip(String(localized: "Assignee: Me")) { filter.assignedToMe = false } }
                             if !filter.statusIDs.isEmpty {
-                                chip("Status: " + statusFilterTitle) {
+                                chip(String(localized: "Status: \(statusFilterTitle)")) {
                                     filter.statusIDs = []
                                 }
                             }
                             if let id = filter.labelID {
-                                chip("Label: " + (labels.first { $0.id == id }.map(labelTitle) ?? "Unavailable")) { filter.labelID = nil }
+                                chip(String(localized: "Label: \(labels.first { $0.id == id }.map(labelTitle) ?? String(localized: "Unavailable"))")) { filter.labelID = nil }
                             }
                             if let id = filter.issueTypeID {
-                                chip("Type: " + (issueTypes.first { $0.id == id }?.name ?? "Unavailable")) { filter.issueTypeID = nil }
+                                chip(String(localized: "Type: \(issueTypes.first { $0.id == id }?.name ?? String(localized: "Unavailable"))")) { filter.issueTypeID = nil }
                             }
                             if let id = filter.milestoneID {
-                                chip("Milestone: " + (milestones.first { $0.id == id }?.displayName ?? "Unavailable")) { filter.milestoneID = nil }
+                                chip(String(localized: "Milestone: \(milestones.first { $0.id == id }?.displayName ?? String(localized: "Unavailable"))")) { filter.milestoneID = nil }
                             }
                             if let id = filter.parentIssueID {
-                                chip("Parent: " + (parents.first { $0.id == id }?.displayName ?? "Unavailable")) { filter.parentIssueID = nil }
+                                chip(String(localized: "Parent: \(parents.first { $0.id == id }?.displayName ?? String(localized: "Unavailable"))")) { filter.parentIssueID = nil }
                             }
-                            if filter.completion != .all { chip(filter.completion.rawValue) { filter.completion = .all } }
-                            if !searchText.isEmpty { chip("Search: \(searchText)") { searchText = "" } }
+                            if filter.completion != .all { chip(filter.completion.title) { filter.completion = .all } }
+                            if !searchText.isEmpty { chip(String(localized: "Search: \(searchText)")) { searchText = "" } }
                             Button("Clear Filters", action: clearFilters).buttonStyle(.link)
                         }.padding(.vertical, 1)
                     }
@@ -66,7 +66,7 @@ struct ProjectWorkControls: View {
         let statuses = project.statusOptions.filter { filter.statusIDs.contains($0.id) }
         let missing = filter.statusIDs.count - statuses.count
         var names = statuses.map(\.name)
-        if missing > 0 { names.append("\(missing) unavailable") }
+        if missing > 0 { names.append(String(localized: "\(missing) unavailable")) }
         return names.joined(separator: ", ")
     }
 
@@ -122,7 +122,7 @@ struct ProjectWorkControls: View {
                     }
                 }.disabled(parents.isEmpty)
                 Picker("Completion", selection: $filter.completion) {
-                    ForEach(ProjectWorkCompletion.allCases) { value in Text(value.rawValue).tag(value) }
+                    ForEach(ProjectWorkCompletion.allCases) { value in Text(value.title).tag(value) }
                 }
             }
         }
@@ -139,7 +139,7 @@ struct ProjectWorkControls: View {
             Divider()
             Button("Save Current View…", action: saveView)
             if let selectedView {
-                Text(selectedView.name + (selectedView.filter == filter ? "" : " · Modified"))
+                Text(selectedView.filter == filter ? selectedView.name : String(localized: "\(selectedView.name) · Modified"))
                 Button("Update Saved Filters", action: updateView)
                 Button("Delete Saved View", role: .destructive, action: deleteView)
             }
@@ -178,7 +178,7 @@ struct ProjectWorkControls: View {
 
     private var completionPicker: some View {
         Picker("Show", selection: $filter.completion) {
-            ForEach(ProjectWorkCompletion.allCases) { value in Text(value.rawValue).tag(value) }
+            ForEach(ProjectWorkCompletion.allCases) { value in Text(value.title).tag(value) }
         }.pickerStyle(.segmented).fixedSize()
     }
 
@@ -214,10 +214,10 @@ struct BoardDisplayOptions: View {
     var body: some View {
         Menu("Display Options", systemImage: "slider.horizontal.3") {
             Menu("Show Fields") {
-                fieldToggle("Assignees", id: "assignees")
-                fieldToggle("Milestone", id: "milestone")
-                fieldToggle("Labels", id: "labels")
-                fieldToggle("Engineering Signals", id: "signals")
+                fieldToggle(String(localized: "Assignees"), id: "assignees")
+                fieldToggle(String(localized: "Milestone"), id: "milestone")
+                fieldToggle(String(localized: "Labels"), id: "labels")
+                fieldToggle(String(localized: "Engineering Signals"), id: "signals")
                 ForEach(project.fields.filter { $0.isEditable && $0.id != project.statusField?.id }) { field in
                     fieldToggle(field.name, id: "field:" + field.id)
                 }

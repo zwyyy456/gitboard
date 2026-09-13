@@ -69,8 +69,8 @@ actor NotificationService {
         guard changes.isEmpty == false, await checkPermission() else { return }
         let projects = Set(changes.map(\.projectTitle))
         let content = UNMutableNotificationContent()
-        content.title = "GitStride Summary"
-        content.body = "\(changes.count) changes across \(projects.count) followed project\(projects.count == 1 ? "" : "s")."
+        content.title = String(localized: "GitStride Summary")
+        content.body = String(localized: "\(changes.count) changes across \(projects.count) followed projects.")
         content.sound = .default
 
         try await UNUserNotificationCenter.current().add(
@@ -84,12 +84,12 @@ actor NotificationService {
 
     private func configureCategories() {
         let actions = [
-            UNNotificationAction(identifier: "OPEN", title: "Open", options: [.foreground]),
-            UNNotificationAction(identifier: "MOVE_DONE", title: "Move to Done"),
-            UNNotificationAction(identifier: "SNOOZE", title: "Snooze 1 Hour"),
+            UNNotificationAction(identifier: "OPEN", title: String(localized: "Open"), options: [.foreground]),
+            UNNotificationAction(identifier: "MOVE_DONE", title: String(localized: "Move to Done")),
+            UNNotificationAction(identifier: "SNOOZE", title: String(localized: "Snooze 1 Hour")),
             UNNotificationAction(
                 identifier: "MUTE_PROJECT",
-                title: "Mute Project",
+                title: String(localized: "Mute Project"),
                 options: [.destructive]
             )
         ]
@@ -105,27 +105,27 @@ actor NotificationService {
     private func notificationBody(for change: ProjectChange) -> String {
         switch change.kind {
         case .status(let from, let to):
-            return "\(change.itemTitle): \(from ?? "No Status") → \(to ?? "No Status")"
+            return String(localized: "\(change.itemTitle): \(from ?? String(localized: "No Status")) → \(to ?? String(localized: "No Status"))")
         case .assignedToMe:
-            return "Assigned to you: \(change.itemTitle)"
+            return String(localized: "Assigned to you: \(change.itemTitle)")
         case .unassignedFromMe:
-            return "Unassigned from you: \(change.itemTitle)"
+            return String(localized: "Unassigned from you: \(change.itemTitle)")
         case .dueSoon:
-            return "Due soon: \(change.itemTitle)"
+            return String(localized: "Due soon: \(change.itemTitle)")
         case .overdue:
-            return "Overdue: \(change.itemTitle)"
+            return String(localized: "Overdue: \(change.itemTitle)")
         case .blocked:
-            return "Blocked: \(change.itemTitle)"
+            return String(localized: "Blocked: \(change.itemTitle)")
         case .unblocked:
-            return "Unblocked: \(change.itemTitle)"
+            return String(localized: "Unblocked: \(change.itemTitle)")
         case .reviewRequested:
-            return "Review requested: \(change.itemTitle)"
+            return String(localized: "Review requested: \(change.itemTitle)")
         case .reviewRequestRemoved:
-            return "Review request cleared: \(change.itemTitle)"
+            return String(localized: "Review request cleared: \(change.itemTitle)")
         case .ciFailed:
-            return "CI failed: \(change.itemTitle)"
+            return String(localized: "CI failed: \(change.itemTitle)")
         case .ciRecovered:
-            return "CI recovered: \(change.itemTitle)"
+            return String(localized: "CI recovered: \(change.itemTitle)")
         }
     }
 

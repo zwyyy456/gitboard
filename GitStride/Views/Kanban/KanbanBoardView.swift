@@ -70,7 +70,7 @@ struct KanbanBoardView: View {
 
     var body: some View {
         projectSurface
-            .navigationTitle(store.selectedProject?.title ?? "Projects")
+            .navigationTitle(store.selectedProject?.title ?? String(localized: "Projects"))
             .toolbar {
                 kanbanToolbar
             }
@@ -168,7 +168,7 @@ struct KanbanBoardView: View {
             .labelStyle(.iconOnly)
             .disabled(isRefreshing)
             .help(refreshHelp)
-            .accessibilityValue(isRefreshing ? "Refreshing" : "")
+            .accessibilityValue(isRefreshing ? String(localized: "Refreshing") : "")
 
             if let project = store.selectedProject {
                 if projectURL != nil {
@@ -176,11 +176,11 @@ struct KanbanBoardView: View {
                         .labelStyle(.iconOnly)
                         .help("Open Project in GitHub")
                 }
-                Button(myWorkStore.isFollowing(project.id) ? "Remove from My Work" : "Add to My Work",
+                Button(myWorkStore.isFollowing(project.id) ? String(localized: "Remove from My Work") : String(localized: "Add to My Work"),
                        systemImage: myWorkStore.isFollowing(project.id) ? "briefcase.fill" : "briefcase",
                        action: toggleFollowingProject)
                     .labelStyle(.iconOnly)
-                    .help(myWorkStore.isFollowing(project.id) ? "Remove from My Work" : "Add to My Work")
+                    .help(myWorkStore.isFollowing(project.id) ? String(localized: "Remove from My Work") : String(localized: "Add to My Work"))
                 Menu("Saved Views", systemImage: "ellipsis") {
                     workControls(project).savedViewMenuContents
                 }.help("Saved Views")
@@ -249,7 +249,7 @@ struct KanbanBoardView: View {
                         .foregroundStyle(workFilter.isActive ? Color.accentColor : Color.primary)
                 }
                 .help("Filter items")
-                .accessibilityValue(workFilter.isActive ? "Filters active" : "No filters")
+                .accessibilityValue(workFilter.isActive ? String(localized: "Filters active") : String(localized: "No filters"))
             }
         }
         if let project = store.selectedProject {
@@ -357,16 +357,16 @@ struct KanbanBoardView: View {
     }
 
     private var refreshHelp: String {
-        guard let lastUpdated = store.lastUpdated else { return "Refresh Project" }
+        guard let lastUpdated = store.lastUpdated else { return String(localized: "Refresh Project") }
         let updated = lastUpdated.formatted(.relative(presentation: .named))
-        return "Refresh Project — Updated \(updated)"
+        return String(localized: "Refresh Project — Updated \(updated)")
     }
 
     private var commandContext: WorkspaceCommandContext {
         var context = WorkspaceCommandContext(
             refresh: .init(
                 id: "refresh-project",
-                title: "Refresh Project",
+                title: String(localized: "Refresh Project"),
                 isEnabled: isRefreshing == false && isSelecting == false,
                 perform: refresh
             )
@@ -375,7 +375,7 @@ struct KanbanBoardView: View {
         context.toggleSelection = showsProjectEditingActions
             ? .init(
                 id: "toggle-selection",
-                title: isSelecting ? "Done Selecting" : "Select Items",
+                title: isSelecting ? String(localized: "Done Selecting") : String(localized: "Select Items"),
                 isEnabled: isSelecting || canEditSelectedProject,
                 perform: toggleSelectionMode
             )
@@ -393,7 +393,7 @@ struct KanbanBoardView: View {
             }
             context.archiveSelection = .init(
                 id: "archive-selection",
-                title: "Archive Selected Items",
+                title: String(localized: "Archive Selected Items"),
                 isEnabled: canWork,
                 perform: archiveSelection
             )
@@ -403,7 +403,7 @@ struct KanbanBoardView: View {
         if showsProjectEditingActions {
             context.addItem = .init(
                 id: "add-item",
-                title: "Add Item…",
+                title: String(localized: "Add Item…"),
                 isEnabled: canEditSelectedProject,
                 perform: showAddItem
             )
@@ -414,8 +414,8 @@ struct KanbanBoardView: View {
             context.toggleFollowing = .init(
                 id: "toggle-following",
                 title: isFollowing
-                    ? "Remove \(project.title) from My Work"
-                    : "Add \(project.title) to My Work",
+                    ? String(localized: "Remove \(project.title) from My Work")
+                    : String(localized: "Add \(project.title) to My Work"),
                 perform: toggleFollowingProject
             )
         }
@@ -423,7 +423,7 @@ struct KanbanBoardView: View {
         if projectURL != nil {
             context.openInGitHub = .init(
                 id: "open-project-in-github",
-                title: "Open Project in GitHub",
+                title: String(localized: "Open Project in GitHub"),
                 perform: openProjectInGitHub
             )
         }
@@ -596,7 +596,7 @@ struct KanbanBoardView: View {
         KanbanColumnsView(
             store: store, project: project, items: filteredItems(for: project.items),
             statuses: visibleStatuses(in: project), preferenceID: tablePreferenceID,
-            emptyMessage: workFilter.isActive || !searchText.isEmpty ? "No matching items" : "No items",
+            emptyMessage: workFilter.isActive || !searchText.isEmpty ? String(localized: "No matching items") : String(localized: "No items"),
             isSelecting: isSelecting, selectedItemIDs: $selectedItemIDs,
             showInspector: openItemDetail, reportError: report
         )

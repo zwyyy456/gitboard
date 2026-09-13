@@ -10,7 +10,7 @@ struct ItemLabelsSection: View {
     @State private var showsLabelPicker = false
 
     var body: some View {
-        ItemPropertySection("Labels") {
+        ItemPropertySection(String(localized: "Labels")) {
             if item.labels.isEmpty {
                 Text("No labels").font(.callout).foregroundStyle(.secondary)
             } else {

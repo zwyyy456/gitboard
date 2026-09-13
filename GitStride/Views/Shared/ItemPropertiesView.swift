@@ -47,7 +47,7 @@ struct ItemPropertiesView: View {
     }
 
     private func fieldSection(project: Project, item: ProjectItem) -> some View {
-        ItemPropertySection("Project Fields") {
+        ItemPropertySection(String(localized: "Project Fields")) {
             ForEach(project.fields.filter(\.isEditable)) { field in
                 ProjectFieldEditor(
                     field: field,
@@ -76,7 +76,7 @@ struct ItemPropertiesView: View {
     private func signalsSection(_ item: ProjectItem) -> some View {
         if (item.contentType == .pullRequest && item.engineeringSignals != nil)
             || item.linkedPR != nil {
-            ItemPropertySection("Engineering") {
+            ItemPropertySection(String(localized: "Engineering")) {
                 if item.contentType == .pullRequest {
                     EngineeringSignalsView(item: item, limit: 5)
                 }
