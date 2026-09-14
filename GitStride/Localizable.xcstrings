@@ -2516,6 +2516,7 @@
       }
     },
     "Current service": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -8235,6 +8236,7 @@
       }
     },
     "Service": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {

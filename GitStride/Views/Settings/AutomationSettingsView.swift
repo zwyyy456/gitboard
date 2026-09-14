@@ -33,6 +33,8 @@ struct AutomationSettingsView: View {
             Text("Pull Request Automation")
         } footer: {
             VStack(alignment: .leading) {
+                Text("Save and restart GitStride to apply service changes.")
+                Text("Changing or disabling the service does not stop automation on the previous server. Pause or delete its connection first if needed.")
                 Text("Automation uses its own GitHub connection and continues when GitStride is disconnected.")
                 Text("Private Issue content is not stored or logged by the automation service.")
             }
@@ -76,71 +78,68 @@ private struct AutomationServiceSettingsView: View {
     }
 
     var body: some View {
-        DisclosureGroup("Automation service") {
-            LabeledContent("Current service") {
-                if let currentBaseURL {
-                    Text(currentBaseURL.absoluteString)
-                        .textSelection(.enabled)
-                } else {
-                    Text("Disabled")
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("Automation service")
+                Spacer(minLength: 12)
+                Picker("Automation service", selection: $mode) {
+                    Text("Default service").tag(Mode.defaultService)
+                    Text("Custom address").tag(Mode.custom)
+                    Text("Disabled").tag(Mode.disabled)
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                Button("Save") { savedOrigin = draftOrigin }
+                    .disabled((mode == .custom && customURL == nil) || draftOrigin == savedOrigin)
             }
-            .fixedSize(horizontal: false, vertical: true)
 
-            Picker("Service", selection: $mode) {
-                Text("Default service").tag(Mode.defaultService)
-                Text("Custom address").tag(Mode.custom)
-                Text("Disabled").tag(Mode.disabled)
-            }
-            if mode == .custom {
-                TextField("Service address", text: $customOrigin, prompt: Text(verbatim: "https://worker.example.com"))
-                    .textFieldStyle(.roundedBorder)
-                    .autocorrectionDisabled()
-                if customURL == nil {
-                    Text("Enter an HTTPS address without a path, query, or fragment.")
+            if mode != .disabled {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Service address")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } else if mode == .defaultService {
-                if let defaultURL = AutomationServicePreferences.baseURL(savedOrigin: nil) {
-                    Text(defaultURL.absoluteString)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("No default service is configured.")
-                        .foregroundStyle(.secondary)
+                    if mode == .custom {
+                        TextField("Service address", text: $customOrigin, prompt: Text(verbatim: "https://worker.example.com"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .autocorrectionDisabled()
+                        if customURL == nil {
+                            Text("Enter an HTTPS address without a path, query, or fragment.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else if let defaultURL = AutomationServicePreferences.baseURL(savedOrigin: nil) {
+                        Text(defaultURL.absoluteString)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("No default service is configured.")
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
-            Button("Save") { savedOrigin = draftOrigin }
-                .disabled((mode == .custom && customURL == nil) || draftOrigin == savedOrigin)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-
-            Text("Save and restart GitStride to apply service changes.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Changing or disabling the service does not stop automation on the previous server. Pause or delete its connection first if needed.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if requiresRestart {
+                Label("Service changes saved. Restart GitStride to apply them.", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear(perform: loadDraft)
         .onChange(of: savedOrigin) { _, _ in loadDraft() }
-        if requiresRestart {
-            Label("Service changes saved. Restart GitStride to apply them.", systemImage: "arrow.triangle.2.circlepath")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
     }
 
     private func loadDraft() {
         if let savedOrigin {
             mode = savedOrigin.isEmpty ? .disabled : .custom
-            customOrigin = savedOrigin
+            customOrigin = savedOrigin.isEmpty ? (currentBaseURL?.absoluteString ?? "") : savedOrigin
         } else {
             mode = .defaultService
-            customOrigin = ""
+            customOrigin = AutomationServicePreferences.baseURL(savedOrigin: nil)?.absoluteString ?? ""
         }
     }
 }
